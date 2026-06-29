@@ -33,6 +33,7 @@ export interface IUser extends Document {
   designation?: string;
   joiningDate?: Date;
   reportingManager?: mongoose.Types.ObjectId; // Reference to another User
+  mdmSourceId?: mongoose.Types.ObjectId; // Provenance: which MDM source this user's data came from (HRMS import)
 
   // Project/Portal assignment
   projects?: mongoose.Types.ObjectId[]; // Multiple projects can be assigned
@@ -209,6 +210,11 @@ const userSchema = new Schema<IUser>(
     reportingManager: {
       type: Schema.Types.ObjectId,
       ref: "User",
+    },
+    mdmSourceId: {
+      type: Schema.Types.ObjectId,
+      ref: "MDMSource",
+      default: null,
     },
     projects: [
       {

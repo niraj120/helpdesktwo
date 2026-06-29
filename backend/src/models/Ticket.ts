@@ -188,6 +188,8 @@ export interface ITicket extends Document {
   interactionType?: "normal" | "PSR" | "ISR";
   /** PSR request type: OCR = on-call resolution (quick close), SR = full workflow. */
   requestType?: "OCR" | "SR";
+  /** ISR only: the parent PSR this ISR was spawned from / linked to. */
+  linkedPsrId?: mongoose.Types.ObjectId;
   /** How the requester contacted the school (PSR mode of contact). */
   modeOfContact?:
     | "telephone"
@@ -597,6 +599,14 @@ const TicketSchema: Schema = new Schema(
       enum: ["OCR", "SR", null],
       default: undefined,
     },
+    // ISR → parent PSR link (sparse: only set on linked ISRs).
+    linkedPsrId: {
+      type: Schema.Types.ObjectId,
+      ref: "Ticket",
+      index: true,
+      sparse: true,
+      default: undefined,
+    },
     modeOfContact: {
       type: String,
       enum: [
@@ -687,5 +697,7 @@ TicketSchema.index({ project: 1, sla_due_at: 1 });
 TicketSchema.index({ project: 1, interactionType: 1, status: 1, createdAt: -1 });
 // WIP committed-date reminder/escalation cron lookups
 TicketSchema.index({ interactionType: 1, "wip.committedDate": 1 });
+// Linked-ISR rollup for PSR list (count + done-by-status per parent PSR)
+TicketSchema.index({ linkedPsrId: 1, status: 1 });
 
 export const Ticket = mongoose.model<ITicket>("Ticket", TicketSchema);

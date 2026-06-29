@@ -29,8 +29,8 @@ const ServiceRequestsHub: React.FC = () => {
 
   return (
     <SrPage
-      title="Service Requests"
-      subtitle="View, create and handle parent service requests from every channel — all in one place."
+      title="PSR — Parent Service Requests"
+      subtitle="View, create and handle parent service requests (PSR) from every channel — all in one place."
     >
       <SrTabs tabs={TABS} active={active} onChange={setActive} />
       {active === "all" && <ServiceRequests embedded />}

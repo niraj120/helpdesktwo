@@ -6,6 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import DashboardLayout from "./DashboardLayout";
 import { getText } from "../utils/language";
 import { usePermissions } from "../hooks/usePermissions";
@@ -69,18 +70,125 @@ interface HRMSEmployee {
   lastName: string;
   email: string;
   mobile: string;
+  mdmSourceId?: string;
+  mdmSourceName?: string;
   department: string;
   designation: string;
+  /** Flattened raw record from the MDM API (any columns). */
+  _raw?: Record<string, any>;
+  [key: string]: any;
+}
+
+interface HRMSLoadMeta {
+  totalAvailable: number;
+  matchedCount: number;
+  loadedCount: number;
+  loadMode: "all" | "range";
+  rangeStart?: number;
+  rangeEnd?: number;
 }
 
 interface UserManagementProps {
   wrapWithLayout?: boolean; // If false, renders content only without DashboardLayout
 }
 
+/** Import-mapping targets: which user-account field each API column feeds. */
+const HRMS_MAP_TARGETS: { key: string; label: string }[] = [
+  { key: "employeeCode", label: "Employee Code" },
+  { key: "firstName", label: "First Name" },
+  { key: "lastName", label: "Last Name" },
+  { key: "fullName", label: "Full Name (split)" },
+  { key: "email", label: "Email" },
+  { key: "mobile", label: "Mobile" },
+  { key: "department", label: "Department" },
+  { key: "designation", label: "Designation" },
+];
+
+/** Sensible default display columns from a discovered field list. */
+const pickDefaultCols = (fields: string[]): string[] => {
+  if (!fields.length) return [];
+  const want = [
+    /group.*emp.*code|^employee.?code$|^emp.?code$|^code$/i,
+    /full.?name|^name$/i,
+    /first.?name/i,
+    /last.?name/i,
+    /email/i,
+    /mobile|phone/i,
+    /designation|title/i,
+    /department|dept/i,
+  ];
+  const chosen: string[] = [];
+  for (const re of want) {
+    const f = fields.find((x) => re.test(x) && !chosen.includes(x));
+    if (f) chosen.push(f);
+  }
+  if (chosen.length < 3) {
+    for (const f of fields) {
+      if (chosen.length >= 5) break;
+      if (!chosen.includes(f) && f !== "id") chosen.push(f);
+    }
+  }
+  return chosen;
+};
+
+/** Read a column value off an employee row (raw record first). */
+const hrmsCell = (emp: any, col: string): string => {
+  const v = emp?._raw?.[col] ?? emp?.[col];
+  if (v === null || v === undefined || v === "") return "—";
+  return typeof v === "object" ? JSON.stringify(v) : String(v);
+};
+
+/** Match a row against a search term across every raw value. */
+const hrmsMatch = (emp: any, search: string): boolean => {
+  if (!search) return true;
+  const t = search.toLowerCase();
+  const raw = emp?._raw || emp || {};
+  for (const v of Object.values(raw)) {
+    if (v === null || v === undefined || typeof v === "object") continue;
+    if (String(v).toLowerCase().includes(t)) return true;
+  }
+  return [
+    emp.firstName,
+    emp.lastName,
+    emp.email,
+    emp.employeeCode,
+    emp.designation,
+  ].some((v) => v && String(v).toLowerCase().includes(t));
+};
+
+const isHrmsPlaceholderEmail = (email?: string) =>
+  Boolean(email && email.toLowerCase().endsWith("@hrms.local"));
+
+const UserEmailDisplay: React.FC<{ email?: string }> = ({ email }) => {
+  if (isHrmsPlaceholderEmail(email)) {
+    return (
+      <span
+        title={email}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          padding: "4px 10px",
+          borderRadius: "999px",
+          background: "#f3f4f6",
+          color: "#64748b",
+          fontSize: "12px",
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+        }}
+      >
+        No email in HRMS
+      </span>
+    );
+  }
+
+  return <>{email || "-"}</>;
+};
+
 const UserManagement: React.FC<UserManagementProps> = ({
   wrapWithLayout = true,
 }) => {
   const { i18n } = useTranslation();
+  const navigate = useNavigate();
   const { hasPermission } = usePermissions();
   const { viewMode, currentProjectId, userProjects } = useProjectContext();
 
@@ -103,6 +211,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [filterProjects, setFilterProjects] = useState<string[]>([]);
   const [filterCenters, setFilterCenters] = useState<string[]>([]);
   const [filterCompany, setFilterCompany] = useState<string>("");
+  const [recentlyImportedCodes, setRecentlyImportedCodes] = useState<string[]>(
+    [],
+  );
   const [companies, setCompanies] = useState<{ _id: string; name: string }[]>(
     [],
   );
@@ -257,9 +368,112 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [hrmsEmployeeCodes, setHrmsEmployeeCodes] = useState(""); // For initial employee code input
   const [hrmsSearchQuery, setHrmsSearchQuery] = useState(""); // For filtering loaded employees
   const [hrmsLoading, setHrmsLoading] = useState(false);
+  const [hrmsLoadMode, setHrmsLoadMode] = useState<"all" | "range">("all");
+  const [hrmsRangeStart, setHrmsRangeStart] = useState("1");
+  const [hrmsRangeEnd, setHrmsRangeEnd] = useState("50");
+  const [hrmsLoadMeta, setHrmsLoadMeta] = useState<HRMSLoadMeta | null>(null);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]); // Array of employee IDs
-  const [selectedRole, setSelectedRole] = useState("");
+  // MDM source the HRMS data is fetched from (provenance)
+  const [mdmSources, setMdmSources] = useState<
+    { _id: string; name: string; enabled: boolean }[]
+  >([]);
+  const [selectedMdmSource, setSelectedMdmSource] = useState<string>("");
+  // Dynamic field discovery + column selection + import mapping
+  const [hrmsFields, setHrmsFields] = useState<string[]>([]);
+  const [selectedCols, setSelectedCols] = useState<string[]>([]);
+  const [fieldMapping, setFieldMapping] = useState<Record<string, string>>({});
+  const [showColPicker, setShowColPicker] = useState(false);
+  const [hrmsColumnSearch, setHrmsColumnSearch] = useState("");
+  const [showMapping, setShowMapping] = useState(false);
+  const [cfgSaving, setCfgSaving] = useState(false);
+  const [cfgMsg, setCfgMsg] = useState("");
+  // Presets (named column/mapping configs)
+  const [presets, setPresets] = useState<any[]>([]);
+  const [presetName, setPresetName] = useState("Default");
+  // Already-imported employee codes (existing User accounts)
+  const [existingCodes, setExistingCodes] = useState<string[]>([]);
+  // Pagination over the loaded rows
+  const [hrmsPage, setHrmsPage] = useState(1);
+  const HRMS_PAGE_SIZE = 50;
+  const [hrmsImportStep, setHrmsImportStep] = useState<
+    "employees" | "projects"
+  >("employees");
+  // Mapping preview toggle
+  const [showPreview, setShowPreview] = useState(false);
+
+  // Load configured MDM sources whenever the HRMS modal opens
+  useEffect(() => {
+    if (!showHRMSModal) return;
+    const loadMdmSources = async () => {
+      try {
+        const token = localStorage.getItem("authToken");
+        const res = await fetch(`${API_CONFIG.API_URL}/mdm`, {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          setMdmSources(data.data);
+          // Auto-select the first enabled source
+          const firstEnabled = data.data.find((s: any) => s.enabled);
+          if (firstEnabled) setSelectedMdmSource(firstEnabled._id);
+        }
+      } catch (err) {
+        console.error("Failed to load MDM sources:", err);
+      }
+    };
+    loadMdmSources();
+  }, [showHRMSModal]);
+
+  // When a source is picked, discover its fields + load any saved column/mapping
+  // config so the picker + import mapping populate before searching.
+  useEffect(() => {
+    if (!showHRMSModal) return;
+    const token = localStorage.getItem("authToken");
+    const headers = { Authorization: `Bearer ${token}` };
+    const src = selectedMdmSource
+      ? `?mdmSourceId=${encodeURIComponent(selectedMdmSource)}`
+      : "";
+    (async () => {
+      try {
+        const fRes = await fetch(`${API_CONFIG.API_URL}/users/hrms/fields${src}`, {
+          headers,
+          credentials: "include",
+        });
+        const f = await fRes.json();
+        const fields: string[] = (f.success && f.fields) || [];
+        setHrmsFields(fields);
+        if (f.success && typeof f.count === "number") {
+          setHrmsLoadMeta({
+            totalAvailable: f.count,
+            matchedCount: f.count,
+            loadedCount: 0,
+            loadMode: "all",
+          });
+        }
+
+        const cRes = await fetch(
+          `${API_CONFIG.API_URL}/users/hrms/field-config${src ? src + "&" : "?"}dataType=employees`,
+          { headers, credentials: "include" },
+        );
+        const c = await cRes.json();
+        const list: any[] = Array.isArray(c.data) ? c.data : [];
+        setPresets(list);
+        const def =
+          list.find((p) => p.name === "Default") || list[0] || null;
+        const defCols = pickDefaultCols(fields);
+        setPresetName(def?.name || "Default");
+        setSelectedCols(
+          def?.selectedFields?.length ? def.selectedFields : defCols,
+        );
+        setFieldMapping(def?.fieldMapping || {});
+      } catch (err) {
+        console.error("Failed to load HRMS fields/config:", err);
+      }
+    })();
+  }, [showHRMSModal, selectedMdmSource]);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+  const [hrmsProjectSearch, setHrmsProjectSearch] = useState("");
 
   const [saving, setSaving] = useState(false);
 
@@ -380,23 +594,39 @@ const UserManagement: React.FC<UserManagementProps> = ({
   };
 
   // Fetch users
-  const fetchUsers = async () => {
+  const fetchUsers = async (overrides?: {
+    page?: number;
+    search?: string;
+    roles?: string[];
+    statuses?: string[];
+    projects?: string[];
+    centers?: string[];
+    company?: string;
+  }) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
-      params.append("page", currentPage.toString());
+      const page = overrides?.page ?? currentPage;
+      const search = overrides?.search ?? searchQuery;
+      const rolesFilter = overrides?.roles ?? filterRoles;
+      const statusesFilter = overrides?.statuses ?? filterStatuses;
+      const projectsFilter = overrides?.projects ?? filterProjects;
+      const centersFilter = overrides?.centers ?? filterCenters;
+      const companyFilter = overrides?.company ?? filterCompany;
+
+      params.append("page", page.toString());
       params.append("limit", usersPerPage.toString());
-      if (searchQuery) params.append("search", searchQuery);
-      if (filterRoles.length > 0) params.append("role", filterRoles.join(","));
-      if (filterStatuses.length > 0)
-        params.append("isActive", filterStatuses.join(","));
+      if (search) params.append("search", search);
+      if (rolesFilter.length > 0) params.append("role", rolesFilter.join(","));
+      if (statusesFilter.length > 0)
+        params.append("isActive", statusesFilter.join(","));
 
       // Add project filter from dropdown
-      if (filterProjects.length > 0) {
-        params.append("project", filterProjects.join(","));
+      if (projectsFilter.length > 0) {
+        params.append("project", projectsFilter.join(","));
         console.log(
           "👤 [USER MGMT] Filtering by dropdown projects:",
-          filterProjects,
+          projectsFilter,
         );
       }
       // Filter by project based on viewMode from context (if no dropdown filter)
@@ -410,13 +640,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
       }
 
       // Add center filter from dropdown
-      if (filterCenters.length > 0) {
-        params.append("centers", filterCenters.join(","));
-        console.log("👤 [USER MGMT] Filtering by centers:", filterCenters);
+      if (centersFilter.length > 0) {
+        params.append("centers", centersFilter.join(","));
+        console.log("👤 [USER MGMT] Filtering by centers:", centersFilter);
       }
 
-      if (filterCompany) {
-        params.append("company", filterCompany);
+      if (companyFilter) {
+        params.append("company", companyFilter);
       }
 
       const token = localStorage.getItem("authToken");
@@ -636,6 +866,20 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  useEffect(() => {
+    if (recentlyImportedCodes.length === 0) return;
+    const timer = window.setTimeout(() => {
+      setRecentlyImportedCodes([]);
+    }, 15000);
+    return () => window.clearTimeout(timer);
+  }, [recentlyImportedCodes]);
+
+  useEffect(() => {
+    if (selectedEmployees.length === 0 && hrmsImportStep === "projects") {
+      setHrmsImportStep("employees");
+    }
+  }, [selectedEmployees.length, hrmsImportStep]);
 
   useEffect(() => {
     // Initial load
@@ -1167,26 +1411,28 @@ const UserManagement: React.FC<UserManagementProps> = ({
     try {
       setHrmsLoading(true);
 
-      // Build query based on employee codes input
-      let queryParam = "";
-      if (hrmsEmployeeCodes.trim()) {
-        // Split by comma and trim each code
-        const codes = hrmsEmployeeCodes
-          .split(",")
-          .map((c) => c.trim())
-          .filter((c) => c);
-        if (codes.length > 0) {
-          // Use first code as search query (HRMS API searches across all fields)
-          queryParam = codes[0];
-        }
-      } else {
-        // If no codes provided, use 'emp' to get all employees (matches all employeeCodes)
-        queryParam = "emp";
-      }
+      // Build query from the input. Blank = load ALL (backend allows empty);
+      // a value matches across every field (name, group code, designation…).
+      const queryParam = hrmsEmployeeCodes
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean)[0]
+        ? hrmsEmployeeCodes.split(",")[0].trim()
+        : "";
 
       const token = localStorage.getItem("authToken");
+      const params = new URLSearchParams();
+      params.set("query", queryParam);
+      params.set("loadMode", hrmsLoadMode);
+      if (selectedMdmSource) params.set("mdmSourceId", selectedMdmSource);
+      if (hrmsLoadMode === "range") {
+        const start = Math.max(1, Number(hrmsRangeStart) || 1);
+        const end = Math.max(start, Number(hrmsRangeEnd) || start);
+        params.set("start", String(start));
+        params.set("end", String(end));
+      }
       const response = await fetch(
-        `${API_CONFIG.API_URL}/users/hrms/search?query=${encodeURIComponent(queryParam)}`,
+        `${API_CONFIG.API_URL}/users/hrms/search?${params.toString()}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -1200,6 +1446,22 @@ const UserManagement: React.FC<UserManagementProps> = ({
       if (data.success && data.data) {
         // API already searches across all fields, just use the results
         setHrmsEmployees(data.data);
+        if (data.meta) setHrmsLoadMeta(data.meta);
+        setExistingCodes(
+          Array.isArray(data.existingCodes) ? data.existingCodes : [],
+        );
+        setSelectedEmployees([]);
+        setSelectedProjects([]);
+        setHrmsPage(1);
+        setHrmsImportStep("employees");
+        setHrmsColumnSearch("");
+        // Capture discovered fields → seed default columns if not set yet
+        if (Array.isArray(data.fields) && data.fields.length) {
+          setHrmsFields(data.fields);
+          setSelectedCols((prev) =>
+            prev.length ? prev : pickDefaultCols(data.fields),
+          );
+        }
 
         // Show message if no results found
         if (data.data.length === 0) {
@@ -1216,7 +1478,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
         // Clear the employee codes input after loading
         setHrmsEmployeeCodes("");
       } else {
-        alert(data.error || "Failed to fetch employees from HRMS");
+        // Surface the real backend reason (e.g. "MDM source … returned HTTP 403")
+        alert(
+          data.message ||
+            data.error ||
+            "Failed to fetch employees from HRMS",
+        );
         setHrmsEmployees([]);
       }
     } catch (error) {
@@ -1227,6 +1494,218 @@ const UserManagement: React.FC<UserManagementProps> = ({
       setHrmsLoading(false);
     }
   };
+
+  // Save the current columns + mapping into a named preset (separate collection)
+  const saveFieldConfig = async (nameArg?: string) => {
+    const name = (nameArg || presetName || "Default").trim();
+    try {
+      setCfgSaving(true);
+      setCfgMsg("");
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(`${API_CONFIG.API_URL}/users/hrms/field-config`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          mdmSourceId: selectedMdmSource || undefined,
+          dataType: "employees",
+          name,
+          selectedFields: selectedCols,
+          fieldMapping,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCfgMsg(`Saved "${name}" ✓`);
+        setPresetName(name);
+        // refresh preset list
+        setPresets((prev) => {
+          const others = prev.filter((p) => p.name !== name);
+          return [...others, data.data].sort((a, b) =>
+            a.name.localeCompare(b.name),
+          );
+        });
+      } else {
+        setCfgMsg(data.error || "Failed to save");
+      }
+    } catch (e) {
+      setCfgMsg("Failed to save");
+    } finally {
+      setCfgSaving(false);
+      setTimeout(() => setCfgMsg(""), 2500);
+    }
+  };
+
+  const applyPreset = (name: string) => {
+    setPresetName(name);
+    const p = presets.find((x) => x.name === name);
+    if (p) {
+      setSelectedCols(p.selectedFields?.length ? p.selectedFields : selectedCols);
+      setFieldMapping(p.fieldMapping || {});
+    }
+  };
+
+  const saveAsPreset = () => {
+    const name = window.prompt("Save preset as (name):", presetName || "Default");
+    if (name && name.trim()) saveFieldConfig(name.trim());
+  };
+
+  const deletePreset = async () => {
+    if (!presetName) return;
+    if (!window.confirm(`Delete preset "${presetName}"?`)) return;
+    const token = localStorage.getItem("authToken");
+    const src = selectedMdmSource
+      ? `mdmSourceId=${encodeURIComponent(selectedMdmSource)}&`
+      : "";
+    await fetch(
+      `${API_CONFIG.API_URL}/users/hrms/field-config?${src}dataType=employees&name=${encodeURIComponent(presetName)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      },
+    );
+    setPresets((prev) => prev.filter((p) => p.name !== presetName));
+    setPresetName("Default");
+    setCfgMsg("Preset deleted");
+    setTimeout(() => setCfgMsg(""), 2000);
+  };
+
+  // Rows after the in-modal search box (matches across every raw field).
+  const hrmsFiltered = hrmsEmployees.filter((e) =>
+    hrmsMatch(e, hrmsSearchQuery),
+  );
+  const isImported = (code?: string) => !!code && existingCodes.includes(code);
+  const hrmsTotalPages = Math.max(
+    1,
+    Math.ceil(hrmsFiltered.length / HRMS_PAGE_SIZE),
+  );
+  // Resolve a row to user-account fields using the CURRENT mapping (preview).
+  const previewResolved = (emp: any) => {
+    const get = (target: string) => {
+      const mapped = fieldMapping[target];
+      if (mapped) return hrmsCell(emp, mapped);
+      const v = emp?.[target];
+      return v === undefined || v === null || v === "" ? "—" : String(v);
+    };
+    let firstName = get("firstName");
+    let lastName = get("lastName");
+    if (fieldMapping.fullName) {
+      const full = hrmsCell(emp, fieldMapping.fullName);
+      const parts = full.split(/\s+/);
+      firstName = parts.shift() || firstName;
+      lastName = parts.join(" ") || lastName;
+    }
+    return {
+      employeeCode: get("employeeCode"),
+      name: `${firstName} ${lastName}`.trim(),
+      email: get("email"),
+      mobile: get("mobile"),
+      department: get("department"),
+      designation: get("designation"),
+    };
+  };
+  const previewEmp =
+    hrmsEmployees.find((e) => selectedEmployees.includes(e.employeeCode)) ||
+    hrmsFiltered[0];
+  const hrmsColumnSearchTerm = hrmsColumnSearch.trim().toLowerCase();
+  const hrmsVisibleFields = useMemo(() => {
+    if (!hrmsColumnSearchTerm) return hrmsFields;
+    return hrmsFields.filter((field) =>
+      field.toLowerCase().includes(hrmsColumnSearchTerm),
+    );
+  }, [hrmsColumnSearchTerm, hrmsFields]);
+  const hrmsSelectableCodes = hrmsFiltered
+    .map((e) => e.employeeCode)
+    .filter((code) => code && !isImported(code));
+  const hrmsImportedCount = hrmsFiltered.length - hrmsSelectableCodes.length;
+  const hrmsAllSelectableSelected =
+    hrmsSelectableCodes.length > 0 &&
+    hrmsSelectableCodes.every((code) => selectedEmployees.includes(code));
+  const hrmsRequiresProjectSelection =
+    viewMode === "unified" &&
+    selectedEmployees.length > 0 &&
+    selectedProjects.length === 0;
+  const hrmsCanSubmit =
+    selectedEmployees.length > 0 && !hrmsRequiresProjectSelection;
+  const hrmsPrimaryDisabled =
+    hrmsImportStep === "employees"
+      ? selectedEmployees.length === 0
+      : saving || !hrmsCanSubmit;
+  const hrmsFilteredProjects = useMemo(() => {
+    const query = hrmsProjectSearch.trim().toLowerCase();
+    if (!query) return projects;
+
+    return projects.filter((project) => {
+      const name = project.name?.toLowerCase() || "";
+      const code = project.code?.toLowerCase() || "";
+      const status = project.status?.toLowerCase() || "";
+      return (
+        name.includes(query) ||
+        code.includes(query) ||
+        status.includes(query)
+      );
+    });
+  }, [hrmsProjectSearch, projects]);
+  const selectedHrmsProjects = projects.filter((project) =>
+    selectedProjects.includes(project._id),
+  );
+  const visibleHrmsProjectIds = hrmsFilteredProjects.map((project) => project._id);
+  const allVisibleHrmsProjectsSelected =
+    visibleHrmsProjectIds.length > 0 &&
+    visibleHrmsProjectIds.every((id) => selectedProjects.includes(id));
+  const selectedVisibleHrmsProjectCount = visibleHrmsProjectIds.filter((id) =>
+    selectedProjects.includes(id),
+  ).length;
+
+  const toggleVisibleHrmsProjects = () => {
+    if (allVisibleHrmsProjectsSelected) {
+      setSelectedProjects((prev) =>
+        prev.filter((id) => !visibleHrmsProjectIds.includes(id)),
+      );
+      return;
+    }
+
+    setSelectedProjects((prev) =>
+      Array.from(new Set([...prev, ...visibleHrmsProjectIds])),
+    );
+  };
+
+  const closeHrmsModal = () => {
+    setShowHRMSModal(false);
+    setHrmsEmployees([]);
+    setSelectedEmployees([]);
+    setSelectedProjects([]);
+    setHrmsProjectSearch("");
+    setHrmsColumnSearch("");
+    setHrmsLoadMeta(null);
+    setHrmsLoadMode("all");
+    setHrmsRangeStart("1");
+    setHrmsRangeEnd("50");
+    setHrmsEmployeeCodes("");
+    setHrmsSearchQuery("");
+    setHrmsPage(1);
+    setHrmsImportStep("employees");
+    setShowColPicker(false);
+    setShowMapping(false);
+    setShowPreview(false);
+    setCfgMsg("");
+  };
+
+  const hrmsToolbarButtonStyle = (active = false): React.CSSProperties => ({
+    padding: "9px 14px",
+    background: active ? "#fff7ed" : "white",
+    border: `1px solid ${active ? "#fdba74" : "#d1d5db"}`,
+    borderRadius: 10,
+    fontSize: 13,
+    cursor: "pointer",
+    color: active ? "#c2410c" : "#374151",
+    fontWeight: active ? 600 : 500,
+    boxShadow: active ? "0 4px 10px rgba(249, 115, 22, 0.10)" : "none",
+  });
 
   // Handle HRMS confirm - Add selected employees
   const handleConfirmHRMS = async () => {
@@ -1240,11 +1719,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
       );
       return;
     }
-
-    if (!selectedRole) {
-      alert(
-        getText("Please select a role", "कृपया रोल निवडा", "कृपया रोल निवडा"),
-      );
+    if (hrmsRequiresProjectSelection) {
+      alert("Select at least one project before importing HRMS users.");
       return;
     }
 
@@ -1252,6 +1728,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
       setSaving(true);
       let successCount = 0;
       let failCount = 0;
+      const importedCodes: string[] = [];
+      const failedImports: string[] = [];
+      const importProjectIds =
+        selectedProjects.length > 0
+          ? selectedProjects
+          : currentProjectId
+            ? [currentProjectId]
+            : [];
 
       // Add each selected employee
       for (const employeeId of selectedEmployees) {
@@ -1271,9 +1755,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
             credentials: "include",
             body: JSON.stringify({
               employeeCode: employee.employeeCode,
-              role: selectedRole,
-              projects: selectedProjects,
+              projects: importProjectIds,
               syncFromHRMS: true,
+              mdmSourceId: selectedMdmSource || undefined,
+              fieldMapping,
             }),
           });
 
@@ -1281,33 +1766,66 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
           if (data.success) {
             successCount++;
+            importedCodes.push(employee.employeeCode);
           } else {
             failCount++;
+            const reason = [data.error, data.message]
+              .filter(Boolean)
+              .join(": ");
+            failedImports.push(
+              `${employee.employeeCode}: ${reason || "Unknown error"}`,
+            );
             console.error(
               `Failed to add ${employee.employeeCode}:`,
-              data.error,
+              reason,
             );
           }
         } catch (error) {
           failCount++;
+          failedImports.push(`${employee.employeeCode}: Network or server error`);
           console.error(`Error adding ${employee.employeeCode}:`, error);
         }
       }
 
+      const failureDetails =
+        failedImports.length > 0
+          ? `\n\nFailed:\n${failedImports.slice(0, 5).join("\n")}${
+              failedImports.length > 5
+                ? `\n...and ${failedImports.length - 5} more`
+                : ""
+            }`
+          : "";
       const message = getText(
-        `Added ${successCount} user(s) successfully${failCount > 0 ? `, ${failCount} failed` : ""}`,
+        `Added ${successCount} user(s) successfully${failCount > 0 ? `, ${failCount} failed` : ""}${failureDetails}`,
         `${successCount} वापरकर्ते यशस्वीरित्या जोडले${failCount > 0 ? `, ${failCount} अयशस्वी` : ""}`,
         `${successCount} वापरकर्ते यशस्वीरित्या जोडले${failCount > 0 ? `, ${failCount} अयशस्वी` : ""}`,
       );
 
       alert(message);
 
-      setShowHRMSModal(false);
-      setHrmsEmployees([]);
-      setSelectedEmployees([]);
-      setSelectedRole("");
-      setSelectedProjects([]);
-      fetchUsers();
+      if (successCount > 0) {
+        setRecentlyImportedCodes(importedCodes);
+        setSearchQuery("");
+        setDebouncedSearchQuery("");
+        setFilterRoles([]);
+        setFilterStatuses([]);
+        setFilterCenters([]);
+        setFilterCompany("");
+        setFilterProjects(importProjectIds);
+        setCurrentPage(1);
+        navigate("/users");
+        await fetchUsers({
+          page: 1,
+          search: "",
+          roles: [],
+          statuses: [],
+          projects: importProjectIds,
+          centers: [],
+          company: "",
+        });
+      }
+
+      closeHrmsModal();
     } catch (error) {
       console.error("Error adding users from HRMS:", error);
       alert("Failed to add users");
@@ -1741,15 +2259,15 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               width: "48px",
               height: "48px",
-              border: "3px solid #e2e8f0",
-              borderTop: "3px solid #4f46e5",
+              border: "3px solid #E5E7EB",
+              borderTop: "3px solid #2563EB",
               borderRadius: "50%",
               animation: "spin 1s linear infinite",
             }}
           ></div>
           <p
             style={{
-              color: "#475569",
+              color: "#6B7280",
               fontSize: "14px",
               margin: 0,
               fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
@@ -1794,7 +2312,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
         padding: isMobileViewport ? "14px 10px 20px" : "24px 20px 32px",
         maxWidth: "1380px",
         margin: "0 auto",
-        background: "#f8fafc",
+        background: "#f6f8fc",
         minHeight: "100vh",
         fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
       }}
@@ -1804,11 +2322,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
         style={{
           background: "#ffffff",
           padding: "22px 24px",
-          borderRadius: "16px",
+          borderRadius: "14px",
           marginBottom: "16px",
-          border: "1px solid #e2e8f0",
-          boxShadow:
-            "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
+          border: "1px solid #e7ebf3",
+          boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
         }}
       >
         <h1
@@ -1816,9 +2333,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
             margin: "0 0 6px 0",
             fontSize: "24px",
             fontWeight: 700,
-            color: "#0f172a",
-            letterSpacing: "-0.02em",
-            fontFamily: '"DM Serif Display", Georgia, serif',
+            color: "#111827",
+            letterSpacing: "-0.01em",
+            fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
           }}
         >
           {getText(
@@ -1831,7 +2348,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
           style={{
             margin: 0,
             fontSize: "14px",
-            color: "#475569",
+            color: "#6b7280",
             fontWeight: 400,
             fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
           }}
@@ -1857,8 +2374,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
           {
             label: getText("Total Users", "एकूण वापरकर्ते", "एकूण वापरकर्ते"),
             value: userStats.total,
-            color: "#4f46e5",
-            bg: "#eef2ff",
+            color: "#1d4ed8",
+            bg: "#eff6ff",
           },
           {
             label: getText("Active", "सक्रिय", "सक्रिय"),
@@ -1875,25 +2392,24 @@ const UserManagement: React.FC<UserManagementProps> = ({
           {
             label: getText("Projects", "प्रकल्प", "प्रकल्प"),
             value: userStats.projects,
-            color: "#4f46e5",
-            bg: "#eef2ff",
+            color: "#7c3aed",
+            bg: "#f5f3ff",
           },
         ].map((stat) => (
           <div
             key={stat.label}
             style={{
               background: "#ffffff",
-              border: "1px solid #e2e8f0",
+              border: "1px solid #e7ebf3",
               borderRadius: "12px",
               padding: "14px 16px",
-              boxShadow:
-                "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
+              boxShadow: "0 2px 10px rgba(15, 23, 42, 0.04)",
             }}
           >
             <div
               style={{
                 fontSize: "12px",
-                color: "#475569",
+                color: "#6b7280",
                 marginBottom: "8px",
                 fontWeight: 600,
                 textTransform: "uppercase",
@@ -1932,11 +2448,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
           alignItems: "start",
           marginBottom: "16px",
           background: "#ffffff",
-          borderRadius: "16px",
-          border: "1px solid #e2e8f0",
+          borderRadius: "14px",
+          border: "1px solid #e7ebf3",
           padding: "14px",
-          boxShadow:
-            "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
+          boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
         }}
       >
         {/* Filters Section */}
@@ -1963,7 +2478,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               height="18"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="#94a3b8"
+              stroke="#9CA3AF"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -1991,8 +2506,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 width: "100%",
                 height: "42px",
                 padding: "10px 14px 10px 44px",
-                border: "1.5px solid #e2e8f0",
-                borderRadius: "8px",
+                border: "1px solid #d7deea",
+                borderRadius: "10px",
                 fontSize: "14px",
                 outline: "none",
                 transition: "all 0.2s ease",
@@ -2001,12 +2516,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
               }}
               onFocus={(e) => {
-                e.target.style.borderColor = "#4f46e5";
+                e.target.style.borderColor = "#84caff";
                 e.target.style.boxShadow =
-                  "0 0 0 3px rgba(79, 70, 229, 0.18)";
+                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
               }}
               onBlur={(e) => {
-                e.target.style.borderColor = "#e2e8f0";
+                e.target.style.borderColor = "#d7deea";
                 e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
               }}
             />
@@ -2037,8 +2552,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               height: "42px",
               padding: "8px 10px",
-              border: "1.5px solid #e2e8f0",
-              borderRadius: "8px",
+              border: "1px solid #d7deea",
+              borderRadius: "10px",
               fontSize: "14px",
               outline: "none",
               backgroundColor: "white",
@@ -2048,11 +2563,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
               boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
             }}
             onFocus={(e) => {
-              e.target.style.borderColor = "#4f46e5";
-              e.target.style.boxShadow = "0 0 0 3px rgba(79, 70, 229, 0.18)";
+              e.target.style.borderColor = "#84caff";
+              e.target.style.boxShadow = "0 0 0 3px rgba(132, 202, 255, 0.25)";
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#e2e8f0";
+              e.target.style.borderColor = "#d7deea";
               e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
@@ -2093,8 +2608,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               height: "42px",
               padding: "8px 10px",
-              border: "1.5px solid #e2e8f0",
-              borderRadius: "8px",
+              border: "1px solid #d7deea",
+              borderRadius: "10px",
               fontSize: "14px",
               outline: "none",
               backgroundColor:
@@ -2108,13 +2623,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
             }}
             onFocus={(e) => {
               if (projectScopeForFilters.length > 0) {
-                e.target.style.borderColor = "#4f46e5";
+                e.target.style.borderColor = "#84caff";
                 e.target.style.boxShadow =
-                  "0 0 0 3px rgba(79, 70, 229, 0.18)";
+                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
               }
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#e2e8f0";
+              e.target.style.borderColor = "#d7deea";
               e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
@@ -2151,8 +2666,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               height: "42px",
               padding: "8px 10px",
-              border: "1.5px solid #e2e8f0",
-              borderRadius: "8px",
+              border: "1px solid #d7deea",
+              borderRadius: "10px",
               fontSize: "14px",
               outline: "none",
               backgroundColor:
@@ -2166,13 +2681,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
             }}
             onFocus={(e) => {
               if (projectScopeForFilters.length > 0) {
-                e.target.style.borderColor = "#4f46e5";
+                e.target.style.borderColor = "#84caff";
                 e.target.style.boxShadow =
-                  "0 0 0 3px rgba(79, 70, 229, 0.18)";
+                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
               }
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#e2e8f0";
+              e.target.style.borderColor = "#d7deea";
               e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
@@ -2214,8 +2729,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               height: "42px",
               padding: "8px 10px",
-              border: "1.5px solid #e2e8f0",
-              borderRadius: "8px",
+              border: "1px solid #d7deea",
+              borderRadius: "10px",
               fontSize: "14px",
               outline: "none",
               backgroundColor:
@@ -2229,13 +2744,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
             }}
             onFocus={(e) => {
               if (projectScopeForFilters.length > 0) {
-                e.target.style.borderColor = "#4f46e5";
+                e.target.style.borderColor = "#84caff";
                 e.target.style.boxShadow =
-                  "0 0 0 3px rgba(79, 70, 229, 0.18)";
+                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
               }
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#e2e8f0";
+              e.target.style.borderColor = "#d7deea";
               e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
@@ -2260,8 +2775,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               height: "42px",
               padding: "8px 10px",
-              border: "1.5px solid #e2e8f0",
-              borderRadius: "8px",
+              border: "1px solid #d7deea",
+              borderRadius: "10px",
               fontSize: "14px",
               outline: "none",
               backgroundColor: "white",
@@ -2271,11 +2786,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
               boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
             }}
             onFocus={(e) => {
-              e.target.style.borderColor = "#4f46e5";
-              e.target.style.boxShadow = "0 0 0 3px rgba(79, 70, 229, 0.18)";
+              e.target.style.borderColor = "#84caff";
+              e.target.style.boxShadow = "0 0 0 3px rgba(132, 202, 255, 0.25)";
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#e2e8f0";
+              e.target.style.borderColor = "#d7deea";
               e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
@@ -2304,7 +2819,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               flexWrap: "wrap",
               gap: "12px",
               fontSize: "12px",
-              color: "#475569",
+              color: "#6B7280",
             }}
           >
             <span>
@@ -2320,7 +2835,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 border: "none",
                 background: "transparent",
-                color: "#4f46e5",
+                color: "#2563EB",
                 cursor: "pointer",
                 fontSize: "12px",
                 fontWeight: 600,
@@ -2516,30 +3031,28 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 alignItems: "center",
                 gap: "8px",
                 padding: "10px 16px",
-                background: "linear-gradient(160deg, #4f46e5, #4338ca)",
-                color: "#fff",
+                background: "#2563EB",
+                color: "white",
                 border: "none",
                 borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: 600,
                 cursor: "pointer",
-                boxShadow: "0 4px 14px rgba(67,56,202,.35)",
+                boxShadow: "0 2px 6px rgba(37, 99, 235, 0.24)",
                 transition: "all 0.2s ease",
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
                 outline: "none",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background =
-                  "linear-gradient(160deg, #4338ca, #3730a3)";
+                e.currentTarget.style.background = "#1d4ed8";
                 e.currentTarget.style.boxShadow =
-                  "0 6px 18px rgba(67,56,202,.42)";
+                  "0 4px 12px rgba(37, 99, 235, 0.32)";
                 e.currentTarget.style.transform = "translateY(-1px)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background =
-                  "linear-gradient(160deg, #4f46e5, #4338ca)";
+                e.currentTarget.style.background = "#2563EB";
                 e.currentTarget.style.boxShadow =
-                  "0 4px 14px rgba(67,56,202,.35)";
+                  "0 2px 6px rgba(37, 99, 235, 0.24)";
                 e.currentTarget.style.transform = "translateY(0)";
               }}
             >
@@ -2607,11 +3120,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
       <div
         style={{
           background: "white",
-          borderRadius: "16px",
-          border: "1px solid #e2e8f0",
+          borderRadius: "14px",
+          border: "1px solid #e7ebf3",
           overflow: "hidden",
-          boxShadow:
-            "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
+          boxShadow: "0 4px 16px rgba(15, 23, 42, 0.05)",
         }}
       >
         {filteredUsers.length === 0 ? (
@@ -2626,7 +3138,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 width: "96px",
                 height: "96px",
                 margin: "0 auto 24px",
-                background: "linear-gradient(135deg, #eef2ff 0%, #eef2ff 100%)",
+                background: "linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)",
                 borderRadius: "50%",
                 display: "flex",
                 alignItems: "center",
@@ -2638,7 +3150,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 height="48"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#4f46e5"
+                stroke="#2563EB"
                 strokeWidth="1.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -2654,7 +3166,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 margin: "0 0 12px 0",
                 fontSize: "20px",
                 fontWeight: 700,
-                color: "#0f172a",
+                color: "#111827",
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
               }}
             >
@@ -2667,7 +3179,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             <p
               style={{
                 margin: "0",
-                color: "#475569",
+                color: "#6B7280",
                 fontSize: "14px",
                 maxWidth: "420px",
                 marginLeft: "auto",
@@ -2696,7 +3208,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               <div
                 key={user._id}
                 style={{
-                  border: "1px solid #e2e8f0",
+                  border: "1px solid #e5e7eb",
                   borderRadius: "12px",
                   padding: "12px",
                   background: selectedUserIds.has(user._id)
@@ -2718,7 +3230,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         fontSize: "15px",
                         fontWeight: 700,
-                        color: "#0f172a",
+                        color: "#111827",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                       }}
@@ -2728,13 +3240,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <div
                       style={{
                         fontSize: "12px",
-                        color: "#475569",
+                        color: "#6b7280",
                         marginTop: "2px",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                       }}
                     >
-                      {user.email}
+                      <UserEmailDisplay email={user.email} />
                     </div>
                   </div>
                   {hasPermission("USER_DELETE") && (
@@ -2759,20 +3271,20 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     marginTop: "10px",
                   }}
                 >
-                  <div style={{ fontSize: "12px", color: "#475569" }}>
+                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
                     {getText("Role", "रोल", "रोल")}:{" "}
                     {user.role?.name ||
                       getText("No Role", "भूमिका नाही", "भूमिका नाही")}
                   </div>
-                  <div style={{ fontSize: "12px", color: "#475569" }}>
+                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
                     {getText("Employee", "कर्मचारी", "कर्मचारी")}:{" "}
                     {user.employeeCode || "-"}
                   </div>
-                  <div style={{ fontSize: "12px", color: "#475569" }}>
+                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
                     {getText("Projects", "प्रकल्प", "प्रकल्प")}:{" "}
                     {user.projects?.length || 0}
                   </div>
-                  <div style={{ fontSize: "12px", color: "#475569" }}>
+                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
                     {getText("Centers", "केंद्रे", "केंद्रे")}:{" "}
                     {user.centers?.length || 0}
                   </div>
@@ -2848,7 +3360,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         fontSize: "12px",
                         fontWeight: 600,
-                        color: user.isActive ? "#047857" : "#475569",
+                        color: user.isActive ? "#047857" : "#6B7280",
                       }}
                     >
                       {user.isActive
@@ -2863,12 +3375,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         onClick={() => handleEditUser(user)}
                         style={{
                           padding: "6px 8px",
-                          border: "1.5px solid #e2e8f0",
+                          border: "1px solid #d1d5db",
                           borderRadius: "8px",
                           background: "#ffffff",
                           cursor: "pointer",
                           fontSize: "12px",
-                          color: "#4f46e5",
+                          color: "#2563eb",
                         }}
                       >
                         {getText("Edit", "संपादित", "संपादित")}
@@ -2926,7 +3438,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <tr
                   style={{
                     background: "#f8fafc",
-                    borderBottom: "1px solid #e2e8f0",
+                    borderBottom: "1px solid #e7ebf3",
                   }}
                 >
                   {hasPermission("USER_DELETE") && (
@@ -2957,11 +3469,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      color: "#94a3b8",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
                       textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      letterSpacing: "0.05em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -2972,11 +3484,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      color: "#94a3b8",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
                       textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      letterSpacing: "0.05em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -2987,11 +3499,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      color: "#94a3b8",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
                       textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      letterSpacing: "0.05em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3002,11 +3514,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      color: "#94a3b8",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
                       textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      letterSpacing: "0.05em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3017,11 +3529,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      color: "#94a3b8",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
                       textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      letterSpacing: "0.05em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3032,11 +3544,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      color: "#94a3b8",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
                       textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      letterSpacing: "0.05em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3047,11 +3559,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      color: "#94a3b8",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
                       textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      letterSpacing: "0.05em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3062,11 +3574,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      color: "#94a3b8",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
                       textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      letterSpacing: "0.05em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3077,11 +3589,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      color: "#94a3b8",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
                       textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      letterSpacing: "0.05em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3097,15 +3609,20 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       borderBottom:
                         index < filteredUsers.length - 1
-                          ? "1px solid #e2e8f0"
+                          ? "1px solid #E5E7EB"
                           : "none",
                       background: selectedUserIds.has(user._id)
                         ? "#FEF2F2"
-                        : "white",
+                        : recentlyImportedCodes.includes(user.employeeCode || "")
+                          ? "#ECFDF5"
+                          : "white",
                       transition: "background 0.15s ease",
                     }}
                     onMouseEnter={(e) => {
-                      if (!selectedUserIds.has(user._id))
+                      if (
+                        !selectedUserIds.has(user._id) &&
+                        !recentlyImportedCodes.includes(user.employeeCode || "")
+                      )
                         e.currentTarget.style.background = "#F9FAFB";
                     }}
                     onMouseLeave={(e) => {
@@ -3113,7 +3630,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         user._id,
                       )
                         ? "#FEF2F2"
-                        : "white";
+                        : recentlyImportedCodes.includes(user.employeeCode || "")
+                          ? "#ECFDF5"
+                          : "white";
                     }}
                   >
                     {hasPermission("USER_DELETE") && (
@@ -3141,7 +3660,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         <div
                           style={{
                             fontWeight: 600,
-                            color: "#0f172a",
+                            color: "#111827",
                             fontSize: "14px",
                             fontFamily:
                               '"Noto Sans", system-ui, -apple-system, sans-serif',
@@ -3149,11 +3668,31 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         >
                           {user.firstName} {user.lastName}
                         </div>
+                        {recentlyImportedCodes.includes(
+                          user.employeeCode || "",
+                        ) && (
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              marginTop: "6px",
+                              padding: "3px 8px",
+                              borderRadius: 999,
+                              background: "#dcfce7",
+                              color: "#166534",
+                              fontSize: 11,
+                              fontWeight: 700,
+                              border: "1px solid #bbf7d0",
+                            }}
+                          >
+                            Imported now
+                          </span>
+                        )}
                         {user.mobile && (
                           <div
                             style={{
                               fontSize: "12px",
-                              color: "#475569",
+                              color: "#6B7280",
                               marginTop: "4px",
                               display: "flex",
                               alignItems: "center",
@@ -3167,7 +3706,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               height="12"
                               viewBox="0 0 24 24"
                               fill="none"
-                              stroke="#475569"
+                              stroke="#6B7280"
                               strokeWidth="2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
@@ -3191,12 +3730,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         padding: "16px 24px",
                         fontSize: "14px",
-                        color: "#475569",
+                        color: "#6B7280",
                         fontFamily:
                           '"Noto Sans", system-ui, -apple-system, sans-serif',
                       }}
                     >
-                      {user.email}
+                      <UserEmailDisplay email={user.email} />
                     </td>
                     <td style={{ padding: "16px 24px" }}>
                       {user.employeeCode ? (
@@ -3205,9 +3744,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             display: "inline-flex",
                             alignItems: "center",
                             padding: "4px 10px",
-                            backgroundColor: "#eef2ff",
-                            color: "#4f46e5",
-                            borderRadius: "12px",
+                            backgroundColor: "#EFF6FF",
+                            color: "#1d4ed8",
+                            borderRadius: "6px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3217,7 +3756,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           {user.employeeCode}
                         </span>
                       ) : (
-                        <span style={{ color: "#94a3b8", fontSize: "14px" }}>
+                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
                           -
                         </span>
                       )}
@@ -3231,7 +3770,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             padding: "4px 10px",
                             backgroundColor: "#F3E8FF",
                             color: "#7e22ce",
-                            borderRadius: "12px",
+                            borderRadius: "6px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3248,7 +3787,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             padding: "4px 10px",
                             backgroundColor: "#FEF2F2",
                             color: "#dc2626",
-                            borderRadius: "12px",
+                            borderRadius: "6px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3268,7 +3807,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             gap: "6px",
                             padding: "4px 10px",
                             background: "#F0FDF4",
-                            borderRadius: "12px",
+                            borderRadius: "6px",
                           }}
                         >
                           <svg
@@ -3297,7 +3836,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           </span>
                         </div>
                       ) : (
-                        <span style={{ color: "#94a3b8", fontSize: "14px" }}>
+                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
                           -
                         </span>
                       )}
@@ -3311,7 +3850,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             gap: "6px",
                             padding: "4px 10px",
                             background: "#FEF3C7",
-                            borderRadius: "12px",
+                            borderRadius: "6px",
                           }}
                         >
                           <svg
@@ -3340,7 +3879,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           </span>
                         </div>
                       ) : (
-                        <span style={{ color: "#94a3b8", fontSize: "14px" }}>
+                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
                           -
                         </span>
                       )}
@@ -3355,7 +3894,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             padding: "4px 10px",
                             backgroundColor: "#ECFDF5",
                             color: "#065F46",
-                            borderRadius: "12px",
+                            borderRadius: "6px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3372,7 +3911,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             padding: "4px 10px",
                             backgroundColor: "#FFF7ED",
                             color: "#92400E",
-                            borderRadius: "12px",
+                            borderRadius: "6px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3384,7 +3923,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             : user.company}
                         </span>
                       ) : (
-                        <span style={{ color: "#94a3b8", fontSize: "14px" }}>
+                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
                           -
                         </span>
                       )}
@@ -3457,9 +3996,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             backgroundColor: user.isActive
                               ? "#DCFCE7"
                               : "#F3F4F6",
-                            color: user.isActive ? "#047857" : "#475569",
+                            color: user.isActive ? "#047857" : "#6B7280",
                             padding: "4px 10px",
-                            borderRadius: "12px",
+                            borderRadius: "6px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3485,19 +4024,19 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               alignItems: "center",
                               justifyContent: "center",
                               background: "white",
-                              border: "1.5px solid #e2e8f0",
+                              border: "1.5px solid #E5E7EB",
                               borderRadius: "8px",
                               cursor: "pointer",
                               transition: "all 0.15s ease",
                               outline: "none",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#eef2ff";
-                              e.currentTarget.style.borderColor = "#4f46e5";
+                              e.currentTarget.style.background = "#EFF6FF";
+                              e.currentTarget.style.borderColor = "#2563EB";
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = "white";
-                              e.currentTarget.style.borderColor = "#e2e8f0";
+                              e.currentTarget.style.borderColor = "#E5E7EB";
                             }}
                             title={getText(
                               "Edit",
@@ -3510,7 +4049,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               height="16"
                               viewBox="0 0 24 24"
                               fill="none"
-                              stroke="#475569"
+                              stroke="#6B7280"
                               strokeWidth="2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
@@ -3532,7 +4071,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                 alignItems: "center",
                                 justifyContent: "center",
                                 background: "white",
-                                border: "1.5px solid #e2e8f0",
+                                border: "1.5px solid #E5E7EB",
                                 borderRadius: "8px",
                                 cursor: "pointer",
                                 transition: "all 0.15s ease",
@@ -3544,7 +4083,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               }}
                               onMouseLeave={(e) => {
                                 e.currentTarget.style.background = "white";
-                                e.currentTarget.style.borderColor = "#e2e8f0";
+                                e.currentTarget.style.borderColor = "#E5E7EB";
                               }}
                               title={getText(
                                 "Login as this user",
@@ -3579,7 +4118,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               alignItems: "center",
                               justifyContent: "center",
                               background: "white",
-                              border: "1.5px solid #e2e8f0",
+                              border: "1.5px solid #E5E7EB",
                               borderRadius: "8px",
                               cursor: "pointer",
                               transition: "all 0.15s ease",
@@ -3591,7 +4130,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = "white";
-                              e.currentTarget.style.borderColor = "#e2e8f0";
+                              e.currentTarget.style.borderColor = "#E5E7EB";
                             }}
                             title={getText(
                               "View Credentials",
@@ -3604,7 +4143,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               height="16"
                               viewBox="0 0 24 24"
                               fill="none"
-                              stroke="#475569"
+                              stroke="#6B7280"
                               strokeWidth="2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
@@ -3625,7 +4164,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               alignItems: "center",
                               justifyContent: "center",
                               background: "white",
-                              border: "1.5px solid #e2e8f0",
+                              border: "1.5px solid #E5E7EB",
                               borderRadius: "8px",
                               cursor: "pointer",
                               transition: "all 0.15s ease",
@@ -3637,7 +4176,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = "white";
-                              e.currentTarget.style.borderColor = "#e2e8f0";
+                              e.currentTarget.style.borderColor = "#E5E7EB";
                             }}
                             title={getText("Delete", "हटवा", "हटवा")}
                           >
@@ -3675,7 +4214,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             padding: "14px 16px",
             background: "white",
             borderRadius: "12px",
-            border: "1px solid #e2e8f0",
+            border: "1px solid #e7ebf3",
             boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)",
             display: "flex",
             justifyContent: isMobileViewport ? "center" : "space-between",
@@ -3688,7 +4227,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               fontSize: "14px",
-              color: "#475569",
+              color: "#6b7280",
               fontWeight: 500,
             }}
           >
@@ -3713,8 +4252,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 padding: "8px 12px",
                 background: currentPage === 1 ? "#f3f4f6" : "white",
-                color: currentPage === 1 ? "#9ca3af" : "#4f46e5",
-                border: "1px solid #e2e8f0",
+                color: currentPage === 1 ? "#9ca3af" : "#667eea",
+                border: "1px solid #e5e7eb",
                 borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: 600,
@@ -3724,13 +4263,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               onMouseEnter={(e) => {
                 if (currentPage !== 1) {
                   e.currentTarget.style.background = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#4f46e5";
+                  e.currentTarget.style.borderColor = "#667eea";
                 }
               }}
               onMouseLeave={(e) => {
                 if (currentPage !== 1) {
                   e.currentTarget.style.background = "white";
-                  e.currentTarget.style.borderColor = "#e2e8f0";
+                  e.currentTarget.style.borderColor = "#e5e7eb";
                 }
               }}
             >
@@ -3743,8 +4282,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 padding: "8px 12px",
                 background: currentPage === 1 ? "#f3f4f6" : "white",
-                color: currentPage === 1 ? "#9ca3af" : "#4f46e5",
-                border: "1px solid #e2e8f0",
+                color: currentPage === 1 ? "#9ca3af" : "#667eea",
+                border: "1px solid #e5e7eb",
                 borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: 600,
@@ -3754,13 +4293,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               onMouseEnter={(e) => {
                 if (currentPage !== 1) {
                   e.currentTarget.style.background = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#4f46e5";
+                  e.currentTarget.style.borderColor = "#667eea";
                 }
               }}
               onMouseLeave={(e) => {
                 if (currentPage !== 1) {
                   e.currentTarget.style.background = "white";
-                  e.currentTarget.style.borderColor = "#e2e8f0";
+                  e.currentTarget.style.borderColor = "#e5e7eb";
                 }
               }}
             >
@@ -3796,10 +4335,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       minWidth: "40px",
                       background:
                         currentPage === pageNum
-                          ? "linear-gradient(160deg, #4f46e5, #4338ca)"
+                          ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
                           : "white",
-                      color: currentPage === pageNum ? "white" : "#4f46e5",
-                      border: "1px solid #e2e8f0",
+                      color: currentPage === pageNum ? "white" : "#667eea",
+                      border: "1px solid #e5e7eb",
                       borderRadius: "8px",
                       fontSize: "14px",
                       fontWeight: 600,
@@ -3809,13 +4348,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     onMouseEnter={(e) => {
                       if (currentPage !== pageNum) {
                         e.currentTarget.style.background = "#f9fafb";
-                        e.currentTarget.style.borderColor = "#4f46e5";
+                        e.currentTarget.style.borderColor = "#667eea";
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (currentPage !== pageNum) {
                         e.currentTarget.style.background = "white";
-                        e.currentTarget.style.borderColor = "#e2e8f0";
+                        e.currentTarget.style.borderColor = "#e5e7eb";
                       }
                     }}
                   >
@@ -3833,8 +4372,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 padding: "8px 12px",
                 background: currentPage === totalPages ? "#f3f4f6" : "white",
-                color: currentPage === totalPages ? "#9ca3af" : "#4f46e5",
-                border: "1px solid #e2e8f0",
+                color: currentPage === totalPages ? "#9ca3af" : "#667eea",
+                border: "1px solid #e5e7eb",
                 borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: 600,
@@ -3844,13 +4383,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               onMouseEnter={(e) => {
                 if (currentPage !== totalPages) {
                   e.currentTarget.style.background = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#4f46e5";
+                  e.currentTarget.style.borderColor = "#667eea";
                 }
               }}
               onMouseLeave={(e) => {
                 if (currentPage !== totalPages) {
                   e.currentTarget.style.background = "white";
-                  e.currentTarget.style.borderColor = "#e2e8f0";
+                  e.currentTarget.style.borderColor = "#e5e7eb";
                 }
               }}
             >
@@ -3863,8 +4402,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 padding: "8px 12px",
                 background: currentPage === totalPages ? "#f3f4f6" : "white",
-                color: currentPage === totalPages ? "#9ca3af" : "#4f46e5",
-                border: "1px solid #e2e8f0",
+                color: currentPage === totalPages ? "#9ca3af" : "#667eea",
+                border: "1px solid #e5e7eb",
                 borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: 600,
@@ -3874,13 +4413,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               onMouseEnter={(e) => {
                 if (currentPage !== totalPages) {
                   e.currentTarget.style.background = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#4f46e5";
+                  e.currentTarget.style.borderColor = "#667eea";
                 }
               }}
               onMouseLeave={(e) => {
                 if (currentPage !== totalPages) {
                   e.currentTarget.style.background = "white";
-                  e.currentTarget.style.borderColor = "#e2e8f0";
+                  e.currentTarget.style.borderColor = "#e5e7eb";
                 }
               }}
             >
@@ -3896,7 +4435,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(15,23,42,.5)",
+            background: "rgba(0,0,0,0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -3908,12 +4447,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               background: "white",
-              borderRadius: "20px",
+              borderRadius: "14px",
               padding: "24px",
               width: "100%",
               maxWidth: "460px",
-              boxShadow:
-                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
               fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
             }}
             onClick={(e) => e.stopPropagation()}
@@ -3922,7 +4459,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 fontSize: "18px",
                 fontWeight: 700,
-                color: "#0f172a",
+                color: "#111827",
                 margin: "0 0 6px 0",
               }}
             >
@@ -3931,7 +4468,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             <p
               style={{
                 fontSize: "13px",
-                color: "#475569",
+                color: "#6b7280",
                 margin: "0 0 16px 0",
               }}
             >
@@ -3948,7 +4485,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 display: "block",
                 fontSize: "12px",
                 fontWeight: 600,
-                color: "#334155",
+                color: "#374151",
                 marginBottom: "6px",
               }}
             >
@@ -3962,7 +4499,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               placeholder="e.g. Reproducing a ticket-submission issue reported by this user"
               style={{
                 width: "100%",
-                border: "1.5px solid #e2e8f0",
+                border: "1px solid #D1D5DB",
                 borderRadius: "8px",
                 padding: "8px 10px",
                 fontSize: "13px",
@@ -4001,9 +4538,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 disabled={impersonating}
                 style={{
                   padding: "9px 18px",
-                  background: "#fff",
-                  color: "#334155",
-                  border: "1.5px solid #e2e8f0",
+                  background: "white",
+                  border: "1px solid #D1D5DB",
                   borderRadius: "8px",
                   cursor: impersonating ? "not-allowed" : "pointer",
                   fontSize: "14px",
@@ -4042,7 +4578,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(15,23,42,.5)",
+            backgroundColor: "rgba(15, 23, 42, 0.45)",
             backdropFilter: "blur(2px)",
             display: "flex",
             alignItems: "center",
@@ -4054,22 +4590,21 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "20px",
+              borderRadius: "16px",
               maxWidth: isMobileViewport ? "100%" : "920px",
               width: "100%",
               maxHeight: isMobileViewport ? "96vh" : "92vh",
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
-              border: "1px solid #e2e8f0",
-              boxShadow:
-                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
+              border: "1px solid #e5e7eb",
+              boxShadow: "0 24px 60px rgba(15, 23, 42, 0.2)",
             }}
           >
             <div
               style={{
                 padding: isMobileViewport ? "14px 12px" : "18px 24px",
-                borderBottom: "1px solid #e2e8f0",
+                borderBottom: "1px solid #e5e7eb",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: isMobileViewport ? "start" : "center",
@@ -4083,7 +4618,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     fontSize: "20px",
                     fontWeight: "700",
-                    color: "#0f172a",
+                    color: "#111827",
                     margin: 0,
                     letterSpacing: "-0.01em",
                   }}
@@ -4104,7 +4639,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     margin: "4px 0 0 0",
                     fontSize: "13px",
-                    color: "#475569",
+                    color: "#6b7280",
                   }}
                 >
                   {getText(
@@ -4121,11 +4656,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   height: "34px",
                   borderRadius: "999px",
                   background: "#f3f4f6",
-                  border: "1px solid #e2e8f0",
+                  border: "1px solid #e5e7eb",
                   fontSize: "20px",
                   lineHeight: 1,
                   cursor: "pointer",
-                  color: "#475569",
+                  color: "#6b7280",
                 }}
                 title={getText("Close", "बंद करा", "बंद करा")}
               >
@@ -4146,8 +4681,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   marginBottom: "20px",
                   padding: "16px",
-                  backgroundColor: "#eef2ff",
-                  border: "1px solid #e2e8f0",
+                  backgroundColor: "#f0f7ff",
+                  border: "1px solid #bfdbfe",
                   borderRadius: "12px",
                 }}
               >
@@ -4156,7 +4691,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "600",
-                    color: "#4f46e5",
+                    color: "#1e3a8a",
                     marginBottom: "8px",
                   }}
                 >
@@ -4221,8 +4756,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "10px 12px",
-                    border: "1.5px solid #e2e8f0",
-                    borderRadius: "8px",
+                    border: "1px solid #93c5fd",
+                    borderRadius: "10px",
                     fontSize: "14px",
                     outline: "none",
                     boxSizing: "border-box",
@@ -4256,7 +4791,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "12px",
-                    color: "#4f46e5",
+                    color: "#1e40af",
                     marginTop: "8px",
                     fontStyle: "italic",
                   }}
@@ -4298,7 +4833,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#334155",
+                      color: "#374151",
                       marginBottom: "6px",
                     }}
                   >
@@ -4314,8 +4849,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: `1.5px solid ${nameFieldErrors.firstName ? "#ef4444" : "#e2e8f0"}`,
-                      borderRadius: "8px",
+                      border: `1px solid ${nameFieldErrors.firstName ? "#ef4444" : "#d1d5db"}`,
+                      borderRadius: "6px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4339,7 +4874,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#334155",
+                      color: "#374151",
                       marginBottom: "6px",
                     }}
                   >
@@ -4355,8 +4890,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: `1.5px solid ${nameFieldErrors.lastName ? "#ef4444" : "#e2e8f0"}`,
-                      borderRadius: "8px",
+                      border: `1px solid ${nameFieldErrors.lastName ? "#ef4444" : "#d1d5db"}`,
+                      borderRadius: "6px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4382,7 +4917,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#334155",
+                    color: "#374151",
                     marginBottom: "6px",
                   }}
                 >
@@ -4398,8 +4933,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "12px",
-                    border: "1.5px solid #e2e8f0",
-                    borderRadius: "8px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "6px",
                     fontSize: "14px",
                     outline: "none",
                     boxSizing: "border-box",
@@ -4421,7 +4956,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#334155",
+                      color: "#374151",
                       marginBottom: "6px",
                     }}
                   >
@@ -4443,8 +4978,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1.5px solid #e2e8f0",
-                      borderRadius: "8px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "6px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4453,7 +4988,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <p
                     style={{
                       fontSize: "12px",
-                      color: "#475569",
+                      color: "#6b7280",
                       marginTop: "4px",
                     }}
                   >
@@ -4470,7 +5005,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#334155",
+                      color: "#374151",
                       marginBottom: "6px",
                     }}
                   >
@@ -4485,8 +5020,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1.5px solid #e2e8f0",
-                      borderRadius: "8px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "6px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4509,7 +5044,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#334155",
+                      color: "#374151",
                       marginBottom: "6px",
                     }}
                   >
@@ -4525,8 +5060,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1.5px solid #e2e8f0",
-                      borderRadius: "8px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "6px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4539,7 +5074,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#334155",
+                      color: "#374151",
                       marginBottom: "6px",
                     }}
                   >
@@ -4558,8 +5093,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1.5px solid #e2e8f0",
-                      borderRadius: "8px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "6px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4587,7 +5122,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#334155",
+                      color: "#374151",
                       marginBottom: "6px",
                     }}
                   >
@@ -4609,8 +5144,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1.5px solid #e2e8f0",
-                      borderRadius: "8px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "6px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4647,7 +5182,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "500",
-                        color: "#334155",
+                        color: "#374151",
                         marginBottom: "6px",
                       }}
                     >
@@ -4661,8 +5196,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         width: "100%",
                         padding: "12px",
-                        border: "1.5px solid #e2e8f0",
-                        borderRadius: "8px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: "6px",
                         fontSize: "14px",
                         outline: "none",
                         boxSizing: "border-box",
@@ -4693,7 +5228,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#334155",
+                      color: "#374151",
                       marginBottom: "6px",
                     }}
                   >
@@ -4715,8 +5250,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1.5px solid #e2e8f0",
-                      borderRadius: "8px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "6px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4725,7 +5260,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <p
                     style={{
                       fontSize: "12px",
-                      color: "#475569",
+                      color: "#6b7280",
                       marginTop: "4px",
                     }}
                   >
@@ -4744,7 +5279,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#334155",
+                    color: "#374151",
                     marginBottom: "6px",
                   }}
                 >
@@ -4760,8 +5295,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "12px",
-                    border: "1.5px solid #e2e8f0",
-                    borderRadius: "8px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "6px",
                     fontSize: "14px",
                     outline: "none",
                     boxSizing: "border-box",
@@ -4829,7 +5364,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#334155",
+                    color: "#374151",
                     marginBottom: "6px",
                   }}
                 >
@@ -4842,7 +5377,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <span
                       style={{
                         fontSize: "12px",
-                        color: "#475569",
+                        color: "#6b7280",
                         fontWeight: "normal",
                         marginLeft: "8px",
                       }}
@@ -4861,8 +5396,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     maxHeight: "180px",
                     overflowY: "auto",
-                    border: "1.5px solid #e2e8f0",
-                    borderRadius: "8px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "10px",
                     padding: "8px",
                     backgroundColor: "white",
                   }}
@@ -4876,7 +5411,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           alignItems: "center",
                           padding: "8px",
                           cursor: "pointer",
-                          borderRadius: "8px",
+                          borderRadius: "4px",
                           transition: "background-color 0.2s",
                         }}
                         onMouseEnter={(e) =>
@@ -4934,7 +5469,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           <span
                             style={{
                               fontSize: "14px",
-                              color: "#334155",
+                              color: "#374151",
                               fontWeight: "500",
                             }}
                           >
@@ -4944,7 +5479,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             <span
                               style={{
                                 fontSize: "12px",
-                                color: "#475569",
+                                color: "#6b7280",
                                 marginLeft: "8px",
                               }}
                             >
@@ -4958,8 +5493,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                 marginLeft: "8px",
                                 padding: "2px 8px",
                                 borderRadius: "12px",
-                                backgroundColor: "#eef2ff",
-                                color: "#4f46e5",
+                                backgroundColor: "#dbeafe",
+                                color: "#1e40af",
                                 fontWeight: "500",
                               }}
                             >
@@ -4973,7 +5508,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#94a3b8",
+                        color: "#9ca3af",
                         fontStyle: "italic",
                         margin: 0,
                         padding: "8px",
@@ -4990,7 +5525,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "12px",
-                    color: "#475569",
+                    color: "#6b7280",
                     marginTop: "6px",
                     fontStyle: "italic",
                   }}
@@ -5019,7 +5554,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#334155",
+                      color: "#374151",
                       marginBottom: "8px",
                     }}
                   >
@@ -5031,7 +5566,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   </label>
                   {formData.projects.length === 0 ? (
                     <p
-                      style={{ fontSize: "12px", color: "#94a3b8", margin: 0 }}
+                      style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}
                     >
                       {getText(
                         "Select projects above to map departments",
@@ -5060,7 +5595,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               alignItems: "center",
                               gap: "12px",
                               padding: "8px 10px",
-                              border: "1px solid #e2e8f0",
+                              border: "1px solid #e5e7eb",
                               borderRadius: "8px",
                               background: "#ffffff",
                             }}
@@ -5069,7 +5604,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               style={{
                                 minWidth: isMobileViewport ? "120px" : "200px",
                                 fontSize: "13px",
-                                color: "#334155",
+                                color: "#374151",
                                 fontWeight: "500",
                               }}
                             >
@@ -5080,9 +5615,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                     fontSize: "11px",
                                     marginLeft: "6px",
                                     padding: "1px 6px",
-                                    borderRadius: "12px",
-                                    backgroundColor: "#eef2ff",
-                                    color: "#4f46e5",
+                                    borderRadius: "10px",
+                                    backgroundColor: "#dbeafe",
+                                    color: "#1e40af",
                                   }}
                                 >
                                   {getText("Primary", "प्राथमिक", "प्राथमिक")}
@@ -5105,8 +5640,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               style={{
                                 flex: 1,
                                 padding: "8px 12px",
-                                border: "1.5px solid #e2e8f0",
-                                borderRadius: "8px",
+                                border: "1px solid #d1d5db",
+                                borderRadius: "6px",
                                 fontSize: "14px",
                                 outline: "none",
                                 background: "white",
@@ -5131,7 +5666,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#334155",
+                      color: "#374151",
                       marginBottom: "6px",
                     }}
                   >
@@ -5151,8 +5686,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1.5px solid #e2e8f0",
-                      borderRadius: "8px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "10px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -5166,8 +5701,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   marginTop: "16px",
                   padding: "14px",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "12px",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "10px",
                   background: "#ffffff",
                 }}
               >
@@ -5176,7 +5711,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#334155",
+                    color: "#374151",
                     marginBottom: "6px",
                   }}
                 >
@@ -5189,7 +5724,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <span
                       style={{
                         fontSize: "12px",
-                        color: "#475569",
+                        color: "#6b7280",
                         fontWeight: "normal",
                         marginLeft: "8px",
                       }}
@@ -5216,8 +5751,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "12px",
-                    border: "1.5px solid #e2e8f0",
-                    borderRadius: "8px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "6px",
                     fontSize: "14px",
                     outline: "none",
                     boxSizing: "border-box",
@@ -5280,7 +5815,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <p
                     style={{
                       fontSize: "12px",
-                      color: "#475569",
+                      color: "#6b7280",
                       marginTop: "4px",
                     }}
                   >
@@ -5299,8 +5834,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   marginTop: "16px",
                   padding: "14px",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "12px",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "10px",
                   background: "#ffffff",
                 }}
               >
@@ -5309,7 +5844,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#334155",
+                    color: "#374151",
                     marginBottom: "6px",
                   }}
                 >
@@ -5322,7 +5857,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <span
                       style={{
                         fontSize: "12px",
-                        color: "#475569",
+                        color: "#6b7280",
                         fontWeight: "normal",
                         marginLeft: "8px",
                       }}
@@ -5341,8 +5876,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     maxHeight: "200px",
                     overflowY: "auto",
-                    border: "1.5px solid #e2e8f0",
-                    borderRadius: "8px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "10px",
                     padding: "8px",
                     backgroundColor: !formData.primaryProject
                       ? "#f3f4f6"
@@ -5353,7 +5888,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#94a3b8",
+                        color: "#9ca3af",
                         fontStyle: "italic",
                         margin: 0,
                         padding: "8px",
@@ -5375,7 +5910,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           alignItems: "center",
                           padding: "8px",
                           cursor: "pointer",
-                          borderRadius: "8px",
+                          borderRadius: "4px",
                           transition: "background-color 0.2s",
                         }}
                         onMouseEnter={(e) =>
@@ -5410,7 +5945,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         <span
                           style={{
                             fontSize: "14px",
-                            color: "#334155",
+                            color: "#374151",
                             flex: 1,
                           }}
                         >
@@ -5422,7 +5957,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#94a3b8",
+                        color: "#9ca3af",
                         fontStyle: "italic",
                         margin: 0,
                         padding: "8px",
@@ -5439,7 +5974,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "12px",
-                    color: "#475569",
+                    color: "#6b7280",
                     marginTop: "6px",
                     fontStyle: "italic",
                   }}
@@ -5457,7 +5992,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             <div
               style={{
                 padding: isMobileViewport ? "12px" : "14px 24px",
-                borderTop: "1px solid #e2e8f0",
+                borderTop: "1px solid #e5e7eb",
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: "12px",
@@ -5470,10 +6005,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 disabled={saving}
                 style={{
                   padding: "10px 18px",
-                  border: "1.5px solid #e2e8f0",
-                  borderRadius: "8px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "10px",
                   backgroundColor: "white",
-                  color: "#334155",
+                  color: "#374151",
                   fontSize: "14px",
                   fontWeight: "500",
                   cursor: saving ? "not-allowed" : "pointer",
@@ -5494,24 +6029,16 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   padding: "10px 18px",
                   border: "none",
-                  borderRadius: "8px",
-                  background:
+                  borderRadius: "10px",
+                  backgroundColor:
                     !formData.firstName ||
                     !formData.lastName ||
                     !formData.email ||
                     !formData.role ||
                     saving
-                      ? "#9ca3af"
-                      : "linear-gradient(160deg, #4f46e5, #4338ca)",
-                  boxShadow:
-                    !formData.firstName ||
-                    !formData.lastName ||
-                    !formData.email ||
-                    !formData.role ||
-                    saving
-                      ? "none"
-                      : "0 4px 14px rgba(67,56,202,.35)",
-                  color: "#fff",
+                      ? "#d1d5db"
+                      : "#a855f7",
+                  color: "white",
                   fontSize: "14px",
                   fontWeight: "500",
                   cursor:
@@ -5552,7 +6079,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(15,23,42,.5)",
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -5563,21 +6090,19 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "20px",
+              borderRadius: "12px",
               maxWidth: "720px",
               width: "100%",
               maxHeight: "85vh",
               display: "flex",
               flexDirection: "column",
-              boxShadow:
-                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
             }}
           >
             {/* Header */}
             <div
               style={{
                 padding: "24px",
-                borderBottom: "1px solid #e2e8f0",
+                borderBottom: "1px solid #e5e7eb",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -5588,7 +6113,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   fontSize: "20px",
                   fontWeight: "600",
-                  color: "#0f172a",
+                  color: "#1f2937",
                   margin: 0,
                 }}
               >
@@ -5609,7 +6134,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   border: "none",
                   fontSize: "24px",
                   cursor: "pointer",
-                  color: "#475569",
+                  color: "#6b7280",
                 }}
               >
                 ✕
@@ -5623,9 +6148,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   marginBottom: "24px",
                   padding: "20px",
-                  backgroundColor: "#eef2ff",
+                  backgroundColor: "#f0f9ff",
                   borderRadius: "8px",
-                  border: "1px solid #e2e8f0",
+                  border: "1px solid #bae6fd",
                 }}
               >
                 <div
@@ -5644,7 +6169,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       width: "28px",
                       height: "28px",
                       borderRadius: "50%",
-                      backgroundColor: "#4f46e5",
+                      backgroundColor: "#2563eb",
                       color: "white",
                       fontSize: "14px",
                       fontWeight: "bold",
@@ -5657,7 +6182,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       fontWeight: 600,
                       fontSize: "15px",
-                      color: "#0f172a",
+                      color: "#1f2937",
                     }}
                   >
                     {getText(
@@ -5670,7 +6195,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "13px",
-                    color: "#475569",
+                    color: "#6b7280",
                     margin: "0 0 12px 40px",
                   }}
                 >
@@ -5688,11 +6213,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       alignItems: "center",
                       gap: "8px",
                       padding: "8px 16px",
-                      background: "linear-gradient(160deg, #4f46e5, #4338ca)",
-                      boxShadow: "0 4px 14px rgba(67,56,202,.35)",
-                      color: "#fff",
+                      background: "#2563eb",
+                      color: "white",
                       border: "none",
-                      borderRadius: "8px",
+                      borderRadius: "6px",
                       fontSize: "13px",
                       fontWeight: 600,
                       cursor: "pointer",
@@ -5760,7 +6284,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       fontWeight: 600,
                       fontSize: "15px",
-                      color: "#0f172a",
+                      color: "#1f2937",
                     }}
                   >
                     {getText(
@@ -5786,7 +6310,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <div
                     onClick={() => bulkFileInputRef.current?.click()}
                     style={{
-                      border: "2px dashed #e2e8f0",
+                      border: "2px dashed #d1d5db",
                       borderRadius: "8px",
                       padding: "24px",
                       textAlign: "center",
@@ -5825,7 +6349,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         <p
                           style={{
                             fontSize: "12px",
-                            color: "#475569",
+                            color: "#6b7280",
                             margin: "4px 0 0",
                           }}
                         >
@@ -5844,7 +6368,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           height="32"
                           viewBox="0 0 24 24"
                           fill="none"
-                          stroke="#94a3b8"
+                          stroke="#9ca3af"
                           strokeWidth="2"
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -5857,7 +6381,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         <p
                           style={{
                             fontSize: "14px",
-                            color: "#475569",
+                            color: "#6b7280",
                             margin: 0,
                           }}
                         >
@@ -5880,14 +6404,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     padding: "20px",
                     backgroundColor: "#f9fafb",
                     borderRadius: "8px",
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid #e5e7eb",
                   }}
                 >
                   <h3
                     style={{
                       fontSize: "16px",
                       fontWeight: 600,
-                      color: "#0f172a",
+                      color: "#1f2937",
                       margin: "0 0 12px",
                     }}
                   >
@@ -5918,7 +6442,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       >
                         {bulkUploadResults.created}
                       </div>
-                      <div style={{ fontSize: "12px", color: "#475569" }}>
+                      <div style={{ fontSize: "12px", color: "#6b7280" }}>
                         {getText("Created", "तयार केले", "तयार केले")}
                       </div>
                     </div>
@@ -5940,14 +6464,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       >
                         {bulkUploadResults.failed}
                       </div>
-                      <div style={{ fontSize: "12px", color: "#475569" }}>
+                      <div style={{ fontSize: "12px", color: "#6b7280" }}>
                         {getText("Failed", "अयशस्वी", "अयशस्वी")}
                       </div>
                     </div>
                     <div
                       style={{
                         padding: "12px 20px",
-                        backgroundColor: "#eef2ff",
+                        backgroundColor: "#f0f9ff",
                         borderRadius: "8px",
                         flex: 1,
                         textAlign: "center",
@@ -5957,12 +6481,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         style={{
                           fontSize: "24px",
                           fontWeight: "bold",
-                          color: "#4f46e5",
+                          color: "#2563eb",
                         }}
                       >
                         {bulkUploadResults.total}
                       </div>
-                      <div style={{ fontSize: "12px", color: "#475569" }}>
+                      <div style={{ fontSize: "12px", color: "#6b7280" }}>
                         {getText("Total", "एकूण", "एकूण")}
                       </div>
                     </div>
@@ -5992,7 +6516,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           maxHeight: "200px",
                           overflowY: "auto",
                           border: "1px solid #fecaca",
-                          borderRadius: "12px",
+                          borderRadius: "6px",
                         }}
                       >
                         <table
@@ -6070,7 +6594,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             <div
               style={{
                 padding: "16px 24px",
-                borderTop: "1px solid #e2e8f0",
+                borderTop: "1px solid #e5e7eb",
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: "12px",
@@ -6085,10 +6609,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 }}
                 style={{
                   padding: "10px 20px",
-                  border: "1.5px solid #e2e8f0",
-                  borderRadius: "8px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "6px",
                   backgroundColor: "white",
-                  color: "#334155",
+                  color: "#374151",
                   fontSize: "14px",
                   fontWeight: "500",
                   cursor: "pointer",
@@ -6102,7 +6626,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   padding: "10px 20px",
                   border: "none",
-                  borderRadius: "8px",
+                  borderRadius: "6px",
                   backgroundColor:
                     !bulkUploadFile || bulkUploading ? "#d1d5db" : "#f59e0b",
                   color: "white",
@@ -6140,67 +6664,112 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(15,23,42,.5)",
+            backgroundColor: "rgba(15, 23, 42, 0.52)",
+            backdropFilter: "blur(6px)",
             display: "flex",
-            alignItems: "center",
+            alignItems: "stretch",
             justifyContent: "center",
             zIndex: 1000,
             padding: "20px",
+            overflowY: "auto",
           }}
         >
+          <style>
+            {`
+              .hrms-modal-scroll {
+                scrollbar-width: thin;
+                scrollbar-color: #cbd5e1 transparent;
+              }
+              .hrms-modal-scroll::-webkit-scrollbar {
+                width: 10px;
+                height: 10px;
+              }
+              .hrms-modal-scroll::-webkit-scrollbar-track {
+                background: transparent;
+              }
+              .hrms-modal-scroll::-webkit-scrollbar-thumb {
+                background: #cbd5e1;
+                border-radius: 999px;
+                border: 2px solid transparent;
+                background-clip: padding-box;
+              }
+              .hrms-modal-scroll::-webkit-scrollbar-thumb:hover {
+                background: #94a3b8;
+                background-clip: padding-box;
+              }
+            `}
+          </style>
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "20px",
-              maxWidth: "1000px",
+              borderRadius: "18px",
+              maxWidth: "1120px",
               width: "100%",
-              height: "85vh",
+              height: "min(900px, calc(100vh - 40px))",
+              maxHeight: "calc(100vh - 40px)",
               display: "flex",
               flexDirection: "column",
-              boxShadow:
-                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
+              margin: "auto",
+              border: "1px solid #e5e7eb",
+              boxShadow: "0 30px 80px rgba(15, 23, 42, 0.22)",
+              overflow: "hidden",
             }}
           >
             <div
               style={{
-                padding: "24px",
-                borderBottom: "1px solid #e2e8f0",
+                padding: "22px 28px",
+                borderBottom: "1px solid #e5e7eb",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
                 flexShrink: 0,
+                background:
+                  "linear-gradient(180deg, rgba(255,247,237,0.8) 0%, rgba(255,255,255,1) 100%)",
               }}
             >
-              <h2
-                style={{
-                  fontSize: "20px",
-                  fontWeight: "600",
-                  color: "#0f172a",
-                  margin: 0,
-                }}
-              >
-                {getText(
-                  "Add Users from HRMS",
-                  "HRMS मधून वापरकर्ते जोडा",
-                  "HRMS मधून वापरकर्ते जोडा",
-                )}
-              </h2>
+              <div>
+                <h2
+                  style={{
+                    fontSize: "24px",
+                    fontWeight: "700",
+                    color: "#111827",
+                    margin: 0,
+                    lineHeight: 1.1,
+                  }}
+                >
+                  {getText(
+                    "Add Users from HRMS",
+                    "HRMS मधून वापरकर्ते जोडा",
+                    "HRMS मधून वापरकर्ते जोडा",
+                  )}
+                </h2>
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    fontSize: "13px",
+                    color: "#6b7280",
+                  }}
+                >
+                  Search, preview, map fields, and import HRMS employees.
+                </p>
+              </div>
               <button
-                onClick={() => {
-                  setShowHRMSModal(false);
-                  setHrmsEmployees([]);
-                  setSelectedEmployees([]);
-                  setSelectedRole("");
-                  setSelectedProjects([]);
-                  setHrmsEmployeeCodes("");
-                  setHrmsSearchQuery("");
-                }}
+                onClick={closeHrmsModal}
+                aria-label="Close HRMS import modal"
+                title="Close"
                 style={{
                   background: "none",
-                  border: "none",
+                  border: "1px solid #e5e7eb",
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "999px",
                   fontSize: "24px",
+                  lineHeight: 1,
                   cursor: "pointer",
-                  color: "#475569",
+                  color: "#6b7280",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
                 ✕
@@ -6208,11 +6777,17 @@ const UserManagement: React.FC<UserManagementProps> = ({
             </div>
 
             {hrmsEmployees.length === 0 ? (
-              <div style={{ padding: "32px" }}>
+              <div
+                className="hrms-modal-scroll"
+                style={{
+                  padding: "32px",
+                  overflowY: "auto",
+                }}
+              >
                 <p
                   style={{
                     fontSize: "14px",
-                    color: "#475569",
+                    color: "#6b7280",
                     marginBottom: "20px",
                     textAlign: "center",
                   }}
@@ -6225,6 +6800,74 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 </p>
 
                 <div style={{ maxWidth: "600px", margin: "0 auto" }}>
+                  {/* MDM Source selector (provenance) */}
+                  <div style={{ marginBottom: "20px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        color: "#374151",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      🗄️{" "}
+                      {getText(
+                        "MDM Data Source",
+                        "MDM डेटा स्रोत",
+                        "MDM डेटा स्रोत",
+                      )}
+                    </label>
+                    <select
+                      value={selectedMdmSource}
+                      onChange={(e) => setSelectedMdmSource(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                        outline: "none",
+                        boxSizing: "border-box",
+                        backgroundColor: "white",
+                      }}
+                    >
+                      {mdmSources.length === 0 ? (
+                        <option value="">
+                          {getText(
+                            "No MDM source configured — using sample data",
+                            "कोणताही MDM स्रोत कॉन्फिगर केलेला नाही — नमुना डेटा वापरत आहे",
+                            "कोणताही MDM स्रोत कॉन्फिगर केलेला नाही — नमुना डेटा वापरत आहे",
+                          )}
+                        </option>
+                      ) : (
+                        mdmSources.map((s) => (
+                          <option
+                            key={s._id}
+                            value={s._id}
+                            disabled={!s.enabled}
+                          >
+                            {s.name}
+                            {!s.enabled ? " (disabled)" : ""}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "#6b7280",
+                        marginTop: "4px",
+                      }}
+                    >
+                      {getText(
+                        "Imported employees are tagged with this source.",
+                        "आयात केलेले कर्मचारी या स्रोतासह टॅग केले जातात.",
+                        "आयात केलेले कर्मचारी या स्रोतासह टॅग केले जातात.",
+                      )}
+                    </p>
+                  </div>
+
                   {/* Employee Code Input */}
                   <div style={{ marginBottom: "20px" }}>
                     <label
@@ -6232,7 +6875,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "500",
-                        color: "#334155",
+                        color: "#374151",
                         marginBottom: "8px",
                       }}
                     >
@@ -6254,7 +6897,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         width: "100%",
                         padding: "12px",
-                        border: "1.5px solid #e2e8f0",
+                        border: "1px solid #d1d5db",
                         borderRadius: "8px",
                         fontSize: "14px",
                         outline: "none",
@@ -6264,7 +6907,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#475569",
+                        color: "#6b7280",
                         marginTop: "4px",
                       }}
                     >
@@ -6273,6 +6916,170 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         '💡 सूचना: शोध शब्द प्रविष्ट करा (उदा., "District Coordinator", "EMP001", "ICT") किंवा सर्व लोड करण्यासाठी रिक्त सोडा',
                         '💡 सूचना: शोध शब्द प्रविष्ट करा (उदा., "District Coordinator", "EMP001", "ICT") किंवा सर्व लोड करण्यासाठी रिक्त सोडा',
                       )}
+                    </p>
+                  </div>
+
+                  <div
+                    style={{
+                      marginBottom: "20px",
+                      padding: "14px",
+                      border: "1px solid #dbeafe",
+                      borderRadius: 14,
+                      background: "#eff6ff",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        marginBottom: 12,
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#475569",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          People in source
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 24,
+                            fontWeight: 800,
+                            color: "#1d4ed8",
+                            lineHeight: 1.1,
+                          }}
+                        >
+                          {hrmsLoadMeta?.totalAvailable ?? "Loading..."}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          padding: 4,
+                          borderRadius: 12,
+                          background: "white",
+                          border: "1px solid #bfdbfe",
+                          gap: 4,
+                        }}
+                      >
+                        {(["all", "range"] as const).map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setHrmsLoadMode(mode)}
+                            style={{
+                              border: "none",
+                              borderRadius: 9,
+                              padding: "8px 12px",
+                              cursor: "pointer",
+                              fontSize: 13,
+                              fontWeight: 700,
+                              color:
+                                hrmsLoadMode === mode ? "white" : "#1d4ed8",
+                              background:
+                                hrmsLoadMode === mode ? "#2563eb" : "white",
+                            }}
+                          >
+                            {mode === "all" ? "All people" : "Range"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {hrmsLoadMode === "range" && (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(140px, 1fr))",
+                          gap: 10,
+                        }}
+                      >
+                        <label
+                          style={{
+                            fontSize: 12,
+                            color: "#334155",
+                            fontWeight: 700,
+                          }}
+                        >
+                          Start row
+                          <input
+                            type="number"
+                            min={1}
+                            value={hrmsRangeStart}
+                            onChange={(e) => setHrmsRangeStart(e.target.value)}
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              marginTop: 6,
+                              padding: "10px 12px",
+                              border: "1px solid #bfdbfe",
+                              borderRadius: 10,
+                              fontSize: 14,
+                              outline: "none",
+                              background: "white",
+                            }}
+                          />
+                        </label>
+                        <label
+                          style={{
+                            fontSize: 12,
+                            color: "#334155",
+                            fontWeight: 700,
+                          }}
+                        >
+                          End row
+                          <input
+                            type="number"
+                            min={1}
+                            value={hrmsRangeEnd}
+                            onChange={(e) => setHrmsRangeEnd(e.target.value)}
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              marginTop: 6,
+                              padding: "10px 12px",
+                              border: "1px solid #bfdbfe",
+                              borderRadius: 10,
+                              fontSize: 14,
+                              outline: "none",
+                              background: "white",
+                            }}
+                          />
+                        </label>
+                        <div
+                          style={{
+                            alignSelf: "end",
+                            fontSize: 12,
+                            color: "#475569",
+                            padding: "10px 0",
+                          }}
+                        >
+                          Loads rows {Math.max(1, Number(hrmsRangeStart) || 1)}-
+                          {Math.max(
+                            Math.max(1, Number(hrmsRangeStart) || 1),
+                            Number(hrmsRangeEnd) || 1,
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <p
+                      style={{
+                        margin: hrmsLoadMode === "range" ? "8px 0 0" : 0,
+                        color: "#64748b",
+                        fontSize: 12,
+                      }}
+                    >
+                      Count is exact when MDM API returns total metadata. If the
+                      source only returns one page, this shows rows returned by
+                      that source.
                     </p>
                   </div>
 
@@ -6317,20 +7124,31 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 {/* Search and Selection Controls - Fixed Header */}
                 <div
                   style={{
-                    padding: "16px 24px",
-                    borderBottom: "1px solid #e2e8f0",
+                    display: hrmsImportStep === "employees" ? "block" : "none",
+                    padding: "18px 24px 14px",
+                    borderBottom: "1px solid #e5e7eb",
                     flexShrink: 0,
+                    background: "#ffffff",
                   }}
                 >
                   {/* Search box */}
-                  <div style={{ position: "relative", marginBottom: "16px" }}>
+                  <div
+                    style={{
+                      position: "relative",
+                      marginBottom: "16px",
+                      padding: "14px",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 14,
+                      background: "#f8fafc",
+                    }}
+                  >
                     <span
                       style={{
                         position: "absolute",
-                        left: "12px",
+                        left: "26px",
                         top: "50%",
                         transform: "translateY(-50%)",
-                        color: "#94a3b8",
+                        color: "#9ca3af",
                         fontSize: "18px",
                       }}
                     >
@@ -6344,294 +7162,787 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         "नाव, ईमेल किंवा कर्मचारी कोडद्वारे शोधा...",
                       )}
                       value={hrmsSearchQuery}
-                      onChange={(e) => setHrmsSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        setHrmsSearchQuery(e.target.value);
+                        setHrmsPage(1);
+                      }}
                       style={{
                         width: "100%",
                         padding: "12px 12px 12px 40px",
-                        border: "1.5px solid #e2e8f0",
-                        borderRadius: "8px",
+                        border: "1px solid #d7deea",
+                        borderRadius: "10px",
                         fontSize: "14px",
                         outline: "none",
                         boxSizing: "border-box",
+                        background: "white",
                       }}
                     />
                   </div>
 
-                  {/* Selection Controls */}
+                  {/* Preset bar */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      marginBottom: "10px",
+                      padding: "8px 10px",
+                      background: "#fff7ed",
+                      border: "1px solid #fed7aa",
+                      borderRadius: 12,
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#c2410c" }}>
+                      💾 {getText("Preset", "प्रीसेट", "प्रीसेट")}
+                    </span>
+                    <select
+                      value={presetName}
+                      onChange={(e) => applyPreset(e.target.value)}
+                      style={{
+                        padding: "6px 8px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: 6,
+                        fontSize: 13,
+                        background: "white",
+                        minWidth: 140,
+                      }}
+                    >
+                      {(presets.length
+                        ? presets.map((p) => p.name)
+                        : ["Default"]
+                      )
+                        .filter((n, i, a) => a.indexOf(n) === i)
+                        .map((n) => (
+                          <option key={n} value={n}>
+                            {n}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={() => saveFieldConfig()}
+                      disabled={cfgSaving}
+                      style={{
+                        padding: "6px 12px",
+                        background: "#10b981",
+                        color: "white",
+                        border: "none",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 500,
+                        cursor: cfgSaving ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {cfgSaving ? "Saving…" : getText("Save", "जतन करा", "जतन करा")}
+                    </button>
+                    <button
+                      onClick={saveAsPreset}
+                      style={{
+                        padding: "6px 12px",
+                        background: "white",
+                        color: "#374151",
+                        border: "1px solid #d1d5db",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {getText("Save As…", "असे जतन करा…", "असे जतन करा…")}
+                    </button>
+                    <button
+                      onClick={deletePreset}
+                      disabled={!presets.some((p) => p.name === presetName)}
+                      style={{
+                        padding: "6px 12px",
+                        background: "white",
+                        color: "#dc2626",
+                        border: "1px solid #fecaca",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        cursor: "pointer",
+                        opacity: presets.some((p) => p.name === presetName)
+                          ? 1
+                          : 0.5,
+                      }}
+                    >
+                      {getText("Delete", "हटवा", "हटवा")}
+                    </button>
+                    {cfgMsg && (
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: cfgMsg.includes("✓") ? "#059669" : "#6b7280",
+                        }}
+                      >
+                        {cfgMsg}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Selection + field toolbar */}
                   <div
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
-                      marginBottom: "16px",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      marginBottom: "12px",
                     }}
                   >
-                    <div>
-                      <span
-                        style={{
-                          fontSize: "14px",
-                          fontWeight: "500",
-                          color: "#334155",
-                        }}
-                      >
-                        {getText("Selected", "निवडले", "निवडले")}:{" "}
-                        <span style={{ color: "#4f46e5", fontWeight: "600" }}>
-                          {selectedEmployees.length}
-                        </span>{" "}
-                        /{" "}
-                        {
-                          hrmsEmployees.filter((emp) => {
-                            if (!hrmsSearchQuery) return true;
-                            const search = hrmsSearchQuery.toLowerCase();
-                            return (
-                              emp.employeeCode
-                                ?.toLowerCase()
-                                .includes(search) ||
-                              emp.firstName?.toLowerCase().includes(search) ||
-                              emp.lastName?.toLowerCase().includes(search) ||
-                              emp.email?.toLowerCase().includes(search) ||
-                              emp.designation?.toLowerCase().includes(search)
-                            );
-                          }).length
-                        }
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        const filtered = hrmsEmployees.filter((emp) => {
-                          if (!hrmsSearchQuery) return true;
-                          const search = hrmsSearchQuery.toLowerCase();
-                          return (
-                            emp.employeeCode?.toLowerCase().includes(search) ||
-                            emp.firstName?.toLowerCase().includes(search) ||
-                            emp.lastName?.toLowerCase().includes(search) ||
-                            emp.email?.toLowerCase().includes(search) ||
-                            emp.designation?.toLowerCase().includes(search)
-                          );
-                        });
-                        if (selectedEmployees.length === filtered.length) {
-                          setSelectedEmployees([]);
-                        } else {
-                          setSelectedEmployees(
-                            filtered.map((emp) => emp.employeeCode),
-                          );
-                        }
-                      }}
+                    <span
                       style={{
-                        padding: "8px 20px",
-                        background: "linear-gradient(160deg, #4f46e5, #4338ca)",
-                        boxShadow: "0 4px 14px rgba(67,56,202,.35)",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "8px",
                         fontSize: "14px",
-                        fontWeight: "500",
-                        cursor: "pointer",
+                        fontWeight: "600",
+                        color: "#374151",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        flexWrap: "wrap",
                       }}
                     >
-                      {selectedEmployees.length ===
-                        hrmsEmployees.filter((emp) => {
-                          if (!hrmsSearchQuery) return true;
-                          const search = hrmsSearchQuery.toLowerCase();
-                          return (
-                            emp.employeeCode?.toLowerCase().includes(search) ||
-                            emp.firstName?.toLowerCase().includes(search) ||
-                            emp.lastName?.toLowerCase().includes(search) ||
-                            emp.email?.toLowerCase().includes(search) ||
-                            emp.designation?.toLowerCase().includes(search)
+                      {getText("Selected", "निवडले", "निवडले")}:{" "}
+                      <span style={{ color: "#7c3aed", fontWeight: "600" }}>
+                        {selectedEmployees.length}
+                      </span>{" "}
+                      / {hrmsFiltered.length}
+                      {hrmsLoadMeta && (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#1d4ed8",
+                            background: "#eff6ff",
+                            border: "1px solid #bfdbfe",
+                            borderRadius: 9999,
+                            padding: "4px 10px",
+                          }}
+                        >
+                          Total {hrmsLoadMeta.totalAvailable}
+                        </span>
+                      )}
+                      {hrmsLoadMeta && (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#475569",
+                            background: "#f8fafc",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 9999,
+                            padding: "4px 10px",
+                          }}
+                        >
+                          Loaded {hrmsLoadMeta.loadedCount}
+                          {hrmsLoadMeta.loadMode === "range" &&
+                          hrmsLoadMeta.rangeStart &&
+                          hrmsLoadMeta.rangeEnd
+                            ? ` (${hrmsLoadMeta.rangeStart}-${hrmsLoadMeta.rangeEnd})`
+                            : ""}
+                        </span>
+                      )}
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: "#64748b",
+                          background: "#f8fafc",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 9999,
+                          padding: "4px 10px",
+                        }}
+                      >
+                        Ready {hrmsSelectableCodes.length}
+                      </span>
+                      {hrmsImportedCount > 0 && (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#166534",
+                            background: "#ecfdf5",
+                            border: "1px solid #bbf7d0",
+                            borderRadius: 9999,
+                            padding: "4px 10px",
+                          }}
+                        >
+                          Imported {hrmsImportedCount}
+                        </span>
+                      )}
+                    </span>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        onClick={() => {
+                          setHrmsEmployees([]);
+                          setSelectedEmployees([]);
+                          setHrmsSearchQuery("");
+                          setHrmsImportStep("employees");
+                        }}
+                        style={hrmsToolbarButtonStyle(false)}
+                      >
+                        Change load
+                      </button>
+                      <button
+                        onClick={() => setShowColPicker((v) => !v)}
+                        style={hrmsToolbarButtonStyle(showColPicker)}
+                      >
+                        🧩 {getText("Columns", "स्तंभ", "स्तंभ")} (
+                        {selectedCols.length})
+                      </button>
+                      <button
+                        onClick={() => setShowMapping((v) => !v)}
+                        style={hrmsToolbarButtonStyle(showMapping)}
+                      >
+                        🔗 {getText("Field Mapping", "फील्ड मॅपिंग", "फील्ड मॅपिंग")}
+                      </button>
+                      <button
+                        onClick={() => setShowPreview((v) => !v)}
+                        style={hrmsToolbarButtonStyle(showPreview)}
+                      >
+                        👁 {getText("Preview", "पूर्वावलोकन", "पूर्वावलोकन")}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedEmployees(
+                            hrmsAllSelectableSelected &&
+                              hrmsSelectableCodes.length > 0
+                              ? []
+                              : hrmsSelectableCodes,
                           );
-                        }).length && selectedEmployees.length > 0
-                        ? getText(
-                            "✓ Deselect All",
-                            "✓ सर्व अनिवडा",
-                            "✓ सर्व अनिवडा",
-                          )
-                        : getText("Select All", "सर्व निवडा", "सर्व निवडा")}
-                    </button>
+                        }}
+                        style={{
+                          padding: "9px 16px",
+                          backgroundColor: hrmsAllSelectableSelected
+                            ? "#ea580c"
+                            : "#f97316",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "10px",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                          boxShadow: "0 8px 18px rgba(249, 115, 22, 0.18)",
+                        }}
+                      >
+                        {hrmsAllSelectableSelected && selectedEmployees.length > 0
+                          ? getText("✓ Deselect All", "✓ सर्व अनिवडा", "✓ सर्व अनिवडा")
+                          : getText("Select All", "सर्व निवडा", "सर्व निवडा")}
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Column picker */}
+                  {showColPicker && (
+                    <div
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 12,
+                        padding: 14,
+                        marginBottom: 12,
+                        background: "#f8fafc",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "#374151",
+                          marginBottom: 8,
+                        }}
+                      >
+                        {getText(
+                          "Choose columns to display",
+                          "दाखवायचे स्तंभ निवडा",
+                          "दाखवायचे स्तंभ निवडा",
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(220px, 1fr) auto",
+                          gap: 10,
+                          alignItems: "center",
+                          marginBottom: 12,
+                        }}
+                      >
+                        <div style={{ position: "relative" }}>
+                          <span
+                            style={{
+                              position: "absolute",
+                              left: 12,
+                              top: "50%",
+                              transform: "translateY(-50%)",
+                              color: "#94a3b8",
+                              fontSize: 13,
+                              fontWeight: 700,
+                              pointerEvents: "none",
+                            }}
+                          >
+                            Search
+                          </span>
+                          <input
+                            type="text"
+                            value={hrmsColumnSearch}
+                            onChange={(e) =>
+                              setHrmsColumnSearch(e.target.value)
+                            }
+                            placeholder="Search columns by field name..."
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              padding: "10px 40px 10px 64px",
+                              border: "1px solid #d7deea",
+                              borderRadius: 12,
+                              background: "white",
+                              color: "#111827",
+                              fontSize: 13,
+                              outline: "none",
+                            }}
+                          />
+                          {hrmsColumnSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setHrmsColumnSearch("")}
+                              style={{
+                                position: "absolute",
+                                right: 8,
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                border: "none",
+                                background: "#f1f5f9",
+                                color: "#475569",
+                                borderRadius: 999,
+                                width: 24,
+                                height: 24,
+                                cursor: "pointer",
+                                lineHeight: "24px",
+                                fontSize: 12,
+                              }}
+                              aria-label="Clear column search"
+                            >
+                              x
+                            </button>
+                          )}
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#64748b",
+                            fontWeight: 700,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {hrmsVisibleFields.length} of {hrmsFields.length}{" "}
+                          fields
+                        </span>
+                      </div>
+                      <div
+                        className="hrms-modal-scroll"
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 10,
+                          maxHeight: 156,
+                          overflowY: "auto",
+                          paddingRight: 4,
+                        }}
+                      >
+                        {hrmsFields.length === 0 ? (
+                          <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                            {getText(
+                              "Load employees to discover fields.",
+                              "फील्ड शोधण्यासाठी कर्मचारी लोड करा.",
+                              "फील्ड शोधण्यासाठी कर्मचारी लोड करा.",
+                            )}
+                          </span>
+                        ) : hrmsVisibleFields.length === 0 ? (
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#64748b",
+                              background: "white",
+                              border: "1px dashed #cbd5e1",
+                              borderRadius: 12,
+                              padding: "12px 14px",
+                              width: "100%",
+                              textAlign: "center",
+                            }}
+                          >
+                            No columns match "{hrmsColumnSearch}".
+                          </span>
+                        ) : (
+                          hrmsVisibleFields.map((f) => (
+                            <label
+                              key={f}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                fontSize: 12,
+                                color: "#374151",
+                                cursor: "pointer",
+                                padding: "6px 10px",
+                                borderRadius: 9999,
+                                background: selectedCols.includes(f)
+                                  ? "#ffedd5"
+                                  : "white",
+                                border: `1px solid ${
+                                  selectedCols.includes(f)
+                                    ? "#fdba74"
+                                    : "#e5e7eb"
+                                }`,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedCols.includes(f)}
+                                onChange={() =>
+                                  setSelectedCols((p) =>
+                                    p.includes(f)
+                                      ? p.filter((x) => x !== f)
+                                      : [...p, f],
+                                  )
+                                }
+                              />
+                              {f}
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Import field mapping */}
+                  {showMapping && (
+                    <div
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 12,
+                        padding: 14,
+                        marginBottom: 12,
+                        background: "#f8fafc",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "#374151",
+                          marginBottom: 8,
+                        }}
+                      >
+                        {getText(
+                          "Map API fields → user account (used on import)",
+                          "API फील्ड → वापरकर्ता खाते मॅप करा (आयातावेळी)",
+                          "API फील्ड → वापरकर्ता खाते मॅप करा (आयातावेळी)",
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(200px, 1fr))",
+                          gap: 8,
+                        }}
+                      >
+                        {HRMS_MAP_TARGETS.map((t) => (
+                          <div key={t.key}>
+                            <label
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: "#6b7280",
+                                display: "block",
+                                marginBottom: 4,
+                              }}
+                            >
+                              {t.label}
+                            </label>
+                            <select
+                              value={fieldMapping[t.key] || ""}
+                              onChange={(e) =>
+                                setFieldMapping((m) => ({
+                                  ...m,
+                                  [t.key]: e.target.value,
+                                }))
+                              }
+                              style={{
+                                width: "100%",
+                                padding: "8px 10px",
+                                border: "1px solid #d1d5db",
+                                borderRadius: 10,
+                                fontSize: 12,
+                                background: "white",
+                              }}
+                            >
+                              <option value="">
+                                {getText("(auto-detect)", "(स्वयं)", "(स्वयं)")}
+                              </option>
+                              {hrmsFields.map((f) => (
+                                <option key={f} value={f}>
+                                  {f}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                      <p
+                        style={{
+                          fontSize: 11,
+                          color: "#6b7280",
+                          marginTop: 6,
+                        }}
+                      >
+                        {getText(
+                          "Leave blank to auto-detect. Click Save to persist.",
+                          "स्वयं-शोधासाठी रिक्त ठेवा. जतन करण्यासाठी Save दाबा.",
+                          "स्वयं-शोधासाठी रिक्त ठेवा. जतन करण्यासाठी Save दाबा.",
+                        )}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Import preview (mapping applied to a sample row) */}
+                  {showPreview && previewEmp && (
+                    <div
+                      style={{
+                        border: "1px solid #bfdbfe",
+                        borderRadius: 8,
+                        padding: 12,
+                        marginBottom: 12,
+                        background: "#eff6ff",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "#1d4ed8",
+                          marginBottom: 8,
+                        }}
+                      >
+                        👁{" "}
+                        {getText(
+                          "Import preview — how this employee resolves to a user account",
+                          "आयात पूर्वावलोकन — हा कर्मचारी वापरकर्ता खात्यात कसा रूपांतरित होतो",
+                          "आयात पूर्वावलोकन — हा कर्मचारी वापरकर्ता खात्यात कसा रूपांतरित होतो",
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(160px, 1fr))",
+                          gap: 8,
+                        }}
+                      >
+                        {Object.entries(previewResolved(previewEmp)).map(
+                          ([k, v]) => (
+                            <div
+                              key={k}
+                              style={{
+                                background: "white",
+                                border: "1px solid #dbeafe",
+                                borderRadius: 6,
+                                padding: "6px 8px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 10,
+                                  textTransform: "uppercase",
+                                  color: "#6b7280",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {k}
+                              </div>
+                              <div style={{ fontSize: 13, color: "#111827" }}>
+                                {v || "—"}
+                              </div>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Employee List - Scrollable Area */}
+                {hrmsImportStep === "employees" && (
                 <div
+                  className="hrms-modal-scroll"
                   style={{
                     flex: "1 1 auto",
                     overflowY: "auto",
-                    padding: "0",
+                    overflowX: "auto",
+                    padding: "0 24px 16px",
                     minHeight: "200px",
                     backgroundColor: "#f9fafb",
                   }}
                 >
-                  <table
-                    style={{
-                      width: "100%",
-                      borderCollapse: "collapse",
-                      backgroundColor: "white",
-                    }}
-                  >
-                    <thead>
-                      <tr
+                  {(() => {
+                    const cols =
+                      selectedCols.length > 0
+                        ? selectedCols
+                        : ["employeeCode", "__name", "email"];
+                    const thStyle: React.CSSProperties = {
+                      padding: "12px 8px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6b7280",
+                      textTransform: "uppercase",
+                      whiteSpace: "nowrap",
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 1,
+                      backgroundColor: "#f8fafc",
+                    };
+                    return (
+                      <div
                         style={{
-                          backgroundColor: "#f9fafb",
-                          borderBottom: "2px solid #e2e8f0",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 14,
+                          overflow: "hidden",
+                          backgroundColor: "white",
+                          minWidth: "100%",
                         }}
                       >
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "left",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#475569",
-                            textTransform: "uppercase",
-                            width: "40px",
-                          }}
-                        ></th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "left",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#475569",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {getText(
-                            "Employee Code",
-                            "कर्मचारी कोड",
-                            "कर्मचारी कोड",
-                          )}
-                        </th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "left",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#475569",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {getText("Name", "नाव", "नाव")}
-                        </th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "left",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#475569",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {getText("Email", "ईमेल", "ईमेल")}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {hrmsEmployees
-                        .filter((emp) => {
-                          if (!hrmsSearchQuery) return true;
-                          const search = hrmsSearchQuery.toLowerCase();
-                          return (
-                            emp.employeeCode?.toLowerCase().includes(search) ||
-                            emp.firstName?.toLowerCase().includes(search) ||
-                            emp.lastName?.toLowerCase().includes(search) ||
-                            emp.email?.toLowerCase().includes(search) ||
-                            emp.designation?.toLowerCase().includes(search)
-                          );
-                        })
-                        .map((employee) => (
+                        <table
+                        style={{
+                          width: "100%",
+                          minWidth: 760,
+                          borderCollapse: "collapse",
+                          backgroundColor: "white",
+                        }}
+                      >
+                        <thead>
                           <tr
-                            key={employee.employeeCode}
                             style={{
-                              borderBottom: "1px solid #e2e8f0",
-                              cursor: "pointer",
-                              backgroundColor: selectedEmployees.includes(
-                                employee.employeeCode,
-                              )
-                                ? "#fef3c7"
-                                : "transparent",
-                            }}
-                            onClick={() => {
-                              const empId = employee.employeeCode;
-                              setSelectedEmployees((prev) =>
-                                prev.includes(empId)
-                                  ? prev.filter((id) => id !== empId)
-                                  : [...prev, empId],
-                              );
+                              backgroundColor: "#f8fafc",
+                              borderBottom: "2px solid #e5e7eb",
                             }}
                           >
-                            <td style={{ padding: "12px 8px" }}>
-                              <input
-                                type="checkbox"
-                                checked={selectedEmployees.includes(
-                                  employee.employeeCode,
-                                )}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  const empId = employee.employeeCode;
+                            <th style={{ ...thStyle, width: "40px" }}></th>
+                            {cols.map((col) => (
+                                  <th key={col} style={thStyle}>
+                                {col === "__name"
+                                  ? getText("Name", "नाव", "नाव")
+                                  : col}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {hrmsFiltered.map((employee, ri) => {
+                            const id = employee.employeeCode;
+                            const imported = isImported(id);
+                            const isSel = selectedEmployees.includes(id);
+                            return (
+                              <tr
+                                key={id || ri}
+                                style={{
+                                  borderBottom: "1px solid #e5e7eb",
+                                  cursor: id && !imported ? "pointer" : "default",
+                                  backgroundColor: isSel
+                                    ? "#fef3c7"
+                                    : imported
+                                      ? "#f9fafb"
+                                      : "transparent",
+                                  opacity: imported ? 0.6 : 1,
+                                }}
+                                onClick={() => {
+                                  if (!id || imported) return;
                                   setSelectedEmployees((prev) =>
-                                    e.target.checked
-                                      ? [...prev, empId]
-                                      : prev.filter((id) => id !== empId),
+                                    prev.includes(id)
+                                      ? prev.filter((x) => x !== id)
+                                      : Array.from(new Set([...prev, id])),
                                   );
                                 }}
-                                style={{
-                                  cursor: "pointer",
-                                  width: "16px",
-                                  height: "16px",
-                                }}
-                              />
-                            </td>
-                            <td
-                              style={{
-                                padding: "12px 8px",
-                                fontSize: "14px",
-                                color: "#334155",
-                                fontWeight: "500",
-                              }}
-                            >
-                              {employee.employeeCode || "-"}
-                            </td>
-                            <td
-                              style={{
-                                padding: "12px 8px",
-                                fontSize: "14px",
-                                color: "#334155",
-                              }}
-                            >
-                              {employee.firstName} {employee.lastName}
-                            </td>
-                            <td
-                              style={{
-                                padding: "12px 8px",
-                                fontSize: "14px",
-                                color: "#475569",
-                              }}
-                            >
-                              {employee.email || "-"}
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                  {hrmsEmployees.filter((emp) => {
-                    if (!hrmsSearchQuery) return true;
-                    const search = hrmsSearchQuery.toLowerCase();
-                    return (
-                      emp.employeeCode?.toLowerCase().includes(search) ||
-                      emp.firstName?.toLowerCase().includes(search) ||
-                      emp.lastName?.toLowerCase().includes(search) ||
-                      emp.email?.toLowerCase().includes(search) ||
-                      emp.designation?.toLowerCase().includes(search)
+                              >
+                                <td style={{ padding: "12px 8px" }}>
+                                  <input
+                                    type="checkbox"
+                                    disabled={!id || imported}
+                                    checked={isSel}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      if (!id || imported) return;
+                                      setSelectedEmployees((prev) =>
+                                        e.target.checked
+                                          ? Array.from(new Set([...prev, id]))
+                                          : prev.filter((x) => x !== id),
+                                      );
+                                    }}
+                                    style={{
+                                      cursor: "pointer",
+                                      width: "16px",
+                                      height: "16px",
+                                    }}
+                                  />
+                                </td>
+                                {cols.map((col, ci) => (
+                                  <td
+                                    key={col}
+                                    style={{
+                                      padding: "12px 8px",
+                                      fontSize: "14px",
+                                      color: "#374151",
+                                      whiteSpace: "nowrap",
+                                      maxWidth: 260,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                    }}
+                                    title={
+                                      col === "__name"
+                                        ? `${employee.firstName || ""} ${
+                                            employee.lastName || ""
+                                          }`.trim()
+                                        : hrmsCell(employee, col)
+                                    }
+                                  >
+                                    {col === "__name"
+                                      ? `${employee.firstName || ""} ${
+                                          employee.lastName || ""
+                                        }`.trim() || "—"
+                                      : hrmsCell(employee, col)}
+                                    {ci === 0 && imported && (
+                                      <span
+                                        style={{
+                                          marginLeft: 6,
+                                          fontSize: 10,
+                                          fontWeight: 600,
+                                          color: "#059669",
+                                          background: "#d1fae5",
+                                          padding: "1px 6px",
+                                          borderRadius: 9999,
+                                        }}
+                                      >
+                                        {getText("Imported", "आयात", "आयात")}
+                                      </span>
+                                    )}
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        </table>
+                      </div>
                     );
-                  }).length === 0 && (
+                  })()}
+                  {hrmsFiltered.length === 0 && (
                     <div
                       style={{
                         textAlign: "center",
                         padding: "32px",
-                        color: "#94a3b8",
+                        color: "#9ca3af",
                       }}
                     >
                       {getText(
@@ -6642,107 +7953,360 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     </div>
                   )}
                 </div>
+                )}
 
-                {/* Role and Project Assignment - Fixed Footer */}
-                {selectedEmployees.length > 0 && (
+                {/* Pagination */}
+                {false && hrmsFiltered.length > HRMS_PAGE_SIZE && (
                   <div
                     style={{
-                      padding: "16px 24px",
-                      borderTop: "2px solid #e2e8f0",
-                      backgroundColor: "#fefce8",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-end",
+                      gap: 12,
+                      padding: "10px 24px",
+                      borderTop: "1px solid #e5e7eb",
+                      fontSize: 13,
+                      color: "#6b7280",
                       flexShrink: 0,
-                      maxHeight: "35vh",
-                      overflowY: "auto",
                     }}
                   >
-                    <div style={{ marginBottom: "12px" }}>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "14px",
-                          fontWeight: "600",
-                          color: "#854d0e",
-                          marginBottom: "6px",
-                        }}
-                      >
-                        📋{" "}
-                        {getText(
-                          "Assign Role to Selected Employees",
-                          "निवडलेल्या कर्मचाऱ्यांना रोल नियुक्त करा",
-                          "निवडलेल्या कर्मचाऱ्यांना रोल नियुक्त करा",
-                        )}{" "}
-                        <span style={{ color: "#ef4444" }}>*</span>
-                      </label>
-                      <select
-                        value={selectedRole}
-                        onChange={(e) => setSelectedRole(e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "10px",
-                          border: "2px solid #ca8a04",
-                          borderRadius: "8px",
-                          fontSize: "14px",
-                          outline: "none",
-                          backgroundColor: "white",
-                          fontWeight: "500",
-                        }}
-                      >
-                        <option value="">
-                          {getText(
-                            "⚠️ Select Role for All Selected Employees",
-                            "⚠️ सर्व निवडलेल्या कर्मचाऱ्यांसाठी रोल निवडा",
-                            "⚠️ सर्व निवडलेल्या कर्मचाऱ्यांसाठी रोल निवडा",
-                          )}
-                        </option>
-                        {roles.map((role) => (
-                          <option key={role._id} value={role._id}>
-                            {role.name}
-                          </option>
-                        ))}
-                      </select>
-                      <p
-                        style={{
-                          fontSize: "12px",
-                          color: "#92400e",
-                          marginTop: "6px",
-                          fontStyle: "italic",
-                        }}
-                      >
-                        💡{" "}
-                        {getText(
-                          "Tip: Employees with the same HRMS code (designation) should typically get the same role.",
-                          "टीप: समान HRMS कोड (पदनाम) असलेल्या कर्मचाऱ्यांना सामान्यतः समान रोल मिळावी.",
-                          "टीप: समान HRMS कोड (पदनाम) असलेल्या कर्मचाऱ्यांना सामान्यतः समान रोल मिळावी.",
-                        )}
-                      </p>
-                    </div>
+                    <span>
+                      {getText("Showing", "दाखवत आहे", "दाखवत आहे")}{" "}
+                      {(hrmsPage - 1) * HRMS_PAGE_SIZE + 1}–
+                      {Math.min(hrmsPage * HRMS_PAGE_SIZE, hrmsFiltered.length)}{" "}
+                      / {hrmsFiltered.length}
+                    </span>
+                    <button
+                      onClick={() => setHrmsPage((p) => Math.max(1, p - 1))}
+                      disabled={hrmsPage <= 1}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: 6,
+                        border: "1px solid #e5e7eb",
+                        background: "white",
+                        cursor: hrmsPage <= 1 ? "default" : "pointer",
+                        color: hrmsPage <= 1 ? "#d1d5db" : "#374151",
+                      }}
+                    >
+                      {getText("Prev", "मागील", "मागील")}
+                    </button>
+                    <span>
+                      {hrmsPage} / {hrmsTotalPages}
+                    </span>
+                    <button
+                      onClick={() =>
+                        setHrmsPage((p) => Math.min(hrmsTotalPages, p + 1))
+                      }
+                      disabled={hrmsPage >= hrmsTotalPages}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: 6,
+                        border: "1px solid #e5e7eb",
+                        background: "white",
+                        cursor:
+                          hrmsPage >= hrmsTotalPages ? "default" : "pointer",
+                        color: hrmsPage >= hrmsTotalPages ? "#d1d5db" : "#374151",
+                      }}
+                    >
+                      {getText("Next", "पुढील", "पुढील")}
+                    </button>
+                  </div>
+                )}
 
+                {/* Project Assignment - Fixed Footer */}
+                {hrmsImportStep === "projects" && selectedEmployees.length > 0 && (
+                  <div
+                    className="hrms-modal-scroll"
+                    style={{
+                      padding: "24px",
+                      borderTop: "1px solid #e2e8f0",
+                      backgroundColor: "#f8fafc",
+                      flex: "1 1 auto",
+                      minHeight: 0,
+                      overflowY: "auto",
+                  }}
+                >
                     {/* Project Assignment */}
-                    <div style={{ marginTop: "16px" }}>
+                    <div
+                      style={{
+                        border: "1px solid #dbeafe",
+                        borderRadius: 16,
+                        background:
+                          "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+                        boxShadow: "0 12px 28px rgba(37, 99, 235, 0.08)",
+                        padding: 16,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          marginBottom: 10,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 15,
+                                color: "#0f172a",
+                                fontWeight: 800,
+                              }}
+                            >
+                              Assign Projects
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: "#2563eb",
+                                background: "#eff6ff",
+                                border: "1px solid #bfdbfe",
+                                borderRadius: 999,
+                                padding: "4px 10px",
+                                fontWeight: 700,
+                              }}
+                            >
+                              {selectedEmployees.length} employee
+                              {selectedEmployees.length === 1 ? "" : "s"} ready
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              color: "#64748b",
+                              fontSize: 12,
+                              marginTop: 4,
+                            }}
+                          >
+                            Choose projects before import. Listing opens with
+                            selected project filter.
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#2563eb",
+                            background: "#eff6ff",
+                            border: "1px solid #bfdbfe",
+                            borderRadius: 999,
+                            padding: "4px 10px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Roles auto-assigned by Role Mapping Rules
+                        </div>
+                      </div>
                       <label
                         style={{
-                          display: "block",
+                          display: "none",
                           fontSize: "14px",
                           fontWeight: "600",
-                          color: "#854d0e",
+                          color: "#334155",
                           marginBottom: "6px",
                         }}
                       >
                         🏢{" "}
                         {getText(
-                          "Assign Projects (Optional)",
+                          "Assign Projects",
                           "प्रकल्प नियुक्त करा (वैकल्पिक)",
                           "प्रकल्प नियुक्त करा (वैकल्पिक)",
                         )}
                       </label>
+                      {selectedHrmsProjects.length > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            marginBottom: 12,
+                          }}
+                        >
+                          {selectedHrmsProjects.map((project) => (
+                            <span
+                              key={project._id}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 8,
+                                padding: "6px 9px 6px 10px",
+                                borderRadius: 999,
+                                border: "1px solid #bfdbfe",
+                                background: "#eff6ff",
+                                color: "#1e3a8a",
+                                fontSize: 12,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {project.name}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedProjects((prev) =>
+                                    prev.filter((id) => id !== project._id),
+                                  )
+                                }
+                                style={{
+                                  border: "none",
+                                  background: "#dbeafe",
+                                  color: "#1e40af",
+                                  borderRadius: 999,
+                                  width: 18,
+                                  height: 18,
+                                  cursor: "pointer",
+                                  lineHeight: "18px",
+                                  fontSize: 12,
+                                }}
+                                aria-label={`Remove ${project.name}`}
+                              >
+                                x
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <div
                         style={{
-                          border: "2px solid #ca8a04",
-                          borderRadius: "12px",
+                          position: "relative",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        <input
+                          type="text"
+                          value={hrmsProjectSearch}
+                          onChange={(e) => setHrmsProjectSearch(e.target.value)}
+                          placeholder="Search project by name, code, or status..."
+                          style={{
+                            width: "100%",
+                            boxSizing: "border-box",
+                            padding: "12px 42px 12px 14px",
+                            border: "1px solid #dbeafe",
+                            borderRadius: "12px",
+                            background: "white",
+                            color: "#111827",
+                            fontSize: "14px",
+                            outline: "none",
+                            boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+                          }}
+                        />
+                        {hrmsProjectSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setHrmsProjectSearch("")}
+                            style={{
+                              position: "absolute",
+                              right: 8,
+                              top: "50%",
+                              transform: "translateY(-50%)",
+                              border: "none",
+                              background: "#f1f5f9",
+                              color: "#475569",
+                              borderRadius: 999,
+                              width: 24,
+                              height: 24,
+                              cursor: "pointer",
+                              lineHeight: "24px",
+                            }}
+                            aria-label="Clear project search"
+                          >
+                            x
+                          </button>
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 10,
+                          marginBottom: 10,
+                          color: "#64748b",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <span>
+                          {hrmsFilteredProjects.length} of {projects.length}{" "}
+                          projects
+                        </span>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <span>
+                            {selectedProjects.length} selected
+                            {hrmsFilteredProjects.length > 0
+                              ? `, ${selectedVisibleHrmsProjectCount} visible`
+                              : ""}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={toggleVisibleHrmsProjects}
+                            disabled={visibleHrmsProjectIds.length === 0}
+                            style={{
+                              border: "1px solid #bfdbfe",
+                              background: "white",
+                              color: "#1d4ed8",
+                              borderRadius: 999,
+                              padding: "5px 10px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor:
+                                visibleHrmsProjectIds.length === 0
+                                  ? "not-allowed"
+                                  : "pointer",
+                              opacity:
+                                visibleHrmsProjectIds.length === 0 ? 0.5 : 1,
+                            }}
+                          >
+                            {allVisibleHrmsProjectsSelected
+                              ? "Clear visible"
+                              : "Select visible"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProjects([])}
+                            disabled={selectedProjects.length === 0}
+                            style={{
+                              border: "1px solid #e5e7eb",
+                              background: "white",
+                              color: "#475569",
+                              borderRadius: 999,
+                              padding: "5px 10px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor:
+                                selectedProjects.length === 0
+                                  ? "not-allowed"
+                                  : "pointer",
+                              opacity: selectedProjects.length === 0 ? 0.5 : 1,
+                            }}
+                          >
+                            Clear all
+                          </button>
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          border: "1px solid #dbeafe",
+                          borderRadius: "14px",
                           backgroundColor: "white",
-                          maxHeight: "120px",
+                          maxHeight: "420px",
                           overflowY: "auto",
-                          padding: "8px",
+                          padding: "10px",
                         }}
                       >
                         {projects.length === 0 ? (
@@ -6760,25 +8324,53 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               "कोणतेही प्रकल्प उपलब्ध नाहीत",
                             )}
                           </div>
+                        ) : hrmsFilteredProjects.length === 0 ? (
+                          <div
+                            style={{
+                              padding: "18px 12px",
+                              textAlign: "center",
+                              color: "#64748b",
+                              fontSize: "13px",
+                            }}
+                          >
+                            No projects match this search.
+                          </div>
                         ) : (
-                          projects.map((project) => (
+                          hrmsFilteredProjects.map((project) => (
                             <label
                               key={project._id}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
-                                padding: "8px",
+                                gap: 12,
+                                padding: "12px 14px",
+                                marginBottom: 8,
                                 cursor: "pointer",
-                                borderRadius: "8px",
-                                transition: "background-color 0.2s",
+                                borderRadius: "12px",
+                                border: selectedProjects.includes(project._id)
+                                  ? "1px solid #93c5fd"
+                                  : "1px solid #e2e8f0",
+                                backgroundColor: selectedProjects.includes(
+                                  project._id,
+                                )
+                                  ? "#eff6ff"
+                                  : "white",
+                                boxShadow: selectedProjects.includes(project._id)
+                                  ? "0 8px 18px rgba(37, 99, 235, 0.08)"
+                                  : "none",
+                                transition: "all 0.2s ease",
                               }}
                               onMouseEnter={(e) =>
                                 (e.currentTarget.style.backgroundColor =
-                                  "#fef9c3")
+                                  selectedProjects.includes(project._id)
+                                    ? "#eff6ff"
+                                    : "#f8fafc")
                               }
                               onMouseLeave={(e) =>
                                 (e.currentTarget.style.backgroundColor =
-                                  "transparent")
+                                  selectedProjects.includes(project._id)
+                                    ? "#eff6ff"
+                                    : "white")
                               }
                             >
                               <input
@@ -6799,18 +8391,18 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                   }
                                 }}
                                 style={{
-                                  width: "16px",
-                                  height: "16px",
-                                  marginRight: "10px",
+                                  width: "18px",
+                                  height: "18px",
                                   cursor: "pointer",
+                                  accentColor: "#2563eb",
                                 }}
                               />
                               <div style={{ flex: 1 }}>
                                 <div
                                   style={{
                                     fontSize: "14px",
-                                    fontWeight: "500",
-                                    color: "#334155",
+                                    fontWeight: "700",
+                                    color: "#0f172a",
                                   }}
                                 >
                                   {project.name}
@@ -6819,7 +8411,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                   <div
                                     style={{
                                       fontSize: "12px",
-                                      color: "#475569",
+                                      color: "#6b7280",
                                       marginTop: "2px",
                                     }}
                                   >
@@ -6831,7 +8423,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               <span
                                 style={{
                                   fontSize: "11px",
-                                  padding: "2px 8px",
+                                  padding: "4px 9px",
                                   borderRadius: "12px",
                                   backgroundColor:
                                     project.status === "active"
@@ -6841,7 +8433,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                     project.status === "active"
                                       ? "#166534"
                                       : "#991b1b",
-                                  fontWeight: "500",
+                                  fontWeight: "700",
                                 }}
                               >
                                 {project.status}
@@ -6853,14 +8445,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       <p
                         style={{
                           fontSize: "12px",
-                          color: "#92400e",
+                          color: "#64748b",
                           marginTop: "6px",
                           fontStyle: "italic",
                         }}
                       >
                         💡{" "}
                         {getText(
-                          "Select one or more projects to assign to the selected employees.",
+                          "Select projects for assignment. In single-project mode, the current project is used automatically.",
                           "निवडलेल्या कर्मचाऱ्यांना नियुक्त करण्यासाठी एक किंवा अधिक प्रकल्प निवडा.",
                           "निवडलेल्या कर्मचाऱ्यांना नियुक्त करण्यासाठी एक किंवा अधिक प्रकल्प निवडा.",
                         )}
@@ -6873,32 +8465,25 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <div
                   style={{
                     padding: "16px 24px",
-                    borderTop: "1px solid #e2e8f0",
+                    borderTop: "1px solid #e5e7eb",
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
                     gap: "12px",
                     flexShrink: 0,
                     backgroundColor: "white",
+                    boxShadow: "0 -10px 24px rgba(15, 23, 42, 0.06)",
                   }}
                 >
                   <button
-                    onClick={() => {
-                      setShowHRMSModal(false);
-                      setHrmsEmployees([]);
-                      setSelectedEmployees([]);
-                      setSelectedRole("");
-                      setSelectedProjects([]);
-                      setHrmsEmployeeCodes("");
-                      setHrmsSearchQuery("");
-                    }}
+                    onClick={closeHrmsModal}
                     disabled={saving}
                     style={{
                       padding: "10px 20px",
-                      border: "1.5px solid #e2e8f0",
-                      borderRadius: "8px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "10px",
                       backgroundColor: "white",
-                      color: "#334155",
+                      color: "#374151",
                       fontSize: "14px",
                       fontWeight: "500",
                       cursor: saving ? "not-allowed" : "pointer",
@@ -6907,33 +8492,76 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   >
                     {getText("Cancel", "रद्द करा", "रद्द करा")}
                   </button>
+                  {hrmsImportStep === "projects" && hrmsRequiresProjectSelection && (
+                    <div
+                      style={{
+                        color: "#b45309",
+                        background: "#fffbeb",
+                        border: "1px solid #fde68a",
+                        borderRadius: 999,
+                        padding: "7px 12px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Select project to enable import
+                    </div>
+                  )}
+                  {hrmsImportStep === "projects" && (
+                    <button
+                      type="button"
+                      onClick={() => setHrmsImportStep("employees")}
+                      disabled={saving}
+                      style={{
+                        padding: "10px 18px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: "10px",
+                        backgroundColor: "white",
+                        color: "#374151",
+                        fontSize: "14px",
+                        fontWeight: "600",
+                        cursor: saving ? "not-allowed" : "pointer",
+                        opacity: saving ? 0.5 : 1,
+                      }}
+                    >
+                      Back to employees
+                    </button>
+                  )}
                   <button
-                    onClick={handleConfirmHRMS}
-                    disabled={
-                      saving || selectedEmployees.length === 0 || !selectedRole
+                    onClick={
+                      hrmsImportStep === "employees"
+                        ? () => setHrmsImportStep("projects")
+                        : handleConfirmHRMS
                     }
+                    disabled={hrmsPrimaryDisabled}
                     style={{
                       padding: "10px 32px",
                       border: "none",
-                      borderRadius: "8px",
+                      borderRadius: "10px",
                       backgroundColor:
-                        selectedEmployees.length === 0 ||
-                        !selectedRole ||
-                        saving
+                        hrmsPrimaryDisabled
                           ? "#d1d5db"
-                          : "#f97316",
+                          : hrmsImportStep === "employees"
+                            ? "#2563eb"
+                            : "#f97316",
                       color: "white",
                       fontSize: "14px",
-                      fontWeight: "500",
+                      fontWeight: "600",
+                      boxShadow:
+                        hrmsPrimaryDisabled
+                          ? "none"
+                          : hrmsImportStep === "employees"
+                            ? "0 10px 20px rgba(37, 99, 235, 0.22)"
+                            : "0 10px 20px rgba(249, 115, 22, 0.22)",
                       cursor:
-                        selectedEmployees.length === 0 ||
-                        !selectedRole ||
-                        saving
+                        hrmsPrimaryDisabled
                           ? "not-allowed"
                           : "pointer",
                     }}
                   >
-                    {saving
+                    {hrmsImportStep === "employees"
+                      ? `Next: Assign Projects (${selectedEmployees.length})`
+                      : saving
                       ? getText("Adding...", "जोडत आहे...", "जोडत आहे...")
                       : getText(
                           `Add ${selectedEmployees.length} User(s)`,
@@ -6957,7 +8585,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(15,23,42,.5)",
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -6968,20 +8596,20 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "20px",
+              borderRadius: "12px",
               maxWidth: "500px",
               width: "100%",
               maxHeight: "90vh",
               overflow: "auto",
               boxShadow:
-                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
+                "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
             }}
           >
             {/* Header */}
             <div
               style={{
                 padding: "24px",
-                borderBottom: "1px solid #e2e8f0",
+                borderBottom: "1px solid #e5e7eb",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
@@ -7021,7 +8649,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       fontSize: "20px",
                       fontWeight: "700",
-                      color: "#0f172a",
+                      color: "#111827",
                       margin: 0,
                     }}
                   >
@@ -7034,7 +8662,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <p
                     style={{
                       fontSize: "14px",
-                      color: "#475569",
+                      color: "#6b7280",
                       margin: "4px 0 0 0",
                     }}
                   >
@@ -7053,7 +8681,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   border: "none",
                   background: "transparent",
                   cursor: "pointer",
-                  borderRadius: "8px",
+                      borderRadius: "10px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -7064,7 +8692,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   height="24"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="#475569"
+                  stroke="#6B7280"
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -7086,7 +8714,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "600",
-                        color: "#334155",
+                        color: "#374151",
                         marginBottom: "12px",
                       }}
                     >
@@ -7119,7 +8747,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             style={{
                               padding: "12px",
                               backgroundColor: "#f9fafb",
-                              border: "1px solid #e2e8f0",
+                              border: "1px solid #e5e7eb",
                               borderRadius: "8px",
                               display: "flex",
                               alignItems: "center",
@@ -7132,7 +8760,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                 style={{
                                   fontSize: "13px",
                                   fontWeight: "600",
-                                  color: "#0f172a",
+                                  color: "#111827",
                                   marginBottom: "4px",
                                 }}
                               >
@@ -7162,7 +8790,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               style={{
                                 padding: "6px 12px",
                                 border: "1px solid #10B981",
-                                borderRadius: "8px",
+                                borderRadius: "6px",
                                 backgroundColor: "white",
                                 color: "#10B981",
                                 fontSize: "12px",
@@ -7187,7 +8815,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "600",
-                    color: "#334155",
+                    color: "#374151",
                     marginBottom: "8px",
                   }}
                 >
@@ -7202,10 +8830,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     padding: "12px",
                     backgroundColor: "#f9fafb",
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid #e5e7eb",
                     borderRadius: "8px",
                     fontSize: "14px",
-                    color: "#0f172a",
+                    color: "#111827",
                     fontFamily: "monospace",
                     display: "flex",
                     alignItems: "center",
@@ -7229,8 +8857,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     }}
                     style={{
                       padding: "4px 8px",
-                      border: "1.5px solid #e2e8f0",
-                      borderRadius: "8px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "4px",
                       backgroundColor: "white",
                       cursor: "pointer",
                       fontSize: "12px",
@@ -7248,7 +8876,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "600",
-                    color: "#334155",
+                    color: "#374151",
                     marginBottom: "8px",
                   }}
                 >
@@ -7258,10 +8886,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     padding: "12px",
                     backgroundColor: "#f9fafb",
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid #e5e7eb",
                     borderRadius: "8px",
                     fontSize: "14px",
-                    color: "#0f172a",
+                    color: "#111827",
                     fontFamily: "monospace",
                     display: "flex",
                     alignItems: "center",
@@ -7285,8 +8913,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     }}
                     style={{
                       padding: "4px 8px",
-                      border: "1.5px solid #e2e8f0",
-                      borderRadius: "8px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "4px",
                       backgroundColor: "white",
                       cursor: "pointer",
                       fontSize: "12px",
@@ -7301,8 +8929,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               <div
                 style={{
                   padding: "12px",
-                  backgroundColor: "#eef2ff",
-                  border: "1px solid #e2e8f0",
+                  backgroundColor: "#DBEAFE",
+                  border: "1px solid #3B82F6",
                   borderRadius: "8px",
                   marginBottom: "20px",
                 }}
@@ -7334,10 +8962,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     flex: 1,
                     padding: "12px",
-                    border: "1.5px solid #e2e8f0",
+                    border: "1px solid #d1d5db",
                     borderRadius: "8px",
                     backgroundColor: "white",
-                    color: "#334155",
+                    color: "#374151",
                     fontSize: "14px",
                     fontWeight: "600",
                     cursor: "pointer",
@@ -7364,9 +8992,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       padding: "12px",
                       border: "none",
                       borderRadius: "8px",
-                      background: "linear-gradient(160deg, #4f46e5, #4338ca)",
-                      boxShadow: "0 4px 14px rgba(67,56,202,.35)",
-                      color: "#fff",
+                      background:
+                        "linear-gradient(135deg, #2563EB 0%, #1d4ed8 100%)",
+                      color: "white",
                       fontSize: "14px",
                       fontWeight: "600",
                       cursor: "pointer",
@@ -7394,7 +9022,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(15,23,42,.5)",
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -7405,25 +9033,25 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "20px",
+              borderRadius: "12px",
               maxWidth: "450px",
               width: "100%",
               boxShadow:
-                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
+                "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
             }}
           >
             {/* Header */}
             <div
               style={{
                 padding: "24px",
-                borderBottom: "1px solid #e2e8f0",
+                borderBottom: "1px solid #e5e7eb",
               }}
             >
               <h3
                 style={{
                   fontSize: "18px",
                   fontWeight: "600",
-                  color: "#0f172a",
+                  color: "#111827",
                   margin: 0,
                 }}
               >
@@ -7436,7 +9064,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               <p
                 style={{
                   fontSize: "14px",
-                  color: "#475569",
+                  color: "#6B7280",
                   margin: "8px 0 0 0",
                 }}
               >
@@ -7456,7 +9084,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "13px",
-                    color: "#475569",
+                    color: "#6B7280",
                     marginBottom: "12px",
                   }}
                 >
@@ -7466,8 +9094,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               {!loadingResetPolicy && resetPasswordPolicy && (
                 <div
                   style={{
-                    background: "#eef2ff",
-                    border: "1px solid #e2e8f0",
+                    background: "#f0f9ff",
+                    border: "1px solid #bae6fd",
                     borderRadius: "8px",
                     padding: "12px 16px",
                     marginBottom: "16px",
@@ -7477,7 +9105,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <p
                     style={{
                       fontWeight: 600,
-                      color: "#4f46e5",
+                      color: "#0369a1",
                       margin: "0 0 6px 0",
                     }}
                   >
@@ -7487,7 +9115,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       margin: 0,
                       paddingLeft: "18px",
-                      color: "#334155",
+                      color: "#374151",
                       lineHeight: "1.8",
                     }}
                   >
@@ -7515,8 +9143,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     display: "block",
                     fontSize: "14px",
-                    fontWeight: "500",
-                    color: "#334155",
+                      fontWeight: "600",
+                    color: "#374151",
                     marginBottom: "6px",
                   }}
                 >
@@ -7540,7 +9168,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "10px 12px",
-                    border: "1.5px solid #e2e8f0",
+                    border: "1px solid #d1d5db",
                     borderRadius: "8px",
                     fontSize: "14px",
                     outline: "none",
@@ -7555,7 +9183,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#334155",
+                    color: "#374151",
                     marginBottom: "6px",
                   }}
                 >
@@ -7581,7 +9209,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "10px 12px",
-                    border: "1.5px solid #e2e8f0",
+                    border: "1px solid #d1d5db",
                     borderRadius: "8px",
                     fontSize: "14px",
                     outline: "none",
@@ -7618,10 +9246,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     flex: 1,
                     padding: "12px",
-                    border: "1.5px solid #e2e8f0",
+                    border: "1px solid #d1d5db",
                     borderRadius: "8px",
                     backgroundColor: "white",
-                    color: "#334155",
+                    color: "#374151",
                     fontSize: "14px",
                     fontWeight: "600",
                     cursor: "pointer",
@@ -7637,7 +9265,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     border: "none",
                     borderRadius: "8px",
                     background:
-                      "linear-gradient(135deg, #4f46e5 0%, #4f46e5 100%)",
+                      "linear-gradient(135deg, #2563EB 0%, #1d4ed8 100%)",
                     color: "white",
                     fontSize: "14px",
                     fontWeight: "600",
@@ -7662,7 +9290,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(15,23,42,.5)",
+            background: "rgba(0,0,0,0.5)",
             zIndex: 1000,
             display: "flex",
             alignItems: "center",
@@ -7672,14 +9300,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               background: "white",
-              borderRadius: "20px",
+              borderRadius: "12px",
               padding: "28px",
               width: "520px",
               maxWidth: "90vw",
               maxHeight: "80vh",
               overflowY: "auto",
-              boxShadow:
-                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
             }}
           >
             <h3
@@ -7687,7 +9314,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 margin: "0 0 8px 0",
                 fontSize: "18px",
                 fontWeight: 700,
-                color: "#0f172a",
+                color: "#111827",
               }}
             >
               Delete {selectedUserIds.size} User
@@ -7697,7 +9324,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 margin: "0 0 16px 0",
                 fontSize: "14px",
-                color: "#475569",
+                color: "#6B7280",
               }}
             >
               This action cannot be undone. The following user
@@ -7749,7 +9376,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         style={{
                           fontWeight: 600,
                           fontSize: "14px",
-                          color: "#0f172a",
+                          color: "#111827",
                         }}
                       >
                         {u.firstName} {u.lastName}
@@ -7757,7 +9384,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       <div
                         style={{
                           fontSize: "12px",
-                          color: "#475569",
+                          color: "#6B7280",
                           marginTop: "2px",
                         }}
                       >
@@ -7797,10 +9424,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 disabled={bulkDeleting}
                 style={{
                   padding: "10px 20px",
-                  border: "1.5px solid #e2e8f0",
+                  border: "1px solid #D1D5DB",
                   borderRadius: "8px",
-                  background: "#fff",
-                  color: "#334155",
+                  background: "white",
+                  color: "#374151",
                   fontSize: "14px",
                   fontWeight: 600,
                   cursor: bulkDeleting ? "not-allowed" : "pointer",

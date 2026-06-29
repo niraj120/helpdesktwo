@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
+import { AuthRequest } from "../middleware/auth";
 import { User } from "../models/User";
+import { MDMFieldConfig } from "../models/MDMFieldConfig";
 import { Role } from "../models/Role";
 import { Project } from "../models/Project";
 import { Center } from "../models/Center";
@@ -11,6 +13,67 @@ import { validatePasswordPolicy } from "../utils/passwordPolicyUtils";
 import ExcelJS from "exceljs";
 import multer from "multer";
 import { dashboardEvents } from "../services/dashboardEventBus";
+
+const resolveHrmsImportRole = async (
+  projectId: any,
+  attrs: {
+    hrmsCode?: string;
+    department?: string;
+    designation?: string;
+  },
+  explicitRole?: string,
+) => {
+  if (explicitRole) return explicitRole;
+
+  const mappedRole = await resolveRoleFromHRMS(projectId, attrs);
+  if (mappedRole) return mappedRole;
+
+  const projectScopedAgent = projectId
+    ? await Role.findOne({
+        code: "AGENT",
+        isActive: true,
+        $or: [{ projects: projectId }, { projectId }],
+      }).select("_id")
+    : null;
+  if (projectScopedAgent?._id) return projectScopedAgent._id;
+
+  const globalAgent = await Role.findOne({
+    code: "AGENT",
+    isActive: true,
+  }).select("_id");
+  if (globalAgent?._id) return globalAgent._id;
+
+  const agentLikeRole = projectId
+    ? await Role.findOne({
+        isAgent: true,
+        isActive: true,
+        $or: [{ projects: projectId }, { projectId }],
+      }).select("_id")
+    : null;
+  if (agentLikeRole?._id) return agentLikeRole._id;
+
+  return null;
+};
+
+const makeHrmsPlaceholderEmail = (
+  employeeCode?: string,
+  mdmSourceId?: string,
+) => {
+  const code = String(employeeCode || "")
+    .trim()
+    .toLowerCase();
+  if (!code) return "";
+
+  const safeCode = code
+    .replace(/[^a-z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  const sourcePart = mdmSourceId
+    ? `.${String(mdmSourceId).slice(-6).toLowerCase()}`
+    : "";
+
+  return `${safeCode}${sourcePart}@hrms.local`;
+};
 
 // Multer config for bulk upload (memory storage, Excel files only)
 const bulkUploadStorage = multer.memoryStorage();
@@ -371,13 +434,15 @@ export const createUser = async (
       projects,
       centers,
       syncFromHRMS = false,
+      mdmSourceId,
       payrollType,
       company,
     } = req.body;
+    let resolvedRole = role;
 
     // Validate required fields
     // When syncing from HRMS with employeeCode, email can be fetched from HRMS
-    if (!role) {
+    if (!resolvedRole && !syncFromHRMS) {
       res.status(400).json({
         success: false,
         error: "Role is required",
@@ -425,23 +490,13 @@ export const createUser = async (
       }
     }
 
-    // Validate role exists
-    const roleDoc = await Role.findById(role);
-    if (!roleDoc) {
-      res.status(400).json({
-        success: false,
-        error: "Invalid role ID",
-      });
-      return;
-    }
-
     let userData: any = {
       email,
       password: password || Math.random().toString(36).slice(-10), // Generate random password if not provided
       firstName,
       lastName,
       mobile: mobile || undefined,
-      role,
+      role: resolvedRole,
       department,
       designation,
       reportingManager,
@@ -467,7 +522,11 @@ export const createUser = async (
     // Sync from HRMS if requested
     if (syncFromHRMS && employeeCode) {
       try {
-        const hrmsData = await hrmsService.syncEmployeeData(employeeCode);
+        const hrmsData = await hrmsService.syncEmployeeData(
+          employeeCode,
+          mdmSourceId,
+          req.body?.fieldMapping,
+        );
         if (hrmsData) {
           userData = {
             ...userData,
@@ -479,19 +538,33 @@ export const createUser = async (
             mobile: mobile || hrmsData.mobile,
           };
         }
+        // Provenance: record this came from HRMS via the chosen MDM source
+        userData.registrationSource = "hrms";
+        if (mdmSourceId) userData.mdmSourceId = mdmSourceId;
+
+        if (!userData.email) {
+          userData.email = makeHrmsPlaceholderEmail(employeeCode, mdmSourceId);
+        }
+
+        if (!userData.email) {
+          res.status(400).json({
+            success: false,
+            error:
+              "HRMS employee has no email and no employee code to create an internal HRMS email",
+          });
+          return;
+        }
 
         // Check if email from HRMS already exists
-        if (userData.email) {
-          const existingUserByEmail = await User.findOne({
-            email: userData.email,
+        const existingUserByEmail = await User.findOne({
+          email: userData.email,
+        });
+        if (existingUserByEmail) {
+          res.status(400).json({
+            success: false,
+            error: `User with email ${userData.email} already exists`,
           });
-          if (existingUserByEmail) {
-            res.status(400).json({
-              success: false,
-              error: `User with email ${userData.email} already exists`,
-            });
-            return;
-          }
+          return;
         }
       } catch (hrmsError: any) {
         res.status(400).json({
@@ -505,6 +578,38 @@ export const createUser = async (
       // Only set employeeCode if it's not empty
       userData.employeeCode = employeeCode;
     }
+
+    if (syncFromHRMS && !resolvedRole) {
+      const mappingProjectId = Array.isArray(projects) ? projects[0] : projects;
+      resolvedRole = await resolveHrmsImportRole(
+        mappingProjectId,
+        {
+          hrmsCode: employeeCode,
+          department: userData.department,
+          designation: userData.designation,
+        },
+        resolvedRole,
+      );
+
+      if (!resolvedRole) {
+        res.status(400).json({
+          success: false,
+          error:
+            "No role mapping rule matched this HRMS employee and no AGENT fallback role is configured",
+        });
+        return;
+      }
+    }
+
+    const roleDoc = await Role.findById(resolvedRole);
+    if (!roleDoc) {
+      res.status(400).json({
+        success: false,
+        error: "Invalid role ID",
+      });
+      return;
+    }
+    userData.role = resolvedRole;
 
     if (joiningDate) {
       userData.joiningDate = new Date(joiningDate);
@@ -1068,21 +1173,63 @@ export const searchHRMSEmployees = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const { query } = req.query;
+    const { query, mdmSourceId } = req.query;
+    const q = typeof query === "string" ? query : "";
+    const sid = typeof mdmSourceId === "string" ? mdmSourceId : undefined;
+    const loadMode = req.query.loadMode === "range" ? "range" : "all";
+    const start =
+      typeof req.query.start === "string" ? Number(req.query.start) : undefined;
+    const end =
+      typeof req.query.end === "string" ? Number(req.query.end) : undefined;
+    const limit =
+      typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
 
-    if (!query || typeof query !== "string") {
-      res.status(400).json({
-        success: false,
-        error: "Search query is required",
-      });
-      return;
+    // Blank query is allowed → loads all (needed for "Load all from MDM").
+    const searchResult = await hrmsService.searchEmployeesWithMeta(q, sid, {
+      mode: loadMode,
+      start: Number.isFinite(start) ? start : undefined,
+      end: Number.isFinite(end) ? end : undefined,
+      limit: Number.isFinite(limit) ? limit : undefined,
+    });
+    const employees = searchResult.rows;
+
+    // Field union across the returned rows for the dynamic column picker.
+    const fieldSet = new Set<string>();
+    for (const e of employees) {
+      const raw = (e as any)._raw || e;
+      for (const [k, v] of Object.entries(raw)) {
+        if (v !== null && typeof v === "object") continue;
+        fieldSet.add(k);
+      }
     }
 
-    const employees = await hrmsService.searchEmployees(query);
+    // Which of these employee codes already exist as User accounts (dedupe UI).
+    const codes = employees
+      .map((e) => e.employeeCode)
+      .filter((c): c is string => !!c);
+    let existingCodes: string[] = [];
+    if (codes.length) {
+      const existing = await User.find({ employeeCode: { $in: codes } })
+        .select("employeeCode")
+        .lean();
+      existingCodes = existing
+        .map((u: any) => u.employeeCode)
+        .filter(Boolean);
+    }
 
     res.json({
       success: true,
       data: employees,
+      fields: Array.from(fieldSet),
+      existingCodes,
+      meta: {
+        totalAvailable: searchResult.totalAvailable,
+        matchedCount: searchResult.matchedCount,
+        loadedCount: searchResult.loadedCount,
+        loadMode: searchResult.mode,
+        rangeStart: searchResult.rangeStart,
+        rangeEnd: searchResult.rangeEnd,
+      },
     });
   } catch (error: any) {
     console.error("Error searching HRMS employees:", error);
@@ -1091,6 +1238,107 @@ export const searchHRMSEmployees = async (
       error: "Failed to search HRMS employees",
       message: error.message,
     });
+  }
+};
+
+/**
+ * Discover the field list (+ small sample) for a source — used when the admin
+ * picks an MDM source in the dropdown so the column picker can populate before
+ * searching.
+ */
+export const getHRMSFields = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { mdmSourceId } = req.query;
+    const out = await hrmsService.getFields(
+      typeof mdmSourceId === "string" ? mdmSourceId : undefined,
+    );
+    res.json({ success: true, ...out });
+  } catch (error: any) {
+    console.error("Error loading HRMS fields:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to load fields",
+      message: error.message,
+    });
+  }
+};
+
+/** List all saved field-config presets for a source/dataType. */
+export const getMdmFieldConfig = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const mdmSourceId =
+      typeof req.query.mdmSourceId === "string" ? req.query.mdmSourceId : "";
+    const dataType =
+      typeof req.query.dataType === "string" ? req.query.dataType : "employees";
+    if (!mdmSourceId) {
+      res.json({ success: true, data: [] });
+      return;
+    }
+    const presets = await MDMFieldConfig.find({ mdmSourceId, dataType })
+      .sort({ name: 1 })
+      .lean();
+    res.json({ success: true, data: presets });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/** Upsert a named field-config preset (selectedFields + import mapping). */
+export const saveMdmFieldConfig = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { mdmSourceId, dataType, name, selectedFields, fieldMapping } =
+      req.body;
+    if (!mdmSourceId) {
+      res.status(400).json({ success: false, error: "mdmSourceId is required" });
+      return;
+    }
+    const presetName = (name && String(name).trim()) || "Default";
+    const cfg = await MDMFieldConfig.findOneAndUpdate(
+      { mdmSourceId, dataType: dataType || "employees", name: presetName },
+      {
+        mdmSourceId,
+        dataType: dataType || "employees",
+        name: presetName,
+        selectedFields: Array.isArray(selectedFields) ? selectedFields : [],
+        fieldMapping: fieldMapping || {},
+        updatedBy: req.user?.userId,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    ).lean();
+    res.json({ success: true, data: cfg });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/** Delete a named preset. */
+export const deleteMdmFieldConfig = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const mdmSourceId =
+      typeof req.query.mdmSourceId === "string" ? req.query.mdmSourceId : "";
+    const dataType =
+      typeof req.query.dataType === "string" ? req.query.dataType : "employees";
+    const name = typeof req.query.name === "string" ? req.query.name : "";
+    if (!mdmSourceId || !name) {
+      res.status(400).json({ success: false, error: "mdmSourceId + name required" });
+      return;
+    }
+    await MDMFieldConfig.deleteOne({ mdmSourceId, dataType, name });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -1201,23 +1449,39 @@ export const bulkImportFromHRMS = async (
         }
 
         // Resolve role: explicit roleId wins; else map from HRMS attributes.
-        const resolvedRoleId =
-          roleId ||
-          (await resolveRoleFromHRMS(mappingProjectId, {
+        const resolvedRoleId = await resolveHrmsImportRole(
+          mappingProjectId,
+          {
             hrmsCode: employeeCode,
             department: (hrmsData as any).department,
             designation: (hrmsData as any).designation,
-          }));
+          },
+          roleId,
+        );
         if (!resolvedRoleId) {
           results.failed.push({
             employeeCode,
-            reason: "No role provided and no role-mapping rule matched",
+            reason:
+              "No role provided, no role-mapping rule matched, and no AGENT fallback role is configured",
+          });
+          continue;
+        }
+
+        const userEmail =
+          (hrmsData as any).email || makeHrmsPlaceholderEmail(employeeCode);
+        if (!userEmail) {
+          results.failed.push({
+            employeeCode,
+            reason:
+              "HRMS employee has no email and no employee code to create an internal HRMS email",
           });
           continue;
         }
 
         const user = new User({
           ...hrmsData,
+          email: userEmail,
+          registrationSource: "hrms",
           role: resolvedRoleId,
           projects: projectIds || [],
           password: Math.random().toString(36).slice(-10), // Random password

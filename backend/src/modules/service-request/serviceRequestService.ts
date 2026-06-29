@@ -383,7 +383,25 @@ export async function pslSatisfactionCall(
     ticket.status = SR_STATUS.CLOSED;
     ticket.closedAt = ticket.closedAt || new Date();
   }
-  addFollowUp(ticket, `PSL call: ${opts.comments || ""}`, actorId);
+  // Proper audit entry — surfaces in History + Audit timelines (not a parent
+  // reply). Captures whether the parent was reached, satisfaction and outcome.
+  const outcome =
+    !opts.spoken
+      ? "Could not reach parent"
+      : opts.parentSatisfied === true
+        ? "Parent satisfied → Closed"
+        : opts.parentSatisfied === false
+          ? "Parent not satisfied" +
+            (ticket.status === SR_STATUS.REOPEN ? " → Re-opened" : "")
+          : "Spoke to parent";
+  ticket.changeHistory = ticket.changeHistory || [];
+  ticket.changeHistory.push({
+    field: "PSL Call",
+    oldValue: "-",
+    newValue: `${outcome}${opts.comments ? ` — ${opts.comments}` : ""}`,
+    changedBy: oid(actorId),
+    changedAt: new Date(),
+  } as any);
   await ticket.save();
   return ticket;
 }
@@ -400,9 +418,105 @@ export interface ListSrParams {
   status?: string;
   assignedTo?: string;
   search?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  updatedFrom?: string;
+  updatedTo?: string;
+  priority?: string;
+  wipFrom?: string;
+  wipTo?: string;
+  wipState?: string; // "overdue" | "today" | "week" | "none"
+  source?: string;
+  classification?: string;
+  categoryId?: string;
+  linkedIsrState?: string; // "none" | "pending" | "completed"
+  sortBy?: string;
+  sortOrder?: string;
   page?: number;
   limit?: number;
   scope?: ProjectScope; // restrict to the requester's projects
+}
+
+const csv = (value?: string): string[] =>
+  (value || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+const validDate = (value?: string): Date | undefined => {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
+const endOfDay = (date: Date): Date => {
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+  return end;
+};
+
+const applyDateRange = (
+  query: any,
+  field: string,
+  from?: string,
+  to?: string,
+) => {
+  const start = validDate(from);
+  const end = validDate(to);
+  if (!start && !end) return;
+  query[field] = {};
+  if (start) query[field].$gte = start;
+  if (end) query[field].$lte = endOfDay(end);
+};
+
+const applyCsvFilter = (query: any, field: string, value?: string) => {
+  const values = csv(value);
+  if (!values.length) return;
+  query[field] = values.length === 1 ? values[0] : { $in: values };
+};
+
+const addAnd = (query: any, condition: any) => {
+  query.$and = query.$and || [];
+  query.$and.push(condition);
+};
+
+const categoryFilter = (categoryId: string) => ({
+  $or: [
+    { category: categoryId },
+    { "categoryHierarchy.level1": categoryId },
+    { "categoryHierarchy.level2": categoryId },
+    { "categoryHierarchy.level3": categoryId },
+    { "categoryHierarchy.level4": categoryId },
+    { "categoryHierarchy.level5": categoryId },
+  ],
+});
+
+async function applyLinkedIsrFilter(query: any, state?: string) {
+  if (!state || state === "all") return;
+
+  const rollup = await Ticket.aggregate([
+    { $match: { linkedPsrId: { $exists: true, $ne: null } } },
+    {
+      $group: {
+        _id: "$linkedPsrId",
+        total: { $sum: 1 },
+        done: { $sum: { $cond: [{ $in: ["$status", [4, 5]] }, 1, 0] } },
+      },
+    },
+  ]);
+
+  const linkedIds = (rollup as any[]).map((r) => r._id);
+  if (state === "none") {
+    query._id = { ...(query._id || {}), $nin: linkedIds };
+    return;
+  }
+
+  const matchingIds = (rollup as any[])
+    .filter((r) =>
+      state === "completed" ? r.total > 0 && r.done >= r.total : r.done < r.total,
+    )
+    .map((r) => r._id);
+  query._id = { ...(query._id || {}), $in: matchingIds };
 }
 
 export async function listServiceRequests(params: ListSrParams) {
@@ -418,24 +532,81 @@ export async function listServiceRequests(params: ListSrParams) {
   } else if (params.projectId) {
     q.project = params.projectId;
   }
-  if (params.status && params.status !== "all") q.status = Number(params.status);
+
+  const statuses = csv(params.status).filter((s) => s !== "all").map(Number);
+  if (statuses.length) q.status = statuses.length === 1 ? statuses[0] : { $in: statuses };
   if (params.assignedTo) q.assignedTo = params.assignedTo;
+  applyCsvFilter(q, "priority", params.priority);
+  applyCsvFilter(q, "submissionSource", params.source);
+  applyCsvFilter(q, "metadata.classification", params.classification);
+  if (params.categoryId) addAnd(q, categoryFilter(params.categoryId));
+  applyDateRange(q, "createdAt", params.createdFrom, params.createdTo);
+  applyDateRange(q, "updatedAt", params.updatedFrom, params.updatedTo);
+  applyDateRange(q, "wip.committedDate", params.wipFrom, params.wipTo);
+
+  const now = new Date();
+  if (params.wipState === "overdue") {
+    q["wip.committedDate"] = { ...(q["wip.committedDate"] || {}), $lt: now };
+    q.status = q.status || { $in: [2, 7] };
+  } else if (params.wipState === "today") {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    q["wip.committedDate"] = {
+      ...(q["wip.committedDate"] || {}),
+      $gte: start,
+      $lte: endOfDay(now),
+    };
+  } else if (params.wipState === "week") {
+    const end = new Date();
+    end.setDate(end.getDate() + 7);
+    q["wip.committedDate"] = {
+      ...(q["wip.committedDate"] || {}),
+      $gte: now,
+      $lte: endOfDay(end),
+    };
+  } else if (params.wipState === "none") {
+    q["wip.committedDate"] = { $exists: false };
+  }
+
   if (params.search) {
     const rx = new RegExp(
       params.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
       "i",
     );
-    q.$or = [{ ticketNumber: rx }, { subject: rx }];
+    addAnd(q, {
+      $or: [
+        { ticketNumber: rx },
+        { subject: rx },
+        { "metadata.studentName": rx },
+        { "metadata.studentEnrollment": rx },
+        { "metadata.parent.name": rx },
+        { "metadata.parent.mobile": rx },
+      ],
+    });
   }
+
+  await applyLinkedIsrFilter(q, params.linkedIsrState);
 
   // Base query for the status-counter strip: every filter EXCEPT status, so the
   // counters stay stable while a status is selected (mirrors View Queries).
   const qBase: any = { ...q };
   delete qBase.status;
 
+  const allowedSorts = new Set([
+    "createdAt",
+    "updatedAt",
+    "priority",
+    "status",
+    "wip.committedDate",
+  ]);
+  const sortBy = allowedSorts.has(params.sortBy || "")
+    ? params.sortBy!
+    : "createdAt";
+  const sortOrder = params.sortOrder === "asc" ? 1 : -1;
+
   const [items, total, statusAgg] = await Promise.all([
     Ticket.find(q)
-      .sort({ createdAt: -1 })
+      .sort({ [sortBy]: sortOrder, createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .populate("assignedTo", "firstName lastName fullName email")
@@ -456,7 +627,96 @@ export async function listServiceRequests(params: ListSrParams) {
   }
   statusCounts.all = allCount;
 
+  // Linked-ISR rollup: one aggregate over child ISRs for the PSR rows on this
+  // page. done = status Resolved(4)/Closed(5). Inline list powers the popover.
+  const psrIds = (items as any[])
+    .filter((i) => i.interactionType === "PSR")
+    .map((i) => i._id);
+  if (psrIds.length) {
+    const rollup = await Ticket.aggregate([
+      { $match: { linkedPsrId: { $in: psrIds } } },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: "$linkedPsrId",
+          total: { $sum: 1 },
+          done: {
+            $sum: { $cond: [{ $in: ["$status", [4, 5]] }, 1, 0] },
+          },
+          isrs: {
+            $push: {
+              _id: "$_id",
+              ticketNumber: "$ticketNumber",
+              status: "$status",
+            },
+          },
+        },
+      },
+    ]);
+    const byPsr = new Map(
+      (rollup as any[]).map((r) => [String(r._id), r]),
+    );
+    for (const it of items as any[]) {
+      const r = byPsr.get(String(it._id));
+      it.linkedIsr = { total: r?.total || 0, done: r?.done || 0 };
+      it.linkedIsrs = (r?.isrs || []).slice(0, 25);
+    }
+  }
+
   return { items, total, page, limit, statusCounts };
+}
+
+/** ISRs linked to a parent PSR (for the detail panel + popover). */
+export async function listLinkedIsrs(psrId: string, scope?: ProjectScope) {
+  if (!mongoose.Types.ObjectId.isValid(psrId)) {
+    throw new SrError("Invalid PSR id", 400);
+  }
+  const psr = await Ticket.findById(psrId).select("interactionType project").lean();
+  if (!psr || (psr as any).interactionType !== "PSR") {
+    throw new SrError("Parent PSR not found", 404);
+  }
+  if (scope && !canAccessProject(scope, (psr as any).project)) {
+    throw new SrError("Parent PSR not found", 404);
+  }
+  const items = await Ticket.find({ linkedPsrId: psrId })
+    .sort({ createdAt: -1 })
+    .select("ticketNumber subject status priority assignedTo createdAt")
+    .populate("assignedTo", "firstName lastName fullName email")
+    .lean();
+  const total = items.length;
+  const done = items.filter((i: any) => i.status === 4 || i.status === 5).length;
+  return { items, total, done };
+}
+
+/** Link an existing ISR to a parent PSR (same project, ISR not already linked elsewhere). */
+export async function linkIsrToPsr(
+  isrId: string,
+  psrId: string,
+  scope?: ProjectScope,
+) {
+  if (
+    !mongoose.Types.ObjectId.isValid(isrId) ||
+    !mongoose.Types.ObjectId.isValid(psrId)
+  ) {
+    throw new SrError("Invalid id", 400);
+  }
+  const isr = await Ticket.findById(isrId);
+  if (!isr || isr.interactionType !== "ISR") {
+    throw new SrError("ISR not found", 404);
+  }
+  const psr = await Ticket.findById(psrId).select("interactionType project").lean();
+  if (!psr || (psr as any).interactionType !== "PSR") {
+    throw new SrError("Parent PSR not found", 404);
+  }
+  if (String(isr.project) !== String((psr as any).project)) {
+    throw new SrError("ISR and PSR belong to different projects", 400);
+  }
+  if (scope && !canAccessProject(scope, isr.project)) {
+    throw new SrError("ISR not found", 404);
+  }
+  isr.linkedPsrId = new mongoose.Types.ObjectId(psrId) as any;
+  await isr.save();
+  return { ticketId: String(isr._id), linkedPsrId: psrId };
 }
 
 export async function getServiceRequest(id: string, scope?: ProjectScope) {

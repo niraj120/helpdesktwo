@@ -7,6 +7,7 @@ import { Project } from "../../models/Project";
 import { resolveSrConfig } from "./serviceRequestConfig";
 import { seedPsrStatuses } from "./srStatusSeed";
 import { SrError } from "./serviceRequestService";
+import { SR_DEFAULT_CLASSIFY_CHANNELS } from "./types";
 
 export async function getSrConfigForProject(projectId: string) {
   const project = await Project.findById(projectId)
@@ -29,6 +30,13 @@ export interface SrConfigPatch {
   reopen?: { assignToUserId?: string; assignToRoleId?: string };
   email?: { enabled?: boolean; tatHours?: number; level2Hours?: number };
   ivr?: { enabled?: boolean };
+  classifyChannels?: any[];
+  psrDetail?: any;
+  blocks?: {
+    assigneeEmails?: { enabled?: boolean };
+    prioritySchedule?: { enabled?: boolean };
+    offlineReEntry?: { enabled?: boolean };
+  };
 }
 
 export async function updateSrConfigForProject(
@@ -49,6 +57,19 @@ export async function updateSrConfigForProject(
   if (patch.reopen) sr.reopen = { ...(sr.reopen || {}), ...patch.reopen };
   if (patch.email) sr.email = { ...(sr.email || {}), ...patch.email };
   if (patch.ivr) sr.ivr = { ...(sr.ivr || {}), ...patch.ivr };
+  if (Array.isArray(patch.classifyChannels))
+    sr.classifyChannels = patch.classifyChannels;
+  if (patch.psrDetail) sr.psrDetail = patch.psrDetail;
+  if (patch.blocks) sr.blocks = { ...(sr.blocks || {}), ...patch.blocks };
+
+  // Seed the default classify channels the first time SR is enabled, so they
+  // become concrete (editable + always available) instead of read-time-only.
+  if (
+    sr.enabled &&
+    (!Array.isArray(sr.classifyChannels) || sr.classifyChannels.length === 0)
+  ) {
+    sr.classifyChannels = SR_DEFAULT_CLASSIFY_CHANNELS;
+  }
 
   project.markModified("configuration.sr");
   await project.save();

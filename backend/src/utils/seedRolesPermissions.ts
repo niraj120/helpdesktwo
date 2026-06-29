@@ -253,6 +253,20 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     description: "Can create and manage office locations",
     category: "master-data",
   },
+  {
+    module: "Master Data",
+    name: "View MDM Sources",
+    code: "MDM_VIEW",
+    description: "Can view MDM (Master Data Management) source configurations and test endpoints",
+    category: "master-data",
+  },
+  {
+    module: "Master Data",
+    name: "Manage MDM Sources",
+    code: "MDM_MANAGE",
+    description: "Can create, edit, and delete MDM (Master Data Management) source configurations",
+    category: "master-data",
+  },
   // =====================================================
   // RBAC SETUP CATEGORY
   // =====================================================
@@ -689,6 +703,30 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "SR_CONFIG_MANAGE",
     description:
       "Can manage SR module configuration (channels, forms, assignment/TAT matrix)",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Assign SR by Email",
+    code: "SR_ASSIGN_EMAILS",
+    description:
+      "Can set explicit assignee emails when creating an SR (first = primary)",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Override SR Priority & Schedule",
+    code: "SR_PRIORITY_OVERRIDE",
+    description:
+      "Can manually override priority and schedule a dispatch date on an SR",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Offline / RE Entry",
+    code: "SR_OFFLINE_ENTRY",
+    description:
+      "Can create an SR on behalf of a requester (offline/RE entry) with email-OTP verification",
     category: "service-request",
   },
   {

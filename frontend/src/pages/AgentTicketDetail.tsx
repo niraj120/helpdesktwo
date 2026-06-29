@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import DOMPurify from "dompurify";
 import { useParams, useNavigate } from "react-router-dom";
-import SrLifecyclePanel from "../components/sr/SrLifecyclePanel";
+import PsrDetailLayout from "../components/sr/PsrDetailLayout";
+import LinkedIsrPanel from "../components/sr/LinkedIsrPanel";
+import PslCallTab from "../components/sr/PslCallTab";
+import { serviceRequestApi } from "../services/serviceRequests";
 
 // Known boilerplate patterns injected by mail servers / Outlook (mirrors backend stripEmailBoilerplate)
 const EMAIL_BOILERPLATE_PATTERNS: RegExp[] = [
@@ -61,6 +64,7 @@ import {
   TicketIcon,
   ArrowsPointingInIcon,
   ListBulletIcon,
+  PhoneIcon,
 } from "@heroicons/react/24/outline";
 
 // SLA Tracking interface for resolution time calculation
@@ -533,8 +537,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   // US-ESC-009: ticker to keep SLA countdown pill current (updates every 60s)
   const [, setTickNow] = useState(Date.now());
   const [activeTab, setActiveTab] = useState<
-    "details" | "replies" | "notes" | "history" | "emails" | "audit"
+    | "details"
+    | "replies"
+    | "linkedisr"
+    | "notes"
+    | "pslcall"
+    | "history"
+    | "emails"
+    | "audit"
   >("replies"); // Task 6.5: Added 'emails' tab
+  const [srConfig, setSrConfig] = useState<any>(null);
 
   // Reply states (useReplyDraft: idle-save auto-draft)
   const {
@@ -661,6 +673,44 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
       ? (ticket.projectId as any)._id
       : ticket.projectId
     : ticket?.metadata?.projectId || "";
+
+  const isSrDetailTicket =
+    !!ticket &&
+    ((ticket as any).interactionType === "PSR" ||
+      (ticket as any).interactionType === "ISR");
+
+  useEffect(() => {
+    if (!isSrDetailTicket || !ticketProjectId) {
+      setSrConfig(null);
+      return;
+    }
+    let mounted = true;
+    serviceRequestApi
+      .getConfig(String(ticketProjectId))
+      .then((res) => {
+        if (mounted) setSrConfig(res.data || null);
+      })
+      .catch((e) => {
+        console.error(e);
+        if (mounted) setSrConfig(null);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [isSrDetailTicket, ticketProjectId]);
+
+  const srTab = (key: string) =>
+    srConfig?.psrDetail?.tabs?.find((tab: any) => tab.key === key);
+  const srTabVisible = (key: string) => {
+    if (!isSrDetailTicket) return true;
+    const tab = srTab(key);
+    if (!tab) return true;
+    if (!tab.enabled) return false;
+    if (key === "emails" && ticket?.submissionSource !== "email") return false;
+    return !tab.requiredPermission || permissions.includes(tab.requiredPermission);
+  };
+  const srTabLabel = (key: string, fallback: string) =>
+    isSrDetailTicket ? srTab(key)?.label || fallback : fallback;
 
   // Fetch hierarchy config to determine if multi-level categories are enabled
   const { config: hierarchyConfig } = useHierarchyConfig(ticketProjectId);
@@ -2212,50 +2262,68 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   </div>
                 )}
 
+              {isSrDetailTicket && (
+                <PsrDetailLayout
+                  ticket={ticket}
+                  config={srConfig}
+                  onChanged={fetchTicketDetails}
+                />
+              )}
+
               {/* Ticket Details Card */}
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-gray-100">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <div className="p-1.5 bg-blue-100 rounded-lg">
-                      <TicketIcon className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+              <div className="relative bg-white rounded-2xl border border-gray-100 shadow-[0_10px_30px_rgba(15,23,42,0.05)] overflow-hidden">
+                {/* gradient accent rail */}
+                <div className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-blue-500 via-indigo-500 to-violet-500" />
+
+                <div className="p-6 sm:p-8 pl-7 sm:pl-9">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 ring-1 ring-blue-100">
+                      <TicketIcon className="h-4 w-4" />
+                    </span>
+                    <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-400">
                       Subject
                     </span>
                   </div>
-                  <h2 className="text-lg font-semibold text-gray-900 leading-tight">
+                  <h2 className="text-2xl font-bold leading-snug tracking-tight text-gray-900">
                     {ticket.title || ticket.subject || "No Subject"}
                   </h2>
-                </div>
 
-                <div className="p-6">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <div className="p-1.5 bg-purple-100 rounded-lg">
-                      <DocumentTextIcon className="h-4 w-4 text-purple-600" />
-                    </div>
-                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                  <div className="my-6 h-px bg-gradient-to-r from-gray-200 via-gray-100 to-transparent" />
+
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50 text-violet-600 ring-1 ring-violet-100">
+                      <DocumentTextIcon className="h-4 w-4" />
+                    </span>
+                    <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-400">
                       Description
                     </span>
                   </div>
-                  <div className="prose max-w-none">
-                    {/<[a-z][\s\S]*>/i.test(ticket.description || "") ? (
-                      <div
-                        className="text-gray-700 text-sm leading-relaxed"
-                        dangerouslySetInnerHTML={{
-                          __html: DOMPurify.sanitize(ticket.description || ""),
-                        }}
-                      />
-                    ) : (
-                      <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
-                        {stripEmailBoilerplateFE(ticket.description || "")}
-                      </p>
-                    )}
-                  </div>
+                  {ticket.description &&
+                  (ticket.title || ticket.subject || ticket.description).trim() ? (
+                    <div className="rounded-xl bg-gray-50/70 border border-gray-100 p-5">
+                      {/<[a-z][\s\S]*>/i.test(ticket.description || "") ? (
+                        <div
+                          className="prose prose-sm max-w-none text-gray-700 leading-relaxed"
+                          dangerouslySetInnerHTML={{
+                            __html: DOMPurify.sanitize(ticket.description || ""),
+                          }}
+                        />
+                      ) : (
+                        <p className="text-[15px] text-gray-700 leading-7 whitespace-pre-wrap">
+                          {stripEmailBoilerplateFE(ticket.description || "")}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">
+                      No description provided.
+                    </p>
+                  )}
                 </div>
 
                 {ticket.attachments && ticket.attachments.length > 0 && (
-                  <div className="mt-6 pt-6 border-t border-gray-200">
-                    <h3 className="text-sm font-medium text-gray-900 mb-3">
+                  <div className="px-6 sm:px-8 pl-7 sm:pl-9 pb-7 pt-6 border-t border-gray-100">
+                    <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-400 mb-3">
                       Attachments
                     </h3>
                     <div className="grid grid-cols-2 gap-3">
@@ -2415,8 +2483,23 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         }`}
                     >
                       <ChatBubbleLeftRightIcon className="h-5 w-5 inline-block mr-2" />
-                      Replies
+                      {srTabLabel("replies", "Replies")}
                     </button>
+                    {isSrDetailTicket &&
+                      (ticket as any).interactionType === "PSR" &&
+                      srTabVisible("linkedisr") && (
+                        <button
+                          onClick={() => setActiveTab("linkedisr")}
+                          className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === "linkedisr"
+                              ? "border-blue-500 text-blue-600"
+                              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                          }`}
+                        >
+                          <ListBulletIcon className="h-5 w-5 inline-block mr-2" />
+                          {srTabLabel("linkedisr", "Linked ISRs")}
+                        </button>
+                      )}
                     <button
                       onClick={() => setActiveTab("notes")}
                       className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === "notes"
@@ -2425,8 +2508,21 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         }`}
                     >
                       <DocumentTextIcon className="h-5 w-5 inline-block mr-2" />
-                      Internal Notes
+                      {srTabLabel("notes", "Internal Notes")}
                     </button>
+                    {isSrDetailTicket && srTabVisible("pslcall") && (
+                      <button
+                        onClick={() => setActiveTab("pslcall")}
+                        className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                          activeTab === "pslcall"
+                            ? "border-blue-500 text-blue-600"
+                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                        }`}
+                      >
+                        <PhoneIcon className="h-5 w-5 inline-block mr-2" />
+                        {srTabLabel("pslcall", "PSL Call")}
+                      </button>
+                    )}
                     <button
                       onClick={() => setActiveTab("history")}
                       className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === "history"
@@ -2435,7 +2531,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         }`}
                     >
                       <ClockIcon className="h-5 w-5 inline-block mr-2" />
-                      History
+                      {srTabLabel("history", "History")}
                     </button>
                     {/* Audit tab — unified activity timeline */}
                     <button
@@ -2446,11 +2542,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         }`}
                     >
                       <ListBulletIcon className="h-5 w-5 inline-block mr-2" />
-                      Audit
+                      {srTabLabel("audit", "Audit")}
                     </button>
 
                     {/* Task 6.5: Emails tab - only show for email tickets */}
-                    {ticket.submissionSource === "email" && (
+                    {ticket.submissionSource === "email" && srTabVisible("emails") && (
                       <button
                         onClick={() => setActiveTab("emails")}
                         className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === "emails"
@@ -2988,6 +3084,19 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           );
                         })()}
                     </div>
+                  )}
+
+                  {activeTab === "linkedisr" && ticket && (
+                    <LinkedIsrPanel
+                      psrId={ticket._id}
+                      projectId={String(ticketProjectId || "")}
+                      variant="tab"
+                    />
+                  )}
+
+                  {/* PSL Call — parent satisfaction call (reach / satisfied) */}
+                  {activeTab === "pslcall" && ticket && (
+                    <PslCallTab ticket={ticket} onChanged={fetchTicketDetails} />
                   )}
 
                   {/* Internal Notes Tab */}
@@ -5804,24 +5913,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
   // Service Request (PSR/ISR) lifecycle actions — shown for SR tickets so a PSR
   // opened from the normal queue is fully actionable (audit Step E).
-  const isServiceRequest =
-    !!ticket &&
-    ((ticket as any).interactionType === "PSR" ||
-      (ticket as any).interactionType === "ISR");
-  const srPanel = isServiceRequest ? (
-    <div style={{ padding: "16px 24px 0" }}>
-      <SrLifecyclePanel ticket={ticket} onChanged={fetchTicketDetails} />
-    </div>
-  ) : null;
-
   return wrapWithLayout ? (
     <DashboardLayout>
-      {srPanel}
       {content}
     </DashboardLayout>
   ) : (
     <>
-      {srPanel}
       {content}
     </>
   );

@@ -13,6 +13,7 @@ import {
 import { usePermissions } from "../hooks/usePermissions";
 import { PERMISSIONS } from "../constants/permissions";
 import { API_CONFIG } from "../config/constants";
+import MDMConfigModal from "./MDMConfigModal";
 
 interface MasterItem {
   _id: string;
@@ -123,6 +124,7 @@ const MasterDataManagement = () => {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [showMdmModal, setShowMdmModal] = useState(false);
   const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
   const [bulkUploadProjectId, setBulkUploadProjectId] = useState("");
   const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
@@ -2006,8 +2008,36 @@ const MasterDataManagement = () => {
                 {category.label}
               </button>
             ))}
+            {hasPermission(PERMISSIONS.MDM_VIEW) && (
+              <button
+                onClick={() => setShowMdmModal(true)}
+                style={{
+                  height: "38px",
+                  padding: "0 14px",
+                  backgroundColor: "#fef3c7",
+                  color: "#92400e",
+                  border: "1px solid #fcd34d",
+                  borderRadius: "10px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  whiteSpace: isMobile ? "normal" : "nowrap",
+                  textAlign: "left",
+                }}
+                title="Configure company MDM (master database) data sources"
+              >
+                <span style={{ marginRight: "8px" }}>🗄️</span>
+                MDM Master
+              </button>
+            )}
           </div>
         </div>
+
+        <MDMConfigModal
+          isOpen={showMdmModal}
+          onClose={() => setShowMdmModal(false)}
+          canManage={hasPermission(PERMISSIONS.MDM_MANAGE)}
+        />
 
         <div
           style={{
