@@ -225,6 +225,26 @@ const io = new Server(httpServer, {
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
+    xXssProtection: false,
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'none'"],
+        scriptSrc: ["'none'"],
+        styleSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        frameSrc: ["'none'"],
+        fontSrc: ["'none'"],
+        mediaSrc: ["'none'"],
+        manifestSrc: ["'none'"],
+        workerSrc: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'none'"],
+        frameAncestors: ["'self'"],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+      },
+    },
   }),
 );
 
