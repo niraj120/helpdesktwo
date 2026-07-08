@@ -43,6 +43,7 @@ interface User {
   firstName: string;
   lastName: string;
   email: string;
+  phone?: string;
   mobile?: string;
   employeeCode?: string;
   hrmsId?: number;
@@ -1207,7 +1208,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
-      mobile: user.mobile || "",
+      mobile: user.phone || user.mobile || "",
       password: "",
       employeeCode: user.employeeCode || "",
       hrmsId: user.hrmsId?.toString() || "",
@@ -1330,6 +1331,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
+        phone: formData.mobile,
         mobile: formData.mobile,
         role: formData.role,
         employeeCode: formData.employeeCode,
@@ -3690,7 +3692,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             Imported now
                           </span>
                         )}
-                        {user.mobile && (
+                        {(user.phone || user.mobile) && (
                           <div
                             style={{
                               fontSize: "12px",
@@ -3723,7 +3725,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               />
                               <line x1="12" y1="18" x2="12.01" y2="18" />
                             </svg>
-                            {user.mobile}
+                            {user.phone || user.mobile}
                           </div>
                         )}
                       </div>

@@ -14,6 +14,12 @@ import ExcelJS from "exceljs";
 import multer from "multer";
 import { dashboardEvents } from "../services/dashboardEventBus";
 
+const normalizeContactPhone = (value?: unknown): string => {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length < 10) return "";
+  return digits.slice(-10);
+};
+
 const resolveHrmsImportRole = async (
   projectId: any,
   attrs: {
@@ -124,6 +130,7 @@ export const getAllUsers = async (
         { lastName: { $regex: search, $options: "i" } },
         { email: { $regex: search, $options: "i" } },
         { employeeCode: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
         { mobile: { $regex: search, $options: "i" } },
       ];
     }
@@ -424,6 +431,7 @@ export const createUser = async (
       password,
       firstName,
       lastName,
+      phone,
       mobile,
       role,
       employeeCode,
@@ -490,12 +498,15 @@ export const createUser = async (
       }
     }
 
+    const contactPhone = normalizeContactPhone(phone || mobile);
+
     let userData: any = {
       email,
       password: password || Math.random().toString(36).slice(-10), // Generate random password if not provided
       firstName,
       lastName,
-      mobile: mobile || undefined,
+      phone: contactPhone || undefined,
+      mobile: contactPhone || undefined,
       role: resolvedRole,
       department,
       designation,
@@ -762,6 +773,7 @@ export const updateUser = async (
     const {
       firstName,
       lastName,
+      phone,
       mobile,
       role,
       employeeCode,
@@ -859,9 +871,13 @@ export const updateUser = async (
     const oldManagerId = user.reportingManager?.toString();
 
     // Update fields
+    const contactPhone = normalizeContactPhone(phone || mobile);
     if (firstName !== undefined) user.firstName = firstName;
     if (lastName !== undefined) user.lastName = lastName;
-    if (mobile !== undefined) user.mobile = mobile || undefined;
+    if (phone !== undefined || mobile !== undefined) {
+      user.phone = contactPhone || undefined;
+      user.mobile = contactPhone || undefined;
+    }
     // Convert empty string to undefined for sparse unique fields
     if (employeeCode !== undefined)
       user.employeeCode = employeeCode || undefined;
@@ -1759,6 +1775,7 @@ export const registerStudent = async (
       parentMobile,
       uniqueId,
     } = normalizedData;
+    const offlineContactPhone = normalizeContactPhone(phone);
 
     // Validate required fields
     if (!email || !projectId) {
@@ -1856,12 +1873,14 @@ export const registerStudent = async (
 
     // Generate default password from phone or email
     // Format: first 4 chars of email + last 4 digits of phone
-    const defaultPassword = `${email.substring(0, 4)}${phone.slice(-4)}`;
+    const passwordSuffix = (offlineContactPhone || "0000").slice(-4);
+    const defaultPassword = `${email.substring(0, 4)}${passwordSuffix}`;
 
     // Prepare user data with all fields from the form
     const userData: any = {
       email,
-      phone,
+      phone: offlineContactPhone || phone,
+      mobile: offlineContactPhone || undefined,
       parentMobile,
       password: defaultPassword, // Will be hashed by User model pre-save hook
       role: studentRole._id,
@@ -1921,6 +1940,7 @@ export const registerStudent = async (
         fullName: newStudent.fullName || "",
         email: newStudent.email,
         phone: newStudent.phone,
+        mobile: newStudent.mobile,
         parentMobile: (newStudent as any).parentMobile,
         uniqueId: newStudent.uniqueId,
         // Do not return plaintext passwords in API responses for security
@@ -2127,7 +2147,7 @@ export const getUserReport = async (
   try {
     const users = await User.find({ isActive: true })
       .select(
-        "employeeCode firstName lastName email mobile isActive role centers",
+        "employeeCode firstName lastName email phone mobile isActive role centers",
       )
       .populate("role", "name")
       .populate("centers", "centerName")
@@ -2141,7 +2161,7 @@ export const getUserReport = async (
       lastName: user.lastName,
       fullName: `${user.firstName} ${user.lastName}`,
       email: user.email,
-      mobile: user.mobile || "N/A",
+      mobile: user.phone || user.mobile || "N/A",
       centersMapped: Array.isArray(user.centers)
         ? user.centers.map((c: any) => c.centerName || "N/A").join(", ")
         : "N/A",
@@ -2710,7 +2730,7 @@ export const exportUsers = async (req: Request, res: Response): Promise<void> =>
 
     const users = await User.find(filter)
       .select(
-        "firstName lastName email mobile employeeCode department payrollType isActive lastLogin createdAt role projects centers",
+        "firstName lastName email phone mobile employeeCode department payrollType isActive lastLogin createdAt role projects centers",
       )
       .populate("role", "name")
       .populate("projects", "name")
@@ -2753,7 +2773,7 @@ export const exportUsers = async (req: Request, res: Response): Promise<void> =>
       switch (key) {
         case "name": return `${u.firstName || ""} ${u.lastName || ""}`.trim();
         case "email": return u.email || "";
-        case "mobile": return u.mobile || "";
+        case "mobile": return u.phone || u.mobile || "";
         case "employeeCode": return u.employeeCode || "";
         case "role": return (u.role as any)?.name || "";
         case "department": return u.department || "";
