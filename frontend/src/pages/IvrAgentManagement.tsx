@@ -1,0 +1,726 @@
+import React, { useEffect, useMemo, useState } from "react";
+import DashboardLayout from "../components/DashboardLayout";
+import PageHeader from "../components/ui/PageHeader";
+import { tokens, styles, button } from "../theme/oneos";
+import { useProjectContext } from "../contexts/ProjectContext";
+import { api } from "../utils/api";
+import { ivrAgentApi } from "../services/ivrAgents";
+
+interface ProjectOpt {
+  _id: string;
+  name: string;
+  code?: string;
+}
+interface Digit {
+  code: string;
+  label: string;
+}
+interface Leave {
+  _id: string;
+  fromDate: string;
+  toDate: string;
+  reason?: string;
+}
+interface Agent {
+  userId: string;
+  name: string;
+  email: string;
+  mobile?: string;
+  isActive: boolean;
+  digits: string[];
+  active: boolean;
+  available: boolean;
+  unavailableUntil?: string | null;
+  availableNow: boolean;
+  onLeave: boolean;
+  leaves: Leave[];
+}
+
+const OTHER = "other";
+
+const IvrAgentManagement: React.FC = () => {
+  const { currentProjectId } = useProjectContext();
+  const [projects, setProjects] = useState<ProjectOpt[]>([]);
+  const [projectId, setProjectId] = useState(currentProjectId || "");
+  const [digits, setDigits] = useState<Digit[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(
+    null,
+  );
+  const [leaveFor, setLeaveFor] = useState<Agent | null>(null);
+  const [digitEdit, setDigitEdit] = useState<Digit[] | null>(null);
+  const [breakFor, setBreakFor] = useState<string | null>(null);
+  const [breakTime, setBreakTime] = useState("");
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get("/projects", { params: { limit: 100 } });
+        const d: any = res.data;
+        const list = d?.data?.projects || d?.projects || d?.data || d || [];
+        setProjects(Array.isArray(list) ? list : []);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, []);
+
+  const load = async () => {
+    if (!projectId) {
+      setDigits([]);
+      setAgents([]);
+      return;
+    }
+    try {
+      const [dc, al] = await Promise.all([
+        ivrAgentApi.getDigits(projectId),
+        ivrAgentApi.list(projectId),
+      ]);
+      setDigits(dc.digits || []);
+      setAgents(al.agents || []);
+    } catch (e: any) {
+      setMsg({ type: "err", text: e?.response?.data?.message || "Load failed" });
+    }
+  };
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  const buckets = useMemo(
+    () => [...digits.map((d) => d.code), OTHER],
+    [digits],
+  );
+
+  const flash = (type: "ok" | "err", text: string) => {
+    setMsg({ type, text });
+    setTimeout(() => setMsg(null), 2500);
+  };
+
+  const toggleDigit = async (agent: Agent, code: string) => {
+    const next = agent.digits.includes(code)
+      ? agent.digits.filter((c) => c !== code)
+      : [...agent.digits, code];
+    setAgents((prev) =>
+      prev.map((a) => (a.userId === agent.userId ? { ...a, digits: next } : a)),
+    );
+    try {
+      await ivrAgentApi.setMapping(agent.userId, {
+        projectId,
+        digits: next,
+        active: agent.active,
+      });
+    } catch (e: any) {
+      flash("err", "Save failed");
+      load();
+    }
+  };
+
+  const toggleActive = async (agent: Agent) => {
+    const next = !agent.active;
+    setAgents((prev) =>
+      prev.map((a) => (a.userId === agent.userId ? { ...a, active: next } : a)),
+    );
+    try {
+      await ivrAgentApi.setMapping(agent.userId, {
+        projectId,
+        digits: agent.digits,
+        active: next,
+      });
+    } catch {
+      flash("err", "Save failed");
+      load();
+    }
+  };
+
+  const setAvail = async (
+    a: Agent,
+    available: boolean,
+    until?: string | null,
+  ) => {
+    setBreakFor(null);
+    setBreakTime("");
+    setAgents((prev) =>
+      prev.map((x) =>
+        x.userId === a.userId
+          ? {
+              ...x,
+              available,
+              unavailableUntil: until || null,
+              availableNow:
+                available || (!!until && new Date(until) <= new Date()),
+            }
+          : x,
+      ),
+    );
+    try {
+      await ivrAgentApi.setAvailability(a.userId, {
+        projectId,
+        available,
+        unavailableUntil: until || null,
+      });
+    } catch {
+      flash("err", "Save failed");
+      load();
+    }
+  };
+
+  const goBreakTill = (a: Agent) => {
+    if (!breakTime) return flash("err", "Pick a time");
+    const [h, m] = breakTime.split(":").map(Number);
+    const until = new Date();
+    until.setHours(h, m, 0, 0);
+    setAvail(a, false, until.toISOString());
+  };
+
+  const breakForMins = (a: Agent, mins: number) =>
+    setAvail(a, false, new Date(Date.now() + mins * 60000).toISOString());
+
+  const openMenu = (userId: string, e: React.MouseEvent) => {
+    if (breakFor === userId) {
+      setBreakFor(null);
+      setMenuPos(null);
+      return;
+    }
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setMenuPos({ top: r.bottom + 6, left: Math.max(8, r.right - 220) });
+    setBreakTime("");
+    setBreakFor(userId);
+  };
+  const closeMenu = () => {
+    setBreakFor(null);
+    setMenuPos(null);
+  };
+
+  const fmtTime = (d?: string | null) =>
+    d
+      ? new Date(d).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "";
+
+  const menuCard: React.CSSProperties = {
+    position: "fixed",
+    zIndex: 2000,
+    background: "#fff",
+    border: `1px solid ${tokens.border}`,
+    borderRadius: 12,
+    boxShadow: "0 12px 32px rgba(15,23,42,.16)",
+    width: 220,
+    padding: 6,
+    textAlign: "left",
+  };
+  const menuItem: React.CSSProperties = {
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: "none",
+    background: "none",
+    fontSize: 13,
+    fontWeight: 500,
+    color: "#334155",
+    cursor: "pointer",
+  };
+  const menuLabel: React.CSSProperties = {
+    padding: "6px 10px 2px",
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    color: tokens.muted,
+  };
+
+  const availPill: React.CSSProperties = {
+    padding: "3px 10px",
+    borderRadius: 9999,
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: "pointer",
+    border: "none",
+  };
+  const miniBtn: React.CSSProperties = {
+    padding: "3px 8px",
+    borderRadius: 6,
+    border: `1px solid ${tokens.border}`,
+    background: "#fff",
+    fontSize: 11,
+    fontWeight: 600,
+    color: "#334155",
+    cursor: "pointer",
+  };
+
+  const digitLabel = (code: string) =>
+    code === OTHER
+      ? "Other"
+      : digits.find((d) => d.code === code)?.label || code;
+
+  const th = styles.th;
+  const td = styles.td;
+
+  return (
+    <DashboardLayout>
+      <div style={{ ...styles.page, maxWidth: "none" }}>
+        <PageHeader
+          title="IVR Agents"
+          subtitle="Assign IVR agents to digit buckets. Missed calls are round-robined within a bucket, skipping agents on leave."
+          actions={
+            <button
+              onClick={() => setDigitEdit(digits.map((d) => ({ ...d })))}
+              style={button("neutral")}
+              disabled={!projectId}
+            >
+              ⚙ Configure digits
+            </button>
+          }
+        />
+
+        {msg && (
+          <div
+            style={{
+              ...styles.card,
+              padding: "10px 14px",
+              color: msg.type === "ok" ? tokens.success : tokens.danger,
+              fontSize: 13,
+            }}
+          >
+            {msg.text}
+          </div>
+        )}
+
+        {/* Project picker */}
+        <div style={{ ...styles.card, display: "flex", gap: 12, alignItems: "center" }}>
+          <label style={styles.label}>Project</label>
+          <select
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            style={{ ...styles.ctrl, minWidth: 280 }}
+          >
+            <option value="">Select a project…</option>
+            {projects.map((p) => (
+              <option key={p._id} value={p._id}>
+                {p.name}
+                {p.code ? ` (${p.code})` : ""}
+              </option>
+            ))}
+          </select>
+          <span style={{ fontSize: 12, color: tokens.sub, marginLeft: "auto" }}>
+            Buckets: {digits.map((d) => d.code).join(", ") || "—"}, other
+          </span>
+        </div>
+
+        {/* Agents table */}
+        <div style={{ ...styles.card, padding: 0, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={th}>Agent</th>
+                {buckets.map((b) => (
+                  <th key={b} style={{ ...th, textAlign: "center" }}>
+                    {digitLabel(b)}
+                  </th>
+                ))}
+                <th style={{ ...th, textAlign: "center" }}>Active</th>
+                <th style={{ ...th, textAlign: "center" }}>Availability</th>
+                <th style={{ ...th, textAlign: "center" }}>Leave</th>
+                <th style={th}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {!projectId ? (
+                <tr>
+                  <td style={{ ...td, color: tokens.muted }} colSpan={buckets.length + 5}>
+                    Pick a project to manage its IVR agents.
+                  </td>
+                </tr>
+              ) : agents.length === 0 ? (
+                <tr>
+                  <td style={{ ...td, color: tokens.muted }} colSpan={buckets.length + 5}>
+                    No IVR agents in this project. Mark users as “IVR Agent” in User Management.
+                  </td>
+                </tr>
+              ) : (
+                agents.map((a) => (
+                  <tr key={a.userId}>
+                    <td style={td}>
+                      <div style={{ fontWeight: 600, color: tokens.text }}>{a.name}</div>
+                      <div style={{ fontSize: 12, color: tokens.sub }}>
+                        {a.email}
+                        {!a.isActive && " · inactive"}
+                      </div>
+                    </td>
+                    {buckets.map((b) => (
+                      <td key={b} style={{ ...td, textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={a.digits.includes(b)}
+                          onChange={() => toggleDigit(a, b)}
+                          style={{ accentColor: tokens.primary, width: 16, height: 16, cursor: "pointer" }}
+                        />
+                      </td>
+                    ))}
+                    <td style={{ ...td, textAlign: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={a.active}
+                        onChange={() => toggleActive(a)}
+                        style={{ accentColor: tokens.primary, width: 16, height: 16, cursor: "pointer" }}
+                      />
+                    </td>
+                    <td style={{ ...td, textAlign: "center" }}>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        {a.availableNow ? (
+                          <span style={{ ...availPill, color: tokens.success, background: tokens.successBg }}>
+                            ● Available
+                          </span>
+                        ) : (
+                          <span style={{ ...availPill, color: tokens.warn, background: tokens.warnBg }}>
+                            ● {a.unavailableUntil ? `Back ${fmtTime(a.unavailableUntil)}` : "Off"}
+                          </span>
+                        )}
+                        <button onClick={(e) => openMenu(a.userId, e)} style={miniBtn}>
+                          Change ▾
+                        </button>
+                      </div>
+
+                      {breakFor === a.userId && menuPos && (
+                        <div
+                          style={{ ...menuCard, top: menuPos.top, left: menuPos.left }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {!a.availableNow && (
+                            <>
+                              <button
+                                style={{ ...menuItem, color: tokens.success, fontWeight: 700 }}
+                                onClick={() => setAvail(a, true, null)}
+                              >
+                                ✓ Resume now
+                              </button>
+                              <div style={{ borderTop: `1px solid ${tokens.border}`, margin: "4px 0" }} />
+                            </>
+                          )}
+                          <div style={menuLabel}>Take a break</div>
+                          <button style={menuItem} onClick={() => breakForMins(a, 30)}>
+                            Back in 30 min
+                          </button>
+                          <button style={menuItem} onClick={() => breakForMins(a, 60)}>
+                            Back in 1 hour
+                          </button>
+                          <button style={menuItem} onClick={() => breakForMins(a, 120)}>
+                            Back in 2 hours
+                          </button>
+                          <div style={{ display: "flex", gap: 6, padding: "4px 10px", alignItems: "center" }}>
+                            <input
+                              type="time"
+                              value={breakTime}
+                              onChange={(e) => setBreakTime(e.target.value)}
+                              style={{ ...styles.ctrl, minHeight: 34, padding: "4px 8px", flex: 1 }}
+                            />
+                            <button style={miniBtn} onClick={() => goBreakTill(a)}>
+                              Back at
+                            </button>
+                          </div>
+                          <div style={{ borderTop: `1px solid ${tokens.border}`, margin: "4px 0" }} />
+                          <button
+                            style={{ ...menuItem, color: tokens.danger, fontWeight: 600 }}
+                            onClick={() => setAvail(a, false, null)}
+                          >
+                            ⏻ Off for the day
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ ...td, textAlign: "center" }}>
+                      {a.onLeave ? (
+                        <span
+                          style={{
+                            padding: "2px 10px",
+                            borderRadius: 9999,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: tokens.warn,
+                            background: tokens.warnBg,
+                          }}
+                        >
+                          On leave
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 12, color: tokens.muted }}>—</span>
+                      )}
+                    </td>
+                    <td style={td}>
+                      <button
+                        onClick={() => setLeaveFor(a)}
+                        style={{
+                          padding: "5px 12px",
+                          borderRadius: 8,
+                          border: `1px solid ${tokens.border}`,
+                          background: "#fff",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "#334155",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Leaves ({a.leaves.length})
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {breakFor && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 1500 }}
+          onClick={closeMenu}
+        />
+      )}
+      {leaveFor && (
+        <LeaveModal
+          agent={leaveFor}
+          projectId={projectId}
+          onClose={() => setLeaveFor(null)}
+          onChanged={load}
+          flash={flash}
+        />
+      )}
+      {digitEdit && (
+        <DigitModal
+          initial={digitEdit}
+          projectId={projectId}
+          onClose={() => setDigitEdit(null)}
+          onSaved={() => {
+            setDigitEdit(null);
+            load();
+          }}
+          flash={flash}
+        />
+      )}
+    </DashboardLayout>
+  );
+};
+
+// ── Leave modal ──────────────────────────────────────────────────────────────
+const modalScrim: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(15,23,42,.5)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 1000,
+  padding: 20,
+};
+const modalCard: React.CSSProperties = {
+  background: "#fff",
+  borderRadius: 20,
+  boxShadow: "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
+  width: "100%",
+  maxWidth: 520,
+  padding: 24,
+  fontFamily: tokens.font,
+};
+
+const LeaveModal: React.FC<{
+  agent: Agent;
+  projectId: string;
+  onClose: () => void;
+  onChanged: () => void;
+  flash: (t: "ok" | "err", s: string) => void;
+}> = ({ agent, projectId, onClose, onChanged, flash }) => {
+  const [leaves, setLeaves] = useState<Leave[]>(agent.leaves);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [reason, setReason] = useState("");
+
+  const add = async () => {
+    if (!from || !to) return flash("err", "Pick from & to dates");
+    try {
+      const r = await ivrAgentApi.addLeave(agent.userId, {
+        projectId,
+        fromDate: from,
+        toDate: to,
+        reason,
+      });
+      setLeaves((p) => [...p, r.leave]);
+      setFrom("");
+      setTo("");
+      setReason("");
+      onChanged();
+    } catch (e: any) {
+      flash("err", e?.response?.data?.message || "Add failed");
+    }
+  };
+  const del = async (id: string) => {
+    try {
+      await ivrAgentApi.removeLeave(id);
+      setLeaves((p) => p.filter((l) => l._id !== id));
+      onChanged();
+    } catch {
+      flash("err", "Delete failed");
+    }
+  };
+
+  return (
+    <div style={modalScrim} onClick={onClose}>
+      <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ ...styles.title, fontSize: 20, marginBottom: 4 }}>Leaves — {agent.name}</h3>
+        <p style={{ ...styles.subtitle, marginBottom: 16 }}>
+          On leave = skipped by missed-call round-robin.
+        </p>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div>
+            <label style={styles.label}>From</label>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={styles.ctrl} />
+          </div>
+          <div>
+            <label style={styles.label}>To</label>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={styles.ctrl} />
+          </div>
+          <input
+            placeholder="Reason (optional)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            style={{ ...styles.ctrl, flex: 1, minWidth: 140 }}
+          />
+          <button onClick={add} style={button("primary")}>Add</button>
+        </div>
+
+        <div style={{ marginTop: 16, maxHeight: 240, overflowY: "auto" }}>
+          {leaves.length === 0 ? (
+            <p style={{ fontSize: 13, color: tokens.muted }}>No leaves.</p>
+          ) : (
+            leaves.map((l) => (
+              <div
+                key={l._id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "10px 12px",
+                  border: `1px solid ${tokens.border}`,
+                  borderRadius: 12,
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ fontSize: 13 }}>
+                  <strong>{new Date(l.fromDate).toLocaleDateString()}</strong> →{" "}
+                  <strong>{new Date(l.toDate).toLocaleDateString()}</strong>
+                  {l.reason ? <span style={{ color: tokens.sub }}> · {l.reason}</span> : null}
+                </div>
+                <button
+                  onClick={() => del(l._id)}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 8,
+                    border: "1px solid #fecaca",
+                    background: "#fff",
+                    color: tokens.danger,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+          <button onClick={onClose} style={button("neutral")}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Digit config modal ───────────────────────────────────────────────────────
+const DigitModal: React.FC<{
+  initial: Digit[];
+  projectId: string;
+  onClose: () => void;
+  onSaved: () => void;
+  flash: (t: "ok" | "err", s: string) => void;
+}> = ({ initial, projectId, onClose, onSaved, flash }) => {
+  const [rows, setRows] = useState<Digit[]>(initial.length ? initial : [{ code: "", label: "" }]);
+
+  const save = async () => {
+    const clean = rows
+      .map((r) => ({ code: r.code.trim(), label: r.label.trim() }))
+      .filter((r) => r.code);
+    try {
+      await ivrAgentApi.setDigits(projectId, clean);
+      onSaved();
+    } catch (e: any) {
+      flash("err", e?.response?.data?.message || "Save failed");
+    }
+  };
+
+  return (
+    <div style={modalScrim} onClick={onClose}>
+      <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ ...styles.title, fontSize: 20, marginBottom: 4 }}>IVR digit buckets</h3>
+        <p style={{ ...styles.subtitle, marginBottom: 16 }}>
+          The options a caller presses (1 / 2 / 3 …). “Other” is always available for blank/unmatched.
+        </p>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <input
+              placeholder="Code (e.g. 1)"
+              value={r.code}
+              onChange={(e) =>
+                setRows((p) => p.map((x, j) => (j === i ? { ...x, code: e.target.value } : x)))
+              }
+              style={{ ...styles.ctrl, width: 110 }}
+            />
+            <input
+              placeholder="Label (e.g. Admissions)"
+              value={r.label}
+              onChange={(e) =>
+                setRows((p) => p.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))
+              }
+              style={{ ...styles.ctrl, flex: 1 }}
+            />
+            <button
+              onClick={() => setRows((p) => p.filter((_, j) => j !== i))}
+              style={{
+                padding: "0 12px",
+                borderRadius: 8,
+                border: "1px solid #fecaca",
+                background: "#fff",
+                color: tokens.danger,
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <button
+          onClick={() => setRows((p) => [...p, { code: "", label: "" }])}
+          style={{ ...button("neutral"), marginTop: 4 }}
+        >
+          + Add bucket
+        </button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+          <button onClick={onClose} style={button("neutral")}>Cancel</button>
+          <button onClick={save} style={button("primary")}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default IvrAgentManagement;

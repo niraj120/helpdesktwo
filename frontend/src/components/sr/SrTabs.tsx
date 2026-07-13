@@ -35,6 +35,7 @@ const SrTabs: React.FC<{
         <button
           key={t.key}
           onClick={() => onChange(t.key)}
+          className={`sr-tab-button${on ? " sr-tab-button--active" : ""}`}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -49,12 +50,6 @@ const SrTabs: React.FC<{
             cursor: "pointer",
             fontFamily: SR.font,
             transition: "all 0.12s ease",
-          }}
-          onMouseEnter={(e) => {
-            if (!on) e.currentTarget.style.background = "#f3f4f6";
-          }}
-          onMouseLeave={(e) => {
-            if (!on) e.currentTarget.style.background = "transparent";
           }}
         >
           {t.icon}

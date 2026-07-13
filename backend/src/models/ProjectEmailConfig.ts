@@ -16,6 +16,8 @@ export interface IProjectEmailConfig extends Document {
   projectId: mongoose.Types.ObjectId;
   emailAddress: string;
   isEnabled: boolean;
+  mappedUserId?: mongoose.Types.ObjectId;
+  autoCreateTicket: boolean;
 
   // Provider and auth method
   provider: EmailProvider;
@@ -102,6 +104,16 @@ const ProjectEmailConfigSchema: Schema = new Schema(
       index: true,
     },
     isEnabled: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+    mappedUserId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      index: true,
+    },
+    autoCreateTicket: {
       type: Boolean,
       default: true,
       index: true,

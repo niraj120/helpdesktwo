@@ -11,6 +11,8 @@ export type EmailIntakeActionType =
   | "psr"
   | "isr"
   | "lead"
+  | "junk"
+  | "converted"
   | "forward"
   | "repository"
   | "responded";
@@ -35,6 +37,9 @@ export interface IEmailIntake extends Document {
   subject: string;
   body?: string;
   htmlBody?: string;
+  messageId?: string;
+  inReplyTo?: string;
+  references?: string[];
   receivedAt: Date;
   /** Top-level classification (Vector: Existing/Left Student, New Admission, Others). */
   senderType?:
@@ -43,7 +48,7 @@ export interface IEmailIntake extends Document {
     | "new_admission"
     | "others";
   subCategory?: string;
-  status: "open" | "wip" | "closed";
+  status: "open" | "wip" | "closed" | "junk";
   actions: IEmailIntakeAction[];
   assignedTo?: mongoose.Types.ObjectId;
   studentUserId?: mongoose.Types.ObjectId;
@@ -66,6 +71,8 @@ const ActionSchema = new Schema<IEmailIntakeAction>(
         "psr",
         "isr",
         "lead",
+        "junk",
+        "converted",
         "forward",
         "repository",
         "responded",
@@ -101,6 +108,9 @@ const EmailIntakeSchema = new Schema<IEmailIntake>(
     subject: { type: String, required: true },
     body: { type: String },
     htmlBody: { type: String },
+    messageId: { type: String, index: true },
+    inReplyTo: { type: String },
+    references: [{ type: String }],
     receivedAt: { type: Date, required: true, index: true },
     senderType: {
       type: String,
@@ -109,7 +119,7 @@ const EmailIntakeSchema = new Schema<IEmailIntake>(
     subCategory: { type: String },
     status: {
       type: String,
-      enum: ["open", "wip", "closed"],
+      enum: ["open", "wip", "closed", "junk"],
       default: "open",
       index: true,
     },

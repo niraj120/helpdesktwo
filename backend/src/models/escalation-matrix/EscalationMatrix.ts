@@ -20,6 +20,10 @@ export interface IEscalationLevel {
   slaUnit?: SlaUnit; // Display unit for UI (mins, hrs, days) - default 'hrs'
   levelType?: "reassign" | "notify"; // US-ESC-005: 'reassign' reassigns ticket; 'notify' only notifies  /** US-ESC-006: specific users to notify in addition to role (used when levelType='notify') */
   notifyUserIds?: mongoose.Types.ObjectId[];
+  /** Per-level CC users — notified on this level's escalation regardless of levelType. */
+  ccUserIds?: mongoose.Types.ObjectId[];
+  /** Per-level CC roles — all active project members of these roles are notified. */
+  ccRoleIds?: mongoose.Types.ObjectId[];
   /** US-ESC-007: whether to trigger on a fixed duration or a % of overall ticket SLA consumed */
   slaThresholdType?: "fixed" | "percent";
   /** US-ESC-007: percentage threshold (1-100), used when slaThresholdType='percent' */
@@ -140,6 +144,9 @@ const EscalationLevelSchema = new Schema<IEscalationLevel>(
       default: "reassign",
     }, // US-ESC-006: specific named users to also notify (used when levelType='notify')
     notifyUserIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    // Per-level CC — notified on this level's escalation in addition to the assignee.
+    ccUserIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    ccRoleIds: [{ type: Schema.Types.ObjectId, ref: "Role" }],
     // US-ESC-007: threshold type — 'fixed' (slaHours) or 'percent' of ticket SLA consumed
     slaThresholdType: {
       type: String,

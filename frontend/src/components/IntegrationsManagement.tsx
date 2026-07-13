@@ -8,7 +8,8 @@ import {
   EnvelopeIcon,
   ChatBubbleLeftRightIcon,
   PhoneIcon,
-  ArrowRightIcon
+  ArrowRightIcon,
+  CircleStackIcon
 } from '@heroicons/react/24/outline';
 
 interface IntegrationCard {

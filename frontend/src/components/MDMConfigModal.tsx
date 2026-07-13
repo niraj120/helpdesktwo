@@ -88,7 +88,7 @@ const buildCurl = (api: MDMApi, auth: MDMAuthMasked): string => {
 
   if (api.method === "POST") {
     lines.push(`-H ${q("Content-Type: application/json")}`);
-    lines.push(`-d ${q("{}")}`);
+    lines.push(`-d ${q(api.requestBody || "{}")}`);
   }
   return lines.join(" \\\n  ");
 };
@@ -245,8 +245,6 @@ const parseCurl = (raw: string): ParsedCurl => {
   if (method && method !== "GET" && method !== "POST") {
     notes.push(`Method ${method} not supported here — set to ${m}.`);
   }
-  if (body) notes.push("Request body parsed but not stored (no body field yet).");
-
   return { method: m, baseUrl, path, auth, extraHeaders, body, notes };
 };
 
@@ -256,6 +254,7 @@ const emptyApi = (): MDMApi => ({
   method: "GET",
   baseUrl: "",
   path: "",
+  requestBody: "",
   isDefaultForType: false,
   projectIds: [],
 });
@@ -270,6 +269,21 @@ const emptyAuth = (): MDMAuthMasked => ({
   hasPassword: false,
 });
 
+interface UserSyncForm {
+  enabled: boolean;
+  cron: string;
+  statusField: string;
+  activeValues: string; // comma-separated in the form
+  updateProfile: boolean;
+}
+const DEFAULT_USER_SYNC: UserSyncForm = {
+  enabled: false,
+  cron: "0 3 * * *",
+  statusField: "",
+  activeValues: "",
+  updateProfile: true,
+};
+
 interface EditState {
   _id?: string;
   name: string;
@@ -277,6 +291,7 @@ interface EditState {
   enabled: boolean;
   apis: MDMApi[];
   auth: MDMAuthMasked;
+  userSync: UserSyncForm;
 }
 
 const toEditState = (s?: MDMSource): EditState =>
@@ -290,6 +305,15 @@ const toEditState = (s?: MDMSource): EditState =>
           ? s.apis.map((a) => ({ ...a, projectIds: a.projectIds || [] }))
           : [emptyApi()],
         auth: { ...emptyAuth(), ...s.auth },
+        userSync: s.userSync
+          ? {
+              enabled: !!s.userSync.enabled,
+              cron: s.userSync.cron || "0 3 * * *",
+              statusField: s.userSync.statusField || "",
+              activeValues: (s.userSync.activeValues || []).join(", "),
+              updateProfile: s.userSync.updateProfile !== false,
+            }
+          : { ...DEFAULT_USER_SYNC },
       }
     : {
         name: "",
@@ -297,6 +321,7 @@ const toEditState = (s?: MDMSource): EditState =>
         enabled: true,
         apis: [emptyApi()],
         auth: emptyAuth(),
+        userSync: { ...DEFAULT_USER_SYNC },
       };
 
 const STATUS_META: Record<string, { dot: string; cls: string; label: string }> =
@@ -548,7 +573,12 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
       return;
     }
     // Fill the endpoint row (label / dataType / project mapping are left to the user)
-    updateApi(idx, { method: p.method, baseUrl: p.baseUrl, path: p.path });
+    updateApi(idx, {
+      method: p.method,
+      baseUrl: p.baseUrl,
+      path: p.path,
+      requestBody: p.body || edit.apis[idx]?.requestBody || "",
+    });
 
     const hasAuth = p.auth.type !== "none";
     const hasExtra = Object.keys(p.extraHeaders || {}).length > 0;
@@ -695,6 +725,16 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
         ...(edit.auth.apiKey ? { apiKey: edit.auth.apiKey } : {}),
         ...(edit.auth.token ? { token: edit.auth.token } : {}),
         ...(edit.auth.password ? { password: edit.auth.password } : {}),
+      },
+      userSync: {
+        enabled: edit.userSync.enabled,
+        cron: edit.userSync.cron.trim() || "0 3 * * *",
+        statusField: edit.userSync.statusField.trim(),
+        activeValues: edit.userSync.activeValues
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean),
+        updateProfile: edit.userSync.updateProfile,
       },
     };
     const res = edit._id
@@ -1242,6 +1282,33 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                               />
                             </div>
 
+                            {api.method === "POST" && (
+                              <div className="col-span-2">
+                                <label className={labelCls}>Request Body JSON</label>
+                                <textarea
+                                  className={`${inputCls} font-mono text-xs`}
+                                  rows={5}
+                                  value={api.requestBody || ""}
+                                  onChange={(e) =>
+                                    updateApi(idx, {
+                                      requestBody: e.target.value,
+                                    })
+                                  }
+                                  placeholder={`{
+  "operator": "academic_year_id = 26 AND school_id = 52"
+}`}
+                                />
+                                <p className="mt-1 text-[10px] text-gray-500">
+                                  Used for POST MDM APIs. For your school API,
+                                  paste the operator JSON here. For dependent
+                                  dropdowns use placeholders like
+                                  {" {{param.academic_year_id}}"}; the dependent
+                                  field setting decides which parameter name is
+                                  passed.
+                                </p>
+                              </div>
+                            )}
+
                             {/* Project mapping dropdown */}
                             <div className="col-span-2">
                               <label className={labelCls}>
@@ -1343,6 +1410,163 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                     })}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Scheduled User Sync */}
+            {view === "edit" && (
+              <div className="px-6 py-5 border-t bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900">
+                      Scheduled User Sync
+                    </h4>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Auto-refresh this source's users (active/inactive +
+                      profile) on a schedule.
+                    </p>
+                  </div>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={edit.userSync.enabled}
+                      onChange={(e) =>
+                        setEdit({
+                          ...edit,
+                          userSync: {
+                            ...edit.userSync,
+                            enabled: e.target.checked,
+                          },
+                        })
+                      }
+                      className="w-4 h-4 accent-indigo-600"
+                    />
+                    <span className="text-sm font-medium text-gray-700">
+                      Enabled
+                    </span>
+                  </label>
+                </div>
+
+                {edit.userSync.enabled && (
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Frequency
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { label: "Daily 3 AM", cron: "0 3 * * *" },
+                          { label: "Every 6 hours", cron: "0 */6 * * *" },
+                          { label: "Every 12 hours", cron: "0 */12 * * *" },
+                          { label: "Weekly (Mon 3 AM)", cron: "0 3 * * 1" },
+                        ].map((p) => (
+                          <button
+                            key={p.cron}
+                            type="button"
+                            onClick={() =>
+                              setEdit({
+                                ...edit,
+                                userSync: { ...edit.userSync, cron: p.cron },
+                              })
+                            }
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                              edit.userSync.cron === p.cron
+                                ? "border-indigo-500 bg-indigo-50 text-indigo-600"
+                                : "border-gray-200 bg-white text-gray-600"
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Cron expression
+                        </label>
+                        <input
+                          className={inputCls}
+                          value={edit.userSync.cron}
+                          onChange={(e) =>
+                            setEdit({
+                              ...edit,
+                              userSync: {
+                                ...edit.userSync,
+                                cron: e.target.value,
+                              },
+                            })
+                          }
+                          placeholder="0 3 * * *"
+                        />
+                        <p className="text-[11px] text-gray-400 mt-1">
+                          min hour day month weekday · TZ Asia/Kolkata
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Status field (optional)
+                        </label>
+                        <input
+                          className={inputCls}
+                          value={edit.userSync.statusField}
+                          onChange={(e) =>
+                            setEdit({
+                              ...edit,
+                              userSync: {
+                                ...edit.userSync,
+                                statusField: e.target.value,
+                              },
+                            })
+                          }
+                          placeholder="e.g. Status / EmployeeStatus"
+                        />
+                        <p className="text-[11px] text-gray-400 mt-1">
+                          MDM field holding active/inactive. Blank = auto-detect.
+                        </p>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Active values (comma-separated, optional)
+                      </label>
+                      <input
+                        className={inputCls}
+                        value={edit.userSync.activeValues}
+                        onChange={(e) =>
+                          setEdit({
+                            ...edit,
+                            userSync: {
+                              ...edit.userSync,
+                              activeValues: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="active, working, 1, Y"
+                      />
+                    </div>
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={edit.userSync.updateProfile}
+                        onChange={(e) =>
+                          setEdit({
+                            ...edit,
+                            userSync: {
+                              ...edit.userSync,
+                              updateProfile: e.target.checked,
+                            },
+                          })
+                        }
+                        className="w-4 h-4 accent-indigo-600"
+                      />
+                      <span className="text-sm text-gray-700">
+                        Also refresh profile (name, mobile, department,
+                        designation)
+                      </span>
+                    </label>
+                  </div>
+                )}
               </div>
             )}
           </div>

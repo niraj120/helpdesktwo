@@ -222,21 +222,31 @@ const FindCenterPage: React.FC = () => {
           animation: window.google.maps.Animation.DROP,
         });
 
+        const infoContent = document.createElement('div');
+        infoContent.className = 'map-info-window';
+
+        const title = document.createElement('h3');
+        title.className = 'map-info-window__title';
+        title.textContent = center.centerName || 'Center';
+        infoContent.appendChild(title);
+
+        const address = document.createElement('p');
+        address.className = 'map-info-window__text';
+        address.textContent = `Location: ${[center.address, center.city, center.state].filter(Boolean).join(', ')}`;
+        infoContent.appendChild(address);
+
+        const phone = document.createElement('p');
+        phone.className = 'map-info-window__text';
+        phone.textContent = `Phone: ${center.phone || 'Not available'}`;
+        infoContent.appendChild(phone);
+
+        const hours = document.createElement('p');
+        hours.className = 'map-info-window__text';
+        hours.textContent = `Hours: ${center.workingHours || 'Not available'}`;
+        infoContent.appendChild(hours);
+
         const infoWindow = new window.google.maps.InfoWindow({
-          content: `
-            <div style="padding: 8px; max-width: 250px;">
-              <h3 style="font-weight: bold; margin: 0 0 8px 0; color: #1f2937;">${center.centerName}</h3>
-              <p style="margin: 4px 0; font-size: 13px; color: #4b5563;">
-                📍 ${center.address}, ${center.city}, ${center.state}
-              </p>
-              <p style="margin: 4px 0; font-size: 13px; color: #4b5563;">
-                📞 ${center.phone}
-              </p>
-              <p style="margin: 4px 0; font-size: 13px; color: #4b5563;">
-                🕒 ${center.workingHours}
-              </p>
-            </div>
-          `,
+          content: infoContent,
         });
 
         marker.addListener('click', () => {

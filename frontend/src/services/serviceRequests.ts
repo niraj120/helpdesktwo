@@ -7,6 +7,7 @@ import { api } from "../utils/api";
 export interface SrListParams {
   projectId?: string;
   interactionType?: string; // "PSR" | "ISR" | "all"
+  viewScope?: "project" | "assigned" | "raised" | "my";
   status?: string;
   assignedTo?: string;
   search?: string;
@@ -44,6 +45,10 @@ export const serviceRequestApi = {
     api.get<SrListResponse>(base, { params }).then((r) => r.data),
   get: (id: string) => api.get(`${base}/${id}`).then((r) => r.data),
   create: (body: any) => api.post(base, body).then((r) => r.data),
+  bulkDelete: (ids: string[]) =>
+    api.delete(`${base}/bulk`, { data: { ticketIds: ids } }).then((r) => r.data),
+  merge: (primaryId: string, ticketIds: string[]) =>
+    api.post(`${base}/${primaryId}/merge`, { ticketIds }).then((r) => r.data),
   activePriorities: (projectId?: string) =>
     api
       .get("/priorities/active", { params: { projectId } })
@@ -56,6 +61,10 @@ export const serviceRequestApi = {
     api.get(`${base}/${psrId}/linked-isrs`).then((r) => r.data),
   linkPsr: (isrId: string, psrId: string) =>
     api.post(`${base}/${isrId}/link-psr`, { psrId }).then((r) => r.data),
+  linkParentTicket: (isrId: string, parentTicketId: string) =>
+    api
+      .post(`${base}/${isrId}/link-psr`, { parentTicketId })
+      .then((r) => r.data),
 
   studentLookup: (q: string, projectId?: string) =>
     api
@@ -65,6 +74,8 @@ export const serviceRequestApi = {
     api
       .get(`${base}/parent-lookup`, { params: { q, projectId, mdmSourceId } })
       .then((r) => r.data),
+  formMdmOptions: (params: Record<string, any>) =>
+    api.get(`${base}/form-mdm-options`, { params }).then((r) => r.data),
   duplicates: (params: Record<string, any>) =>
     api.get(`${base}/duplicates`, { params }).then((r) => r.data),
 
@@ -78,6 +89,8 @@ export const serviceRequestApi = {
     api.post(`${base}/${id}/delegate`, body).then((r) => r.data),
   reopen: (id: string, body: any) =>
     api.post(`${base}/${id}/reopen`, body).then((r) => r.data),
+  cancel: (id: string, body: any) =>
+    api.post(`${base}/${id}/cancel`, body).then((r) => r.data),
   parentClose: (id: string, body: any) =>
     api.post(`${base}/${id}/parent-close`, body).then((r) => r.data),
   pslCall: (id: string, body: any) =>
@@ -88,6 +101,24 @@ export const serviceRequestApi = {
     api.get(`${base}/config`, { params: { projectId } }).then((r) => r.data),
   updateConfig: (projectId: string, patch: any) =>
     api.put(`${base}/config`, { projectId, ...patch }).then((r) => r.data),
+  testLeadCrmConfig: (projectId: string, leadSync: any, payload?: any) =>
+    api
+      .post(`${base}/config/test-crm`, { projectId, leadSync, payload })
+      .then((r) => r.data),
+
+  // Recompute open SR TATs (#13)
+  recomputeTat: (projectId: string) =>
+    api
+      .post(`${base}/recompute-tat`, null, { params: { projectId } })
+      .then((r) => r.data),
+
+  // SR notification templates (#9)
+  getNotificationTemplates: (projectId: string) =>
+    api
+      .get(`${base}/notification-templates`, { params: { projectId } })
+      .then((r) => r.data),
+  saveNotificationTemplate: (body: any) =>
+    api.put(`${base}/notification-templates`, body).then((r) => r.data),
 
   // Email triage inbox (Phase 4)
   emailIntake: {
@@ -97,6 +128,10 @@ export const serviceRequestApi = {
     ingest: (body: any) => api.post("/email-intake", body).then((r) => r.data),
     action: (id: string, body: any) =>
       api.post(`/email-intake/${id}/action`, body).then((r) => r.data),
+    bulkAction: (body: any) =>
+      api.post("/email-intake/bulk-action", body).then((r) => r.data),
+    bulkDelete: (ids: string[]) =>
+      api.delete("/email-intake/bulk", { data: { ids } }).then((r) => r.data),
   },
 
   // IVR call triage (Phase 5)
@@ -109,6 +144,14 @@ export const serviceRequestApi = {
       api.post(`/ivr/calls/${id}/classify`, body).then((r) => r.data),
     convert: (id: string, body: any) =>
       api.post(`/ivr/calls/${id}/convert`, body).then((r) => r.data),
+    bulkReassign: (callIds: string[], toUserId: string) =>
+      api
+        .post("/ivr/calls/bulk-reassign", { callIds, toUserId })
+        .then((r) => r.data),
+    markJunk: (id: string, body: any) =>
+      api.post(`/ivr/calls/${id}/junk`, body).then((r) => r.data),
+    markConverted: (id: string, body: any) =>
+      api.post(`/ivr/calls/${id}/converted`, body).then((r) => r.data),
     resolveOnCall: (id: string, body: any) =>
       api.post(`/ivr/calls/${id}/resolve-on-call`, body).then((r) => r.data),
   },
@@ -120,6 +163,8 @@ export const serviceRequestApi = {
     create: (body: any) => api.post("/leads", body).then((r) => r.data),
     update: (id: string, body: any) =>
       api.put(`/leads/${id}`, body).then((r) => r.data),
+    retryCrmSync: (id: string) =>
+      api.post(`/leads/${id}/retry-crm-sync`).then((r) => r.data),
     remove: (id: string) => api.delete(`/leads/${id}`).then((r) => r.data),
   },
 
@@ -190,6 +235,7 @@ export const SR_STATUS_META: Record<
   5: { label: "Closed", color: "#374151", bg: "#f3f4f6" },
   6: { label: "Re-open", color: "#b91c1c", bg: "#fef2f2" },
   7: { label: "Re-Opened WIP", color: "#c2410c", bg: "#fff7ed" },
+  8: { label: "Cancelled", color: "#475569", bg: "#f1f5f9" },
 };
 
 /** Priority name → chip colors. Priority is free-form master data; match by

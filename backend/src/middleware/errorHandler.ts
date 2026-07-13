@@ -11,8 +11,9 @@ export const errorHandler = (
   next: NextFunction
 ) => {
   const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
+  const isProduction = process.env.NODE_ENV === 'production';
 
+  // Always log the full detail server-side for diagnosis.
   console.error('Error:', {
     message: err.message,
     stack: err.stack,
@@ -21,9 +22,17 @@ export const errorHandler = (
     method: req.method,
   });
 
+  // GIGW/security: never leak internal error detail on 5xx in production.
+  // 4xx messages are client-facing (validation/auth) and safe to return.
+  const message =
+    isProduction && statusCode >= 500
+      ? 'Internal Server Error'
+      : err.message || 'Internal Server Error';
+
   res.status(statusCode).json({
     success: false,
     error: message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+    // Stack traces are exposed only outside production.
+    ...(!isProduction && { stack: err.stack }),
   });
 };

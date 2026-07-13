@@ -141,6 +141,15 @@ interface EmailConfig {
   isForwardedMailbox?: boolean;
   originalEmailAddress?: string;
   replySignature?: string;
+  mappedUserId?: string;
+  mappedUser?: {
+    _id: string;
+    firstName?: string;
+    lastName?: string;
+    fullName?: string;
+    email?: string;
+  } | null;
+  autoCreateTicket?: boolean;
 }
 
 interface EmailConfigModalProps {
@@ -175,10 +184,20 @@ interface FormData {
   oauth2TenantId: string; // Microsoft Tenant ID for Graph API
   outboundMethod: "smtp" | "sendgrid" | "graph";
   sendgridApiKey: string;
+  mappedUserId: string;
+  autoCreateTicket: boolean;
 }
 
 interface ValidationErrors {
   [key: string]: string;
+}
+
+interface ProjectUser {
+  _id: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  email?: string;
 }
 
 // Detect email provider from email address
@@ -284,6 +303,11 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
             ? "graph"
             : (editingConfig as any).outboundMethod || "smtp",
         sendgridApiKey: "", // never pre-fill API key
+        mappedUserId:
+          (editingConfig as any).mappedUserId ||
+          (editingConfig as any).mappedUser?._id ||
+          "",
+        autoCreateTicket: (editingConfig as any).autoCreateTicket !== false,
       };
     }
     return {
@@ -310,10 +334,13 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       oauth2TenantId: "",
       outboundMethod: "smtp",
       sendgridApiKey: "",
+      mappedUserId: "",
+      autoCreateTicket: true,
     };
   };
 
   const [formData, setFormData] = useState<FormData>(getInitialFormData());
+  const [projectUsers, setProjectUsers] = useState<ProjectUser[]>([]);
 
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [loading, setLoading] = useState(false);
@@ -331,6 +358,34 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       setTestResult(null);
     }
   }, [isOpen, editingConfig]);
+
+  useEffect(() => {
+    if (!isOpen || !projectId) {
+      setProjectUsers([]);
+      return;
+    }
+
+    const fetchProjectUsers = async () => {
+      try {
+        const token = localStorage.getItem("authToken");
+        const response = await axios.get(`${API_CONFIG.API_URL}/users`, {
+          params: { project: projectId, limit: 500, isActive: true },
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const users = Array.isArray(response.data?.data?.users)
+          ? response.data.data.users
+          : Array.isArray(response.data?.data)
+            ? response.data.data
+            : [];
+        setProjectUsers(users);
+      } catch (error) {
+        console.error("Error fetching project users:", error);
+        setProjectUsers([]);
+      }
+    };
+
+    fetchProjectUsers();
+  }, [isOpen, projectId]);
 
   // Rich-text signature editor — image handler uploads to backend and inserts hosted URL
   const signatureQuillRef = useRef<ReactQuill>(null);
@@ -527,7 +582,10 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleInputChange = (field: keyof FormData, value: string | number) => {
+  const handleInputChange = (
+    field: keyof FormData,
+    value: string | number | boolean,
+  ) => {
     let updatedData = { ...formData, [field]: value };
 
     // Auto-detect provider and set defaults when email changes
@@ -760,6 +818,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
             ? formData.originalEmailAddress
             : undefined,
         reply_signature: formData.replySignature,
+        mapped_user_id: formData.mappedUserId || undefined,
+        auto_create_ticket: formData.autoCreateTicket,
       };
 
       // Only include passwords if provided (not for OAuth2)
@@ -917,6 +977,75 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                   {errors.emailAddress}
                 </p>
               )}
+            </div>
+            {/* Intake routing */}
+            <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-4 space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Incoming Email Routing
+                </h3>
+                <p className="text-xs text-gray-600 mt-1">
+                  Choose whether this mailbox creates normal tickets
+                  automatically or sends emails to the Service Requests Email
+                  tab for PSR conversion.
+                </p>
+              </div>
+
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={formData.autoCreateTicket}
+                  onChange={(e) =>
+                    handleInputChange("autoCreateTicket", e.target.checked)
+                  }
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-900">
+                    Auto-create normal ticket
+                  </span>
+                  <span className="block text-xs text-gray-600">
+                    On: existing email-to-ticket assignment flow runs. Off:
+                    emails appear in Service Requests &gt; Email for PSR
+                    conversion.
+                  </span>
+                </span>
+              </label>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Mapped owner user
+                </label>
+                <select
+                  value={formData.mappedUserId}
+                  onChange={(e) =>
+                    handleInputChange("mappedUserId", e.target.value)
+                  }
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">No owner - visible to permitted users</option>
+                  {projectUsers.map((user) => {
+                    const name =
+                      user.fullName ||
+                      [user.firstName, user.lastName]
+                        .filter(Boolean)
+                        .join(" ") ||
+                      user.email ||
+                      "Unnamed user";
+                    return (
+                      <option key={user._id} value={user._id}>
+                        {name}
+                        {user.email ? ` (${user.email})` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  When auto-create is off and an owner is selected, only that
+                  user can see and convert these emails unless a role has all
+                  email triage access.
+                </p>
+              </div>
             </div>
             {/* Inbound Method Selector */}
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">

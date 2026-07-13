@@ -11,6 +11,7 @@ export interface IEmailProcessingQueue extends Document {
   lastAttemptAt?: Date;
   lastRetryAt?: Date; // Last time a retry was attempted
   ticketId?: mongoose.Types.ObjectId; // Reference to created ticket (when completed)
+  emailIntakeId?: mongoose.Types.ObjectId; // Reference to SR email intake record (when auto-create is disabled)
   emailCommunicationId?: mongoose.Types.ObjectId; // Reference to email communication record
   metadata?: {
     fromEmail?: string;
@@ -68,6 +69,11 @@ const EmailProcessingQueueSchema: Schema = new Schema(
     ticketId: {
       type: Schema.Types.ObjectId,
       ref: 'Ticket',
+      index: true,
+    },
+    emailIntakeId: {
+      type: Schema.Types.ObjectId,
+      ref: 'EmailIntake',
       index: true,
     },
     emailCommunicationId: {

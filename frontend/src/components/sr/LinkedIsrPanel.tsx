@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { PERMISSIONS } from "../../constants/permissions";
 import { usePermissions } from "../../hooks/usePermissions";
 import { serviceRequestApi, SR_STATUS_META } from "../../services/serviceRequests";
@@ -37,14 +37,35 @@ const StatusPill: React.FC<{ status: number }> = ({ status }) => {
 };
 
 const LinkedIsrPanel: React.FC<{
-  psrId: string;
+  psrId?: string;
+  parentTicketId?: string;
   projectId?: string;
   variant?: "card" | "tab";
-}> = ({ psrId, projectId, variant = "card" }) => {
+  allowCreate?: boolean;
+  allowLink?: boolean;
+}> = ({
+  psrId,
+  parentTicketId,
+  projectId,
+  variant = "card",
+  allowCreate = true,
+  allowLink = true,
+}) => {
+  const parentId = parentTicketId || psrId || "";
   const navigate = useNavigate();
+  const location = useLocation();
+  const isProjectPortal = location.pathname.includes("/portal/");
+  const serviceRequestPath = (suffix: string) =>
+    isProjectPortal
+      ? `${location.pathname.replace(/\/service-requests(?:\/.*)?$/, "")}/service-requests${suffix}`
+      : `/service-requests${suffix}`;
   const { hasPermission } = usePermissions();
-  const canCreate = hasPermission(PERMISSIONS.SR_ISR_CREATE);
-  const canLink = canCreate || hasPermission(PERMISSIONS.SR_REASSIGN);
+  const canCreate = allowCreate && hasPermission(PERMISSIONS.SR_ISR_CREATE);
+  const canLink =
+    allowLink &&
+    (hasPermission(PERMISSIONS.SR_ISR_LINK) ||
+      canCreate ||
+      hasPermission(PERMISSIONS.SR_REASSIGN));
 
   const [data, setData] = useState<{ items: any[]; total: number; done: number }>({
     items: [],
@@ -62,7 +83,7 @@ const LinkedIsrPanel: React.FC<{
   const load = async () => {
     setLoading(true);
     try {
-      const r = await serviceRequestApi.linkedIsrs(psrId);
+      const r = await serviceRequestApi.linkedIsrs(parentId);
       setData({ items: r.items || [], total: r.total || 0, done: r.done || 0 });
     } catch (e) {
       console.error(e);
@@ -72,8 +93,8 @@ const LinkedIsrPanel: React.FC<{
   };
 
   useEffect(() => {
-    if (psrId) load();
-  }, [psrId]); // eslint-disable-line
+    if (parentId) load();
+  }, [parentId]); // eslint-disable-line
 
   const searchIsr = (val: string) => {
     setQ(val);
@@ -91,7 +112,7 @@ const LinkedIsrPanel: React.FC<{
           limit: 8,
         });
         setResults(
-          (r.items || []).filter((i: any) => String(i.linkedPsrId || "") !== psrId),
+          (r.items || []).filter((i: any) => String(i.linkedPsrId || "") !== parentId),
         );
       } catch (e) {
         console.error(e);
@@ -103,7 +124,7 @@ const LinkedIsrPanel: React.FC<{
     setBusy(true);
     setMsg(null);
     try {
-      await serviceRequestApi.linkPsr(isrId, psrId);
+      await serviceRequestApi.linkParentTicket(isrId, parentId);
       setMsg({ type: "ok", text: "ISR linked." });
       setShowLink(false);
       setQ("");
@@ -117,8 +138,8 @@ const LinkedIsrPanel: React.FC<{
   };
 
   const createLinked = () =>
-    navigate("/service-requests/create", {
-      state: { linkedPsrId: psrId, interactionType: "ISR" },
+    navigate(serviceRequestPath("?tab=new"), {
+      state: { linkedParentTicketId: parentId, interactionType: "ISR" },
     });
 
   const pending = Math.max(0, data.total - data.done);
@@ -246,7 +267,7 @@ const LinkedIsrPanel: React.FC<{
           {data.items.map((isr) => (
             <div
               key={isr._id}
-              onClick={() => navigate(`/tickets/${isr._id}`)}
+              onClick={() => navigate(serviceRequestPath(`/${isr._id}`))}
               style={{
                 display: "flex",
                 alignItems: "center",

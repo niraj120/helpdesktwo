@@ -1,5 +1,11 @@
 // SAC Helpdesk - Push Notification Service Worker
-// Handles incoming web push events and shows browser notifications
+// Handles incoming web push events and shows browser notifications.
+//
+// GIGW note: this worker is push-only. It registers NO `fetch` handler and
+// performs NO content/response caching, so it cannot serve stale government
+// content — the browser always fetches pages/assets fresh from the network.
+// Do not add a caching `fetch` handler here without a versioned cache +
+// update strategy, or stale content could be served.
 
 self.addEventListener('push', (event) => {
   if (!event.data) return;

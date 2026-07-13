@@ -29,13 +29,15 @@ export interface IThread {
 export interface IComment {
   _id?: mongoose.Types.ObjectId;
   text: string;
-  createdBy: mongoose.Types.ObjectId;
+  createdBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt?: Date;
   isSystemComment?: boolean;
   mergedFrom?: string; // Ticket number if comment was merged from another ticket
   /** SR (PSR/ISR): whether this follow-up/remark is visible to the parent. Phase 2. */
   displayToParent?: boolean;
+  /** Author of the comment for the parent webview thread. */
+  authorType?: "staff" | "parent" | "system";
 }
 
 export interface IInternalNote {
@@ -83,6 +85,11 @@ export interface ICategoryHierarchy {
   level3?: mongoose.Types.ObjectId; // Optional (Level 3 category)
   level4?: mongoose.Types.ObjectId; // Optional (Level 4 category)
   level5?: mongoose.Types.ObjectId; // Optional (Level 5 category)
+  level6?: mongoose.Types.ObjectId; // Optional (Level 6 category)
+  level7?: mongoose.Types.ObjectId; // Optional (Level 7 category)
+  level8?: mongoose.Types.ObjectId; // Optional (Level 8 category)
+  level9?: mongoose.Types.ObjectId; // Optional (Level 9 category)
+  level10?: mongoose.Types.ObjectId; // Optional (Level 10 category)
   displayPath?: string; // Cached display path for quick rendering
 }
 
@@ -109,11 +116,13 @@ export interface ITicket extends Document {
     | "online"
     | "offline"
     | "email"
+    | "walk_in"
     | "whatsapp"
     | "chatbot"
     | "web"
     | "sms"
-    | "ivr"; // Track where ticket was created
+    | "ivr"
+    | "self_service"; // Track where ticket was created
   // Public API fields
   mobile?: string; // Normalised mobile number (91XXXXXXXXXX) for chatbot/public submissions
   isRegistered?: boolean; // true = linked to existing user, false = mobile-only (unverified)
@@ -241,6 +250,12 @@ export interface ITicket extends Document {
     calledBy?: mongoose.Types.ObjectId;
     calledAt?: Date;
   };
+  cancel?: {
+    reason?: string;
+    replacementSrId?: mongoose.Types.ObjectId;
+    by?: mongoose.Types.ObjectId;
+    at?: Date;
+  };
 }
 
 const AttachmentSchema = new Schema({
@@ -272,13 +287,20 @@ const ThreadSchema = new Schema({
 
 const CommentSchema = new Schema({
   text: { type: String, required: true },
-  createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  // Not required: parent self-service replies have no staff author.
+  createdBy: { type: Schema.Types.ObjectId, ref: "User" },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date },
   isSystemComment: { type: Boolean, default: false },
   mergedFrom: { type: String }, // Ticket number if merged from another ticket
   // SR (PSR/ISR): whether this follow-up/remark is shown to the parent. Phase 2.
   displayToParent: { type: Boolean, default: false },
+  // Who wrote it — used by the parent webview thread. Default staff.
+  authorType: {
+    type: String,
+    enum: ["staff", "parent", "system"],
+    default: "staff",
+  },
 });
 
 const InternalNoteSchema = new Schema({
@@ -390,6 +412,11 @@ const TicketSchema: Schema = new Schema(
         ref: "Category",
         index: true,
       },
+      level6: { type: Schema.Types.ObjectId, ref: "Category", index: true },
+      level7: { type: Schema.Types.ObjectId, ref: "Category", index: true },
+      level8: { type: Schema.Types.ObjectId, ref: "Category", index: true },
+      level9: { type: Schema.Types.ObjectId, ref: "Category", index: true },
+      level10: { type: Schema.Types.ObjectId, ref: "Category", index: true },
       displayPath: {
         type: String,
         trim: true,
@@ -427,11 +454,13 @@ const TicketSchema: Schema = new Schema(
         "online",
         "offline",
         "email",
+        "walk_in",
         "whatsapp",
         "chatbot",
         "web",
         "sms",
         "ivr",
+        "self_service",
       ],
       default: "online",
       index: true,
@@ -658,6 +687,16 @@ const TicketSchema: Schema = new Schema(
       comments: { type: String },
       calledBy: { type: Schema.Types.ObjectId, ref: "User" },
       calledAt: { type: Date },
+    },
+    cancel: {
+      reason: { type: String },
+      replacementSrId: {
+        type: Schema.Types.ObjectId,
+        ref: "Ticket",
+        default: undefined,
+      },
+      by: { type: Schema.Types.ObjectId, ref: "User" },
+      at: { type: Date },
     },
   },
   {

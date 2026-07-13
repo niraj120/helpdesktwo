@@ -6,7 +6,15 @@ import { authMiddleware } from "../../../middleware/auth";
 import { checkPermission } from "../../../middleware/permissions";
 import * as c from "../controllers/ivrController";
 
-const VIEW = ["SR_PSR_RECEIVE", "SR_PSR_CREATE", "EMAIL_TRIAGE_ACCESS"];
+const VIEW = [
+  "IVR_TRIAGE_ACCESS",
+  "IVR_TRIAGE_CONVERT",
+  "SR_VIEW_ALL",
+  "SR_VIEW_ASSIGNED",
+  "SR_PSR_RECEIVE",
+  "SR_PSR_CREATE",
+  "EMAIL_TRIAGE_ACCESS",
+];
 
 const router = Router();
 router.use(authMiddleware);
@@ -14,16 +22,40 @@ router.use(authMiddleware);
 // Ingest (normally a Tata webhook; manual for testing)
 router.post(
   "/calls",
-  checkPermission(["SR_PSR_CREATE", "SR_CONFIG_MANAGE"]),
+  checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE", "SR_CONFIG_MANAGE"]),
   c.ingest,
 );
 router.get("/calls", checkPermission(VIEW), c.list);
+// Bulk reassign — must be registered before the /:id routes.
+router.post(
+  "/calls/bulk-reassign",
+  checkPermission(["IVR_AGENT_MANAGE", "IVR_TRIAGE_CONVERT"]),
+  c.bulkReassign,
+);
 router.get("/calls/:id", checkPermission(VIEW), c.getOne);
-router.post("/calls/:id/classify", checkPermission("SR_PSR_CREATE"), c.classify);
-router.post("/calls/:id/convert", checkPermission("SR_PSR_CREATE"), c.convert);
+router.post(
+  "/calls/:id/classify",
+  checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
+  c.classify,
+);
+router.post(
+  "/calls/:id/convert",
+  checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
+  c.convert,
+);
+router.post(
+  "/calls/:id/junk",
+  checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
+  c.markJunk,
+);
+router.post(
+  "/calls/:id/converted",
+  checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
+  c.markConverted,
+);
 router.post(
   "/calls/:id/resolve-on-call",
-  checkPermission("SR_PSR_CREATE"),
+  checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
   c.resolveOnCall,
 );
 

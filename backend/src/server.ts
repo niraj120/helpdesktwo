@@ -1,4 +1,4 @@
-// Load environment variables FIRST before any other imports
+﻿// Load environment variables FIRST before any other imports
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -23,6 +23,7 @@ import "./models/Project";
 import "./models/Status";
 import "./models/Center";
 import "./models/PublicApiKey";
+import "./models/IvrIngestLog";
 import "./models/Asset";
 import "./models/CenterAssetMapping";
 import "./models/FeedbackForm";
@@ -32,6 +33,13 @@ import "./models/KBSubcategory";
 import "./models/KnowledgeBaseArticle";
 import "./models/MasterData";
 import "./models/MDMSource";
+import "./models/MDMCacheRecord";
+import "./models/MDMCacheJoin";
+import "./models/MDMSyncJob";
+import "./models/psr/PipelineConfig"; // PSR Pipeline system
+import "./models/psr/SyncRun"; // PSR Sync run logs
+import "./models/psr/PsrMaster";      // PSR Builder — master
+import "./models/psr/PsrTable";       // PSR Builder — table
 import "./models/EmailLog";
 import "./models/EmailConfig";
 import "./models/FAQ";
@@ -65,6 +73,8 @@ import clusterRoutes from "./modules/service-request/routes/clusters";
 import emailIntakeRoutes from "./modules/service-request/routes/emailIntake";
 import leadRoutes from "./modules/service-request/routes/leads";
 import ivrRoutes from "./modules/service-request/routes/ivr";
+import publicIvrRoutes from "./modules/service-request/routes/publicIvr";
+import ivrAgentRoutes from "./modules/service-request/routes/ivrAgents";
 import roleMappingRoutes from "./modules/service-request/routes/roleMappingRules";
 import eulaRoutes from "./routes/eula";
 import projectRoutes from "./routes/projects";
@@ -72,6 +82,14 @@ import roleRoutes from "./routes/roleRoutes";
 import permissionRoutes from "./routes/permissionRoutes";
 import masterRoutes from "./routes/masterRoutes"; // Country, State, City routes (consolidated)
 import mdmRoutes from "./routes/mdmRoutes"; // MDM (Master Data Management) sources
+import mdmUserSyncRoutes from "./routes/mdmUserSync"; // MDM → User refresh (active/inactive + profile)
+import psrSearchRoutes from "./routes/service-request/psrSearchRoutes"; // PSR search (production endpoint)
+import psrPipelineRoutes from "./routes/psr/psrPipelineRoutes"; // PSR Pipeline system (new)
+import psrBuilderRoutes from "./routes/psr/psrBuilderRoutes";   // PSR Builder (simple UI layer)
+import { initPsrQueue } from "./services/psr/pipelineQueue"; // PSR BullMQ queue
+import { startPsrWorker, stopPsrWorker } from "./services/psr/pipelineWorker"; // PSR worker
+import { startStalenessWatchdog, stopStalenessWatchdog } from "./services/psr/stalenessWatchdog"; // PSR US-5.2
+import { startPsrTableScheduler, stopPsrTableScheduler } from "./services/psr/psrTableScheduler"; // PSR table sync
 import categoryRoutes from "./routes/categories";
 import hierarchyConfigRoutes from "./routes/hierarchyConfig";
 import statusRoutes from "./routes/statuses";
@@ -105,6 +123,8 @@ import { startAggregationScheduler } from "./services/dashboardAggregationServic
 import { startReportScheduler } from "./services/dashboard/reportScheduler";
 import { startReportAlertScheduler } from "./services/reports/reportAlertScheduler";
 import { startAttendanceAlertScheduler } from "./services/reports/attendanceAlertScheduler";
+import { startMDMCacheScheduler } from "./services/mdmCacheScheduler";
+import { mdmUserSyncScheduler } from "./services/mdmUserSyncScheduler";
 import hierarchyRoutes from "./routes/hierarchy";
 import emailConfigRoutes from "./routes/emailConfig";
 import emailLogRoutes from "./routes/emailLogs";
@@ -153,6 +173,7 @@ import { registerPhase2Handlers } from "./services/widgetHandlers/phase2Handlers
 import { registerPhase3Handlers } from "./services/widgetHandlers/phase3Handlers";
 import { registerPhase4Handlers } from "./services/widgetHandlers/phase4Handlers";
 import { registerPhase5Handlers } from "./services/widgetHandlers/phase5Handlers";
+import { registerSrDashboardHandlers } from "./services/widgetHandlers/srDashboardHandlers";
 import { registerKbHandlers } from "./services/dashboard/queryHandlers/kbHandlers";
 import { registerActivityHandlers } from "./services/dashboard/queryHandlers/activityHandlers";
 import { registerAttRawHandlers } from "./services/widgetHandlers/attRawHandlers";
@@ -234,6 +255,12 @@ const io = new Server(httpServer, {
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
+    // GIGW: explicit HSTS — force HTTPS for a year, incl. subdomains + preload.
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
   }),
 );
 
@@ -248,7 +275,7 @@ app.use(
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.log("❌ CORS blocked origin:", origin);
+        console.log("âŒ CORS blocked origin:", origin);
         callback(new Error("Not allowed by CORS"));
       }
     },
@@ -271,8 +298,22 @@ app.use(
 // Rate limiting disabled for development/testing
 
 // Body parsing middleware
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf.toString("utf8");
+    },
+  }),
+);
+app.use(
+  express.urlencoded({
+    extended: true,
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf.toString("utf8");
+    },
+  }),
+);
 
 // Serve uploaded files statically
 import path from "path";
@@ -299,12 +340,18 @@ app.use("/api/clusters", clusterRoutes);
 app.use("/api/email-intake", emailIntakeRoutes);
 app.use("/api/leads", leadRoutes);
 app.use("/api/ivr", ivrRoutes);
+app.use("/api/public/service-requests/ivr", publicIvrRoutes);
+app.use("/api/ivr-agents", ivrAgentRoutes);
 app.use("/api/role-mapping-rules", roleMappingRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/permissions", permissionRoutes);
 app.use("/api/master", masterRoutes); // Master data: Countries, States, Cities (all endpoints)
 app.use("/api/mdm", mdmRoutes); // MDM (Master Data Management) source configuration
+app.use("/api/mdm-sync", mdmUserSyncRoutes); // MDM → User sync (manual + scheduled)
+app.use("/api/service-requests", psrSearchRoutes); // PSR parent/student search (production)
+app.use("/api/psr", psrPipelineRoutes); // PSR Pipeline system — configurable API composition
+app.use("/api/psr-builder", psrBuilderRoutes); // PSR Builder — simple master/table UI
 app.use("/api/categories", categoryRoutes);
 app.use("/api/hierarchy-config", hierarchyConfigRoutes);
 app.use("/api/statuses", statusRoutes);
@@ -321,13 +368,6 @@ app.use("/api/escalation-policies", escalationPolicyRoutes);
 app.use("/api/escalation-matrix", escalationMatrixRoutes);
 app.use("/api/priorities", priorityRoutes);
 app.use("/api/working-calendars", workingCalendarRoutes);
-
-// Audit Logs Routes
-app.use("/api/activity-logs", activityLogRoutes);
-app.use("/api/access-logs", accessLogRoutes);
-
-// Dashboard Routes (legacy stats)
-app.use("/api/dashboard", dashboardRoutes);
 
 // Dashboard Engine Routes (Phase 1 + 2 + 3)
 app.use("/api/v1/admin/dashboards", adminDashboardRoutes);
@@ -429,7 +469,7 @@ app.use("/api/admin/public-api-keys", publicApiKeysRoutes);
 
 // Public API Routes (chatbot / WhatsApp / external consumers)
 // Per-endpoint rate limiting is applied inside the router
-// ⚠️ Use /api/v1 so Vite proxy in dev forwards these to backend correctly
+// âš ï¸ Use /api/v1 so Vite proxy in dev forwards these to backend correctly
 app.use("/api/v1", publicApiRoutes);
 
 // Integration Routes (TODO: Implement)
@@ -464,14 +504,14 @@ app.use(notFound);
 app.use(errorHandler);
 
 httpServer.listen(PORT, async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV}`);
-  console.log(`🔗 API URL: http://localhost:${PORT}/api`);
+  console.log(`ðŸš€ Server running on port ${PORT}`);
+  console.log(`ðŸ“Š Environment: ${process.env.NODE_ENV}`);
+  console.log(`ðŸ”— API URL: http://localhost:${PORT}/api`);
 
   // Step 0: Register dashboard widget handlers FIRST.
   // This is a pure in-memory operation that does NOT depend on the database, so
   // it MUST run independently of seeding. Previously it lived inside the seeding
-  // try/catch below — any seeding failure would skip registration entirely and
+  // try/catch below â€” any seeding failure would skip registration entirely and
   // leave every dashboard widget reporting "No query handler registered".
   try {
     registerPhase1Handlers();
@@ -479,6 +519,7 @@ httpServer.listen(PORT, async () => {
     registerPhase3Handlers();
     registerPhase4Handlers();
     registerPhase5Handlers();
+    registerSrDashboardHandlers();
     registerKbHandlers();
     registerActivityHandlers();
     registerAttRawHandlers();
@@ -489,19 +530,19 @@ httpServer.listen(PORT, async () => {
     registerAssetMgmtHandlers();
     registerFootfallHandlers();
     console.log(
-      "📊 Dashboard Engine: Phase 1–5 + KB + Activity + att/co/ap/se/misc/am/footfall handlers registered",
+      "ðŸ“Š Dashboard Engine: Phase 1â€“5 + KB + Activity + att/co/ap/se/misc/am/footfall handlers registered",
     );
 
     // Start event-driven cache invalidation (in-memory event bus)
     initDashboardEventBus();
   } catch (error) {
-    console.error("⚠️  Widget handler registration failed:", error);
+    console.error("âš ï¸  Widget handler registration failed:", error);
   }
 
   // Step 1: Seed data and initialize database (failures here must NOT block services)
   try {
     // Seed roles and permissions FIRST (before creating admin user)
-    console.log("🔐 Initializing roles and permissions...");
+    console.log("ðŸ” Initializing roles and permissions...");
     await seedRolesAndPermissions();
 
     // Seed global notification settings defaults (idempotent)
@@ -517,55 +558,82 @@ httpServer.listen(PORT, async () => {
     await seedDashboardTemplates();
   } catch (error) {
     console.error(
-      "⚠️  Database initialization/seeding failed, but server will continue:",
+      "âš ï¸  Database initialization/seeding failed, but server will continue:",
       error,
     );
   }
 
-  // Step 2: Start background services independently — always run even if seeding failed
+  // Step 2: Start background services independently â€” always run even if seeding failed
   try {
     // Start email polling service
-    console.log("📧 Starting Email Polling Service...");
+    console.log("ðŸ“§ Starting Email Polling Service...");
     await emailPollingService.start();
 
     // Start email processing worker (creates tickets from queued emails)
-    console.log("🤖 Starting Email Processing Worker...");
+    console.log("ðŸ¤– Starting Email Processing Worker...");
     emailProcessingWorker.start();
 
     // Start auto-escalation service (monitors and escalates tickets based on SLA)
-    console.log("⏰ Starting Auto-Escalation Service...");
+    console.log("â° Starting Auto-Escalation Service...");
     autoEscalationService.start();
 
     // Start SR WIP committed-date reminder scheduler (inert until SR enabled)
     srWipScheduler.start();
 
     // Start attendance sync scheduler (per-project AFT cron jobs)
-    console.log("📅 Starting Attendance Sync Scheduler...");
+    console.log("ðŸ“… Starting Attendance Sync Scheduler...");
     await attendanceScheduler.start();
 
+    // Start External MDM cache scheduler (dataset sync + join rebuild)
+    console.log("Starting External MDM Cache Scheduler...");
+    await startMDMCacheScheduler();
+    await mdmUserSyncScheduler.start();
+
+    // Start PSR Pipeline queue + worker (Slice B — US-3.5)
+    console.log("🔧 Starting PSR Pipeline Queue & Worker...");
+    initPsrQueue();
+    startPsrWorker();
+
+    // Start PSR Staleness Watchdog (Slice D — US-5.2)
+    console.log("🔍 Starting PSR Staleness Watchdog...");
+    startStalenessWatchdog();
+
+    // Start PSR Table Scheduler (periodic auto-refresh)
+    console.log("🗓️  Starting PSR Table Scheduler...");
+    // Reset any tables stuck in "refreshing" state from a previous crashed/restarted process
+    try {
+      const { default: PsrTableModel } = await import("./models/psr/PsrTable");
+      const stuckCount = await (PsrTableModel as any).countDocuments({ status: "refreshing" });
+      if (stuckCount > 0) {
+        await (PsrTableModel as any).updateMany({ status: "refreshing" }, { $set: { status: "idle" } });
+        console.log(`🔄 Reset ${stuckCount} stuck PSR table(s) from "refreshing" → "idle"`);
+      }
+    } catch (e: any) { console.warn("Could not reset stuck PSR tables:", e.message); }
+    startPsrTableScheduler();
+
     // Warm up VAPID keys now so push notifications work immediately.
-    // Keys are persisted in SystemSettings (MongoDB) — no .env entry needed.
-    console.log("🔔 Initializing Web Push (VAPID)...");
+    // Keys are persisted in SystemSettings (MongoDB) â€” no .env entry needed.
+    console.log("ðŸ”” Initializing Web Push (VAPID)...");
     await ensureWebPushConfiguredAsync();
 
     // Start dashboard pre-aggregation scheduler (Phase 4)
-    console.log("📊 Starting Dashboard Aggregation Scheduler...");
+    console.log("ðŸ“Š Starting Dashboard Aggregation Scheduler...");
     startAggregationScheduler();
 
     // Start scheduled report delivery scheduler (Sprint 10)
-    console.log("📧 Starting Report Delivery Scheduler...");
+    console.log("ðŸ“§ Starting Report Delivery Scheduler...");
     await startReportScheduler();
 
     // Start saved-report alert scheduler
-    console.log("🔔 Starting Report Alert Scheduler...");
+    console.log("ðŸ”” Starting Report Alert Scheduler...");
     await startReportAlertScheduler();
 
     // Start attendance report alert scheduler
-    console.log("🔔 Starting Attendance Report Alert Scheduler...");
+    console.log("ðŸ”” Starting Attendance Report Alert Scheduler...");
     await startAttendanceAlertScheduler();
   } catch (error) {
     console.error(
-      "⚠️  One or more background services failed to start:",
+      "âš ï¸  One or more background services failed to start:",
       error,
     );
   }
@@ -573,18 +641,18 @@ httpServer.listen(PORT, async () => {
 
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (reason: any, promise: Promise<any>) => {
-  console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
-  console.error("❌ Server will continue running, but this should be fixed");
+  console.error("âŒ Unhandled Rejection at:", promise, "reason:", reason);
+  console.error("âŒ Server will continue running, but this should be fixed");
 });
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (error: Error) => {
-  console.error("❌ Uncaught Exception:", error);
+  console.error("âŒ Uncaught Exception:", error);
   if ((error as any).code === "EADDRINUSE") {
-    console.error("❌ Port already in use. Exiting so nodemon can retry.");
+    console.error("âŒ Port already in use. Exiting so nodemon can retry.");
     process.exit(1);
   }
-  console.error("❌ Server will continue running, but this should be fixed");
+  console.error("âŒ Server will continue running, but this should be fixed");
 });
 
 // Graceful shutdown - only in production
@@ -595,17 +663,25 @@ if (!isDevelopment) {
   // Production: Graceful shutdown
   process.on("SIGTERM", () => {
     console.log("🔄 SIGTERM received, shutting down gracefully");
-    httpServer.close(() => {
-      console.log("✅ Server closed");
-      process.exit(0);
+    stopStalenessWatchdog();
+    stopPsrTableScheduler();
+    stopPsrWorker().finally(() => {
+      httpServer.close(() => {
+        console.log("✅ Server closed");
+        process.exit(0);
+      });
     });
   });
 
   process.on("SIGINT", () => {
     console.log("🔄 SIGINT received, shutting down gracefully");
-    httpServer.close(() => {
-      console.log("✅ Server closed");
-      process.exit(0);
+    stopStalenessWatchdog();
+    stopPsrTableScheduler();
+    stopPsrWorker().finally(() => {
+      httpServer.close(() => {
+        console.log("✅ Server closed");
+        process.exit(0);
+      });
     });
   });
 } else {
@@ -615,15 +691,15 @@ if (!isDevelopment) {
   process.on("SIGINT", () => {
     sigintCount++;
     if (sigintCount === 1) {
-      console.log("⚠️  SIGINT received - Press Ctrl+C again to stop server");
+      console.log("âš ï¸  SIGINT received - Press Ctrl+C again to stop server");
       console.log("   (Ignoring single SIGINT to prevent accidental shutdown)");
       setTimeout(() => {
         sigintCount = 0;
       }, 3000); // Reset after 3 seconds
     } else {
-      console.log("🔄 Shutting down server...");
+      console.log("ðŸ”„ Shutting down server...");
       httpServer.close(() => {
-        console.log("✅ Server closed");
+        console.log("âœ… Server closed");
         process.exit(0);
       });
     }
@@ -631,7 +707,7 @@ if (!isDevelopment) {
 
   process.on("SIGTERM", () => {
     console.log(
-      "⚠️  SIGTERM received in development - Ignoring (server stays running)",
+      "âš ï¸  SIGTERM received in development - Ignoring (server stays running)",
     );
     console.log("   Use Ctrl+C twice to stop the server");
   });

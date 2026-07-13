@@ -2077,6 +2077,33 @@ export async function processAutoEscalation(): Promise<{
 
         result.escalated++;
 
+        // Per-level CC: users + members of CC roles (project-scoped, active),
+        // notified on this level's escalation in addition to the assignee.
+        const ccRecipients: mongoose.Types.ObjectId[] = [];
+        try {
+          const ccUserIds: any[] = (nextLevel as any).ccUserIds || [];
+          for (const uid of ccUserIds) {
+            if (uid) ccRecipients.push(new mongoose.Types.ObjectId(String(uid)));
+          }
+          const ccRoleIds: any[] = (nextLevel as any).ccRoleIds || [];
+          if (ccRoleIds.length) {
+            const roleQuery: any = { role: { $in: ccRoleIds }, isActive: true };
+            if (ticket.project) {
+              roleQuery.$or = [
+                { projects: { $in: [ticket.project] } },
+                { projects: { $exists: false } },
+                { projects: { $size: 0 } },
+              ];
+            }
+            const ccRoleUsers = await User.find(roleQuery).select("_id");
+            for (const u of ccRoleUsers) {
+              ccRecipients.push(u._id as mongoose.Types.ObjectId);
+            }
+          }
+        } catch (ccErr) {
+          console.error("[AUTO-ESC] CC resolution failed:", ccErr);
+        }
+
         // Notification engine: sla_breached + ticket_escalated (non-blocking)
         (() => {
           const projectId =
@@ -2094,7 +2121,16 @@ export async function processAutoEscalation(): Promise<{
               deepLinkUrl: `/projects/${projectId}/tickets/${ticket._id}`,
               templateVars: { ticketNumber: ticketNum },
             }).catch(console.error);
-            // Escalated → only the newly assigned agent
+            // Escalated → the newly assigned agent + this level's CC (deduped)
+            const escalatedRecipients = [
+              new mongoose.Types.ObjectId(assignedUser._id.toString()),
+              ...ccRecipients,
+            ];
+            const dedupedRecipients = Array.from(
+              new Map(
+                escalatedRecipients.map((r) => [r.toString(), r]),
+              ).values(),
+            );
             fireNotification({
               triggerType: TRIGGER_TYPES.TICKET_ESCALATED,
               projectId,
@@ -2102,9 +2138,7 @@ export async function processAutoEscalation(): Promise<{
               entityId: ticket._id as mongoose.Types.ObjectId,
               deepLinkUrl: `/projects/${projectId}/tickets/${ticket._id}`,
               templateVars: { ticketNumber: ticketNum },
-              recipientOverride: [
-                new mongoose.Types.ObjectId(assignedUser._id.toString()),
-              ],
+              recipientOverride: dedupedRecipients,
             }).catch(console.error);
           }
         })();

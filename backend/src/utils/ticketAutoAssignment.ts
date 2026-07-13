@@ -111,21 +111,65 @@ async function resolveConfigForCategory(
 }
 
 /**
+ * Effective assignment for a config given an optional center. A matching
+ * center override replaces the base config's non-empty fields; otherwise the
+ * base config is used unchanged. Keeps assignment center-configurable without
+ * a separate config row / unique-index migration.
+ */
+export interface EffectiveAssignment {
+  mode: CategoryAssignmentMode;
+  agentPool: mongoose.Types.ObjectId[];
+  rolePool: mongoose.Types.ObjectId[];
+  ccUsers: mongoose.Types.ObjectId[];
+  ccRoles: mongoose.Types.ObjectId[];
+  reopen?: any;
+}
+
+export function resolveEffectiveAssignment(
+  config: any,
+  centerId?: mongoose.Types.ObjectId | string | null,
+): EffectiveAssignment {
+  const base: EffectiveAssignment = {
+    mode: config.mode,
+    agentPool: config.agentPool || [],
+    rolePool: config.rolePool || [],
+    ccUsers: config.ccUsers || [],
+    ccRoles: config.ccRoles || [],
+    reopen: config.reopen,
+  };
+  if (!centerId || !Array.isArray(config.centerOverrides)) return base;
+  const ov = config.centerOverrides.find(
+    (o: any) => o?.centerId && String(o.centerId) === String(centerId),
+  );
+  if (!ov) return base;
+  return {
+    mode: ov.mode || base.mode,
+    agentPool: ov.agentPool?.length ? ov.agentPool : base.agentPool,
+    rolePool: ov.rolePool?.length ? ov.rolePool : base.rolePool,
+    ccUsers: ov.ccUsers?.length ? ov.ccUsers : base.ccUsers,
+    ccRoles: ov.ccRoles?.length ? ov.ccRoles : base.ccRoles,
+    reopen: ov.reopen || base.reopen,
+  };
+}
+
+/**
  * Execute assignment for a specific mode/pool and return the chosen agent.
  * Returns null if no eligible agent is available.
  */
 async function resolveAgentFromConfig(
   config: InstanceType<typeof CategoryAssignmentConfig>,
   projectId: string,
+  centerId?: mongoose.Types.ObjectId | string | null,
 ): Promise<mongoose.Types.ObjectId | null> {
-  switch (config.mode) {
+  const eff = resolveEffectiveAssignment(config, centerId);
+  switch (eff.mode) {
     case "manual":
       return null;
 
     case "by-user": {
-      if (config.agentPool.length === 0) return null;
+      if (eff.agentPool.length === 0) return null;
       const activeAgents = await User.find({
-        _id: { $in: config.agentPool },
+        _id: { $in: eff.agentPool },
         isActive: true,
       }).select("_id");
       if (activeAgents.length === 0) return null;
@@ -134,11 +178,11 @@ async function resolveAgentFromConfig(
     }
 
     case "by-role": {
-      if (config.rolePool.length === 0) return null;
+      if (eff.rolePool.length === 0) return null;
       const projectObjectId = new mongoose.Types.ObjectId(projectId);
       // Intersect rolePool with roles that are actually mapped to the project
       const roles = await Role.find({
-        _id: { $in: config.rolePool },
+        _id: { $in: eff.rolePool },
         isActive: true,
         $or: [{ projects: projectObjectId }, { projectId: projectObjectId }],
       }).select("_id");
@@ -157,9 +201,9 @@ async function resolveAgentFromConfig(
     default: {
       // Use explicit pool when provided, otherwise fall back to all project agents
       let ids: mongoose.Types.ObjectId[];
-      if (config.agentPool.length > 0) {
+      if (eff.agentPool.length > 0) {
         const activeAgents = await User.find({
-          _id: { $in: config.agentPool },
+          _id: { $in: eff.agentPool },
           isActive: true,
         }).select("_id");
         ids = activeAgents.map((a) => a._id as mongoose.Types.ObjectId);
@@ -181,6 +225,7 @@ async function resolveAgentFromConfig(
 export async function autoAssignTicket(
   projectId: string,
   categoryId?: mongoose.Types.ObjectId | string | null,
+  centerId?: mongoose.Types.ObjectId | string | null,
 ): Promise<AutoAssignResult | null> {
   let attempts = 0;
 
@@ -200,7 +245,8 @@ export async function autoAssignTicket(
       const config = await resolveConfigForCategory(catObjectId, projectId);
 
       if (config) {
-        if (config.mode === "manual") {
+        const eff = resolveEffectiveAssignment(config, centerId);
+        if (eff.mode === "manual") {
           // US-007: manual mode means NO auto-assignment, period — no fallback
           console.log(
             `   ✋ Category config: manual mode — ticket stays unassigned`,
@@ -208,9 +254,9 @@ export async function autoAssignTicket(
           return null;
         }
 
-        const agentId = await resolveAgentFromConfig(config, projectId);
+        const agentId = await resolveAgentFromConfig(config, projectId, centerId);
         if (agentId) {
-          const modeUsed = config.mode as AutoAssignResult["assignedVia"];
+          const modeUsed = eff.mode as AutoAssignResult["assignedVia"];
           console.log(
             `   ✅ Assigned via category config (${modeUsed}): ${agentId}`,
           );

@@ -4,8 +4,97 @@ import {
   HierarchyConfig,
   IHierarchyConfig,
   IHierarchyLevel,
+  HierarchyConfigScope,
 } from "../models/HierarchyConfig";
 import { Category, ICategory } from "../models/Category";
+
+const normalizeHierarchyScope = (value: unknown): HierarchyConfigScope => {
+  return value === "PSR" || value === "ISR" ? value : "normal";
+};
+
+const normalizeCategoryAppliesTo = (value: unknown) => {
+  if (!Array.isArray(value)) return [];
+  const allowed = new Set(["normal", "PSR", "ISR"]);
+  return value.filter((item) => allowed.has(String(item)));
+};
+
+const normalizeSingleCategoryAppliesTo = (value: unknown) => {
+  const scopes = normalizeCategoryAppliesTo(value);
+  return scopes.length ? [scopes[0]] : [];
+};
+
+const categoryBelongsToScope = (category: any, scope: "normal" | "PSR" | "ISR") => {
+  const appliesTo = category?.sr?.appliesTo || [];
+  if (appliesTo.length === 0) return scope === "normal";
+  if (appliesTo.includes("PSR") && appliesTo.includes("ISR")) {
+    return scope === "PSR";
+  }
+  return appliesTo.length === 1 && appliesTo[0] === scope;
+};
+
+const defaultVisibilitySettings = (levelCount: number) => ({
+  showInOnlineForm: Array.from({ length: levelCount }, (_, i) => i + 1),
+  showInOfflineForm: Array.from({ length: levelCount }, (_, i) => i + 1),
+  showInTicketDisplay: Array.from({ length: levelCount }, (_, i) => i + 1),
+  showInFilters: [1, 2].filter((level) => level <= levelCount),
+});
+
+const getDefaultHierarchyConfig = (
+  projectId: string,
+  scope: HierarchyConfigScope = "normal",
+) =>
+  ({
+    projectId: new mongoose.Types.ObjectId(projectId),
+    scope,
+    levelCount: 1,
+    levels: [
+      {
+        levelNumber: 1,
+        displayName: "Category",
+        isMandatory: true,
+        isActive: true,
+      },
+    ],
+    visibilitySettings: defaultVisibilitySettings(1),
+    priorityFromLevel: 0,
+    isActive: true,
+  }) as any;
+
+const getConfigForScope = (
+  config: any,
+  scope: HierarchyConfigScope,
+  projectId: string,
+) => {
+  if (!config) return getDefaultHierarchyConfig(projectId, scope);
+  const rawConfig = config.toObject?.() ?? config;
+  if (scope === "normal") {
+    return { ...rawConfig, scope: "normal" };
+  }
+
+  const scoped = config.scopedConfigs?.[scope];
+  if (scoped?.levels?.length) {
+    return {
+      ...rawConfig,
+      scope,
+      levelCount: scoped.levelCount || scoped.levels.length,
+      levels: scoped.levels,
+      visibilitySettings:
+        scoped.visibilitySettings ||
+        defaultVisibilitySettings(scoped.levelCount || scoped.levels.length),
+      priorityFromLevel: scoped.priorityFromLevel || 0,
+    };
+  }
+
+  return {
+    ...rawConfig,
+    scope,
+    levelCount: config.levelCount || 1,
+    levels: config.levels || getDefaultHierarchyConfig(projectId).levels,
+    visibilitySettings:
+      config.visibilitySettings || defaultVisibilitySettings(config.levelCount || 1),
+    priorityFromLevel: config.priorityFromLevel || 0,
+  };
+};
 
 /**
  * Get hierarchy configuration for a project
@@ -14,6 +103,7 @@ import { Category, ICategory } from "../models/Category";
 export const getHierarchyConfig = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
+    const scope = normalizeHierarchyScope(req.query.scope);
 
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({
@@ -29,31 +119,14 @@ export const getHierarchyConfig = async (req: Request, res: Response) => {
 
     // If no config exists, return default single-level config
     if (!config) {
-      config = {
-        projectId: new mongoose.Types.ObjectId(projectId),
-        levelCount: 1,
-        levels: [
-          {
-            levelNumber: 1,
-            displayName: "Category",
-            isMandatory: true,
-            isActive: true,
-          },
-        ],
-        visibilitySettings: {
-          showInOnlineForm: [1],
-          showInOfflineForm: [1],
-          showInTicketDisplay: [1],
-          showInFilters: [1],
-        },
-        priorityFromLevel: 0, // Default: manual priority selection
-        isActive: true,
-      } as any;
+      config = getDefaultHierarchyConfig(projectId, scope);
     }
+
+    const selectedConfig = getConfigForScope(config, scope, projectId);
 
     // Self-heal: ensure visibilitySettings include all configured levels.
     // Fixes configs saved before this guard was in place (showInOnlineForm had only [1]).
-    if (config && (config as any).visibilitySettings) {
+    if (scope === "normal" && config && (config as any).visibilitySettings) {
       const vis = (config as any).visibilitySettings;
       const levelCount = (config as any).levelCount || 1;
       const allLevels = Array.from({ length: levelCount }, (_, i) => i + 1);
@@ -85,7 +158,7 @@ export const getHierarchyConfig = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      data: config,
+      data: selectedConfig,
     });
   } catch (error: any) {
     console.error("Error fetching hierarchy config:", error);
@@ -105,6 +178,7 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
     const userId = (req as any).user?.userId;
+    const scope = normalizeHierarchyScope(req.query.scope || req.body.scope);
     const { levelCount, levels, visibilitySettings, priorityFromLevel } =
       req.body;
 
@@ -116,10 +190,10 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
     }
 
     // Validate level count
-    if (levelCount < 1 || levelCount > 5) {
+    if (levelCount < 1 || levelCount > 10) {
       return res.status(400).json({
         success: false,
-        message: "Level count must be between 1 and 5",
+        message: "Level count must be between 1 and 10",
       });
     }
 
@@ -148,55 +222,71 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
 
     if (config) {
       // Update existing
-      config.levelCount = levelCount;
-      config.levels = validatedLevels;
-      if (visibilitySettings) {
-        config.visibilitySettings = visibilitySettings;
+      const normalizedPriority =
+        priorityFromLevel !== undefined
+          ? Math.max(
+              0,
+              Math.min(10, parseInt(priorityFromLevel) || 0),
+            )
+          : 0;
+      const normalizedVisibility =
+        visibilitySettings || defaultVisibilitySettings(levelCount);
+
+      if (scope === "normal") {
+        config.levelCount = levelCount;
+        config.levels = validatedLevels;
+        config.visibilitySettings = normalizedVisibility;
+        config.priorityFromLevel = normalizedPriority;
       } else {
-        // Auto-expand visibility arrays to cover any newly added levels
-        const allLevels = Array.from({ length: levelCount }, (_, i) => i + 1);
-        const vis = config.visibilitySettings as any;
-        const expand = (arr: number[]) =>
-          Array.from(
-            new Set([...arr, ...allLevels.filter((l) => l <= levelCount)]),
-          );
-        if (vis) {
-          vis.showInOnlineForm = expand(vis.showInOnlineForm || []);
-          vis.showInOfflineForm = expand(vis.showInOfflineForm || []);
-          vis.showInTicketDisplay = expand(vis.showInTicketDisplay || []);
-        }
-      }
-      // Update priority from level (0 = manual, 1-4 = from that level)
-      if (priorityFromLevel !== undefined) {
-        config.priorityFromLevel = Math.max(
-          0,
-          Math.min(5, parseInt(priorityFromLevel) || 0),
-        );
+        const scopedConfigs = (config.scopedConfigs || {}) as any;
+        scopedConfigs[scope] = {
+          levelCount,
+          levels: validatedLevels,
+          visibilitySettings: normalizedVisibility,
+          priorityFromLevel: normalizedPriority,
+        };
+        config.scopedConfigs = scopedConfigs;
+        config.markModified("scopedConfigs");
       }
       config.updatedBy = new mongoose.Types.ObjectId(userId);
       await config.save();
     } else {
       // Create new
+      const baseLevelCount = scope === "normal" ? levelCount : 1;
+      const baseLevels =
+        scope === "normal"
+          ? validatedLevels
+          : getDefaultHierarchyConfig(projectId).levels;
       config = await HierarchyConfig.create({
         projectId: new mongoose.Types.ObjectId(projectId),
-        levelCount,
-        levels: validatedLevels,
-        visibilitySettings: visibilitySettings || {
-          showInOnlineForm: Array.from({ length: levelCount }, (_, i) => i + 1),
-          showInOfflineForm: Array.from(
-            { length: levelCount },
-            (_, i) => i + 1,
-          ),
-          showInTicketDisplay: Array.from(
-            { length: levelCount },
-            (_, i) => i + 1,
-          ),
-          showInFilters: [1, 2],
-        },
+        levelCount: baseLevelCount,
+        levels: baseLevels,
+        visibilitySettings:
+          scope === "normal"
+            ? visibilitySettings || defaultVisibilitySettings(levelCount)
+            : defaultVisibilitySettings(1),
         priorityFromLevel:
-          priorityFromLevel !== undefined
-            ? Math.max(0, Math.min(5, parseInt(priorityFromLevel) || 0))
+          scope === "normal" && priorityFromLevel !== undefined
+            ? Math.max(0, Math.min(10, parseInt(priorityFromLevel) || 0))
             : 0,
+        scopedConfigs:
+          scope === "normal"
+            ? undefined
+            : {
+                [scope]: {
+                  levelCount,
+                  levels: validatedLevels,
+                  visibilitySettings:
+                    visibilitySettings || defaultVisibilitySettings(levelCount),
+                  priorityFromLevel:
+                    priorityFromLevel !== undefined
+                      ? Math.max(
+                          0,
+                          Math.min(10, parseInt(priorityFromLevel) || 0),
+                        )
+                      : 0,
+                },
+              },
         isActive: true,
         createdBy: new mongoose.Types.ObjectId(userId),
       });
@@ -204,6 +294,7 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
 
     console.log("✅ Hierarchy config saved:", {
       projectId,
+      scope,
       levelCount,
       levels: validatedLevels.map((l) => l.displayName),
     });
@@ -213,14 +304,15 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
     if (io) {
       io.to(`project-config-${projectId}`).emit("hierarchy-config-updated", {
         projectId,
-        config,
+        scope,
+        config: getConfigForScope(config, scope, projectId),
       });
     }
 
     return res.status(200).json({
       success: true,
       message: "Hierarchy configuration saved successfully",
-      data: config,
+      data: getConfigForScope(config, scope, projectId),
     });
   } catch (error: any) {
     console.error("Error saving hierarchy config:", error);
@@ -362,10 +454,10 @@ export const getCategoriesByLevel = async (req: Request, res: Response) => {
     }
 
     const level = parseInt(levelNumber);
-    if (level < 1 || level > 5) {
+    if (level < 1 || level > 10) {
       return res.status(400).json({
         success: false,
-        message: "Level must be between 1 and 5",
+        message: "Level must be between 1 and 10",
       });
     }
 
@@ -426,6 +518,7 @@ export const createHierarchyCategory = async (req: Request, res: Response) => {
       icon,
       order,
       defaultPriority,
+      sr,
     } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
@@ -454,10 +547,10 @@ export const createHierarchyCategory = async (req: Request, res: Response) => {
     const categoryLevel = level || 1;
 
     // Validate level
-    if (categoryLevel < 1 || categoryLevel > 5) {
+    if (categoryLevel < 1 || categoryLevel > 10) {
       return res.status(400).json({
         success: false,
-        message: "Level must be between 1 and 5",
+        message: "Level must be between 1 and 10",
       });
     }
 
@@ -509,6 +602,10 @@ export const createHierarchyCategory = async (req: Request, res: Response) => {
       icon,
       order: order || 0,
       defaultPriority,
+      sr: {
+        ...(sr || {}),
+        appliesTo: normalizeSingleCategoryAppliesTo(sr?.appliesTo),
+      },
       isActive: true,
       createdBy: new mongoose.Types.ObjectId(userId),
     });
@@ -563,6 +660,7 @@ export const updateHierarchyCategory = async (req: Request, res: Response) => {
       defaultPriority,
       isActive,
       parentId,
+      sr,
     } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
@@ -626,6 +724,13 @@ export const updateHierarchyCategory = async (req: Request, res: Response) => {
     if (order !== undefined) category.order = order;
     if (defaultPriority !== undefined)
       category.defaultPriority = defaultPriority;
+    if (sr !== undefined) {
+      (category as any).sr = {
+        ...((category as any).sr || {}),
+        ...(sr || {}),
+        appliesTo: normalizeSingleCategoryAppliesTo(sr?.appliesTo),
+      };
+    }
     if (isActive !== undefined) category.isActive = isActive;
     category.updatedBy = new mongoose.Types.ObjectId(userId);
 
@@ -794,6 +899,7 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
     const { projectId } = req.params;
     const userId = (req as any).user?.userId;
     const { categories } = req.body; // Array of { code, level, parentName, name, defaultPriority }
+    const scope = normalizeHierarchyScope(req.body.scope);
 
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({
@@ -818,10 +924,10 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
           message: `Row ${i + 1}: Name and Level are required`,
         });
       }
-      if (row.level < 1 || row.level > 5) {
+      if (row.level < 1 || row.level > 10) {
         return res.status(400).json({
           success: false,
-          message: `Row ${i + 1}: Level must be between 1 and 5`,
+          message: `Row ${i + 1}: Level must be between 1 and 10`,
         });
       }
       if (row.level > 1 && !row.parentName) {
@@ -851,7 +957,9 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
     const categoryMap = new Map<string, any>(); // name:parentId -> category
     const parentNameMap = new Map<string, any>(); // level:name -> category
     const codeMap = new Map<number, any>(); // code -> category
-    existingCategories.forEach((c) => {
+    existingCategories
+      .filter((category) => categoryBelongsToScope(category, scope))
+      .forEach((c) => {
       const parentKey = c.parentId ? c.parentId.toString() : "root";
       categoryMap.set(`${c.name}:${parentKey}`, c);
       parentNameMap.set(`${c.level}:${c.name}`, c);
@@ -928,6 +1036,10 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
             path,
             defaultPriority:
               defaultPriority || existingCategory.defaultPriority,
+            sr: {
+              ...((existingCategory as any).sr || {}),
+              appliesTo: [scope],
+            },
             updatedBy: userId ? new mongoose.Types.ObjectId(userId) : undefined,
           });
 
@@ -981,6 +1093,9 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
           hierarchyPath,
           path,
           defaultPriority,
+          sr: {
+            appliesTo: [scope],
+          },
           isActive: true,
           createdBy: userId ? new mongoose.Types.ObjectId(userId) : undefined,
         });
@@ -1009,6 +1124,152 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: "Failed to process bulk upload",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Replicate a category hierarchy from one SR flow to another.
+ * @route POST /api/hierarchy-config/:projectId/categories/replicate-scope
+ */
+export const replicateCategoryScope = async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const userId = (req as any).user?.userId;
+    const fromScope = normalizeHierarchyScope(req.body.fromScope);
+    const toScope = normalizeHierarchyScope(req.body.toScope);
+
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project ID",
+      });
+    }
+
+    if (fromScope === "normal" || toScope === "normal" || fromScope === toScope) {
+      return res.status(400).json({
+        success: false,
+        message: "Replication is supported between PSR and ISR only.",
+      });
+    }
+
+    const projectObjectId = new mongoose.Types.ObjectId(projectId);
+    const allCategories = await Category.find({ projectId: projectObjectId })
+      .sort({ level: 1, order: 1, name: 1 })
+      .lean();
+    const sourceCategories = allCategories.filter((category) =>
+      categoryBelongsToScope(category, fromScope),
+    );
+
+    if (!sourceCategories.length) {
+      return res.status(400).json({
+        success: false,
+        message: `No ${fromScope} categories found to replicate.`,
+      });
+    }
+
+    const existingCodes = allCategories
+      .map((category) =>
+        typeof category.code === "number"
+          ? category.code
+          : parseInt(String(category.code), 10) || 0,
+      )
+      .filter((code) => code > 0);
+    let nextCode = existingCodes.length ? Math.max(...existingCodes) + 1 : 1;
+    const sourceToCloneId = new Map<string, mongoose.Types.ObjectId>();
+    const cloneMetaBySourceId = new Map<
+      string,
+      { _id: mongoose.Types.ObjectId; hierarchyPath: mongoose.Types.ObjectId[] }
+    >();
+    const existingTargetByPath = new Map<string, any>();
+
+    allCategories
+      .filter((category) => categoryBelongsToScope(category, toScope))
+      .forEach((category) => {
+        existingTargetByPath.set(String(category.path || category.name), category);
+      });
+
+    let created = 0;
+    let skipped = 0;
+
+    for (const source of sourceCategories) {
+      const sourcePath = String(source.path || source.name);
+      const existingTarget = existingTargetByPath.get(sourcePath);
+      if (existingTarget) {
+        sourceToCloneId.set(String(source._id), existingTarget._id);
+        cloneMetaBySourceId.set(String(source._id), {
+          _id: existingTarget._id,
+          hierarchyPath: existingTarget.hierarchyPath || [],
+        });
+        skipped++;
+        continue;
+      }
+
+      const sourceParentId = source.parentId ? String(source.parentId) : "";
+      const clonedParentMeta = sourceParentId
+        ? cloneMetaBySourceId.get(sourceParentId)
+        : null;
+      const clonedParentId = clonedParentMeta?._id || null;
+
+      if (sourceParentId && !clonedParentId) {
+        skipped++;
+        continue;
+      }
+      const hierarchyPath = clonedParentMeta
+        ? [...(clonedParentMeta.hierarchyPath || []), clonedParentMeta._id]
+        : [];
+
+      const clone = await Category.create({
+        name: source.name,
+        code: nextCode++,
+        description: source.description,
+        projectId: projectObjectId,
+        parentId: clonedParentId,
+        level: source.level,
+        hierarchyPath,
+        path: source.path || source.name,
+        color: source.color,
+        icon: source.icon,
+        order: source.order || 0,
+        defaultPriority: source.defaultPriority,
+        sr: {
+          ...(source.sr || {}),
+          appliesTo: [toScope],
+        },
+        isActive: source.isActive !== false,
+        createdBy: userId ? new mongoose.Types.ObjectId(userId) : undefined,
+      });
+
+      sourceToCloneId.set(String(source._id), clone._id);
+      cloneMetaBySourceId.set(String(source._id), {
+        _id: clone._id,
+        hierarchyPath,
+      });
+      existingTargetByPath.set(sourcePath, clone);
+      created++;
+    }
+
+    const io = (req as any).app.get("io");
+    if (io) {
+      io.to(`project-config-${projectId}`).emit("category-tree-updated", {
+        projectId,
+        action: "replicated",
+        fromScope,
+        toScope,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Replicated ${created} categories from ${fromScope} to ${toScope}.`,
+      data: { created, skipped, fromScope, toScope },
+    });
+  } catch (error: any) {
+    console.error("Error replicating category scope:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to replicate categories",
       error: error.message,
     });
   }

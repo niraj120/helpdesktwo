@@ -281,7 +281,13 @@ const RBACSetup = () => {
       fetchData();
     } catch (error: any) {
       console.error("❌ Role update error:", error.response?.data);
-      alert(error.response?.data?.error || "Failed to update role");
+      const message =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        error.response?.data?.details ||
+        error.message ||
+        "Failed to update role";
+      alert(message);
     }
   };
 
@@ -386,7 +392,13 @@ const RBACSetup = () => {
       );
       fetchData();
     } catch (error: any) {
-      alert(error.response?.data?.error || "Failed to update role");
+      const message =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        error.response?.data?.details ||
+        error.message ||
+        "Failed to update role";
+      alert(message);
     }
   };
 
@@ -507,6 +519,9 @@ const RBACSetup = () => {
       "ASSET",
       "MY_ASSETS",
       "EMAIL",
+      "EMAIL_TRIAGE",
+      "SR_",
+      "IVR_TRIAGE",
       "ESCALATION",
       "TOKEN",
       "DESK",
@@ -528,6 +543,9 @@ const RBACSetup = () => {
         "ASSET",
         "MY_ASSETS",
         "EMAIL",
+        "EMAIL_TRIAGE",
+        "SR_",
+        "IVR_TRIAGE",
         "TOKEN",
         "DESK",
         "ATTENDANCE",
@@ -540,10 +558,13 @@ const RBACSetup = () => {
         "OFFLINE",
         "STUDENT",
         "MY_ASSETS",
+        "EMAIL_TRIAGE",
+        "SR_",
+        "IVR_TRIAGE",
         "TOKEN",
         "DESK",
       ],
-      student: ["TICKET", "FAQ", "OFFLINE", "STUDENT"],
+      student: ["TICKET", "FAQ", "OFFLINE", "STUDENT", "SR_"],
       custom: allPermissionPrefixes, // All permissions available for custom roles
     };
 

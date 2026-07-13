@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+﻿import { ReactNode } from "react";
 import {
   MdDashboard,
   MdFolder,
@@ -213,10 +213,15 @@ export const menuConfig: MenuItem[] = [
     labelHi: "सेवा अनुरोध",
     labelMr: "सेवा विनंती",
     permission: [
+      PERMISSIONS.SR_VIEW_ALL,
+      PERMISSIONS.SR_VIEW_OWN,
+      PERMISSIONS.SR_VIEW_ASSIGNED,
       PERMISSIONS.SR_PSR_RECEIVE,
       PERMISSIONS.SR_PSR_CREATE,
       PERMISSIONS.SR_ISR_CREATE,
+      PERMISSIONS.SR_ISR_RECEIVE,
       PERMISSIONS.EMAIL_TRIAGE_ACCESS,
+      PERMISSIONS.IVR_TRIAGE_ACCESS,
     ],
   },
 
@@ -232,6 +237,16 @@ export const menuConfig: MenuItem[] = [
       PERMISSIONS.USER_ASSIGN_ROLE,
       PERMISSIONS.USER_IMPORT,
     ],
+  },
+
+  // IVR Agent Management — digit mapping, round-robin, leaves
+  {
+    path: "/ivr-agents",
+    icon: <MdConfirmationNumber />,
+    label: "IVR Agents",
+    labelHi: "आईवीआर एजेंट",
+    labelMr: "आयव्हीआर एजंट",
+    permission: PERMISSIONS.IVR_AGENT_MANAGE,
   },
 
   // Query Configuration - Super Admin only
@@ -430,6 +445,14 @@ export const menuConfig: MenuItem[] = [
     labelMr: "इंटिग्रेशन",
     modulePrefix: PERMISSION_MODULES.INTEGRATION,
     subItems: [
+      {
+        path: "/integrations/psr-builder",
+        icon: <MdStorage />,
+        label: "PSR Builder",
+        labelHi: "PSR बिल्डर",
+        labelMr: "PSR बिल्डर",
+        permission: PERMISSIONS.MDM_VIEW,
+      },
       {
         path: "/email-config",
         icon: <MdMailOutline />,
@@ -728,6 +751,38 @@ export const projectPortalMenuConfig: MenuItem[] = [
     labelHi: "ऑफ़लाइन सहायता",
     labelMr: "ऑफलाइन सहाय्य",
     permission: PERMISSIONS.OFFLINE_MODULE_ACCESS, // Specific permission instead of module prefix
+    isProjectRoute: true,
+  },
+  {
+    path: "service-requests",
+    icon: <MdConfirmationNumber />,
+    label: "Service Requests",
+    labelHi: "Service Requests",
+    labelMr: "Service Requests",
+    permission: [
+      PERMISSIONS.SR_VIEW_ALL,
+      PERMISSIONS.SR_VIEW_OWN,
+      PERMISSIONS.SR_VIEW_ASSIGNED,
+      PERMISSIONS.SR_PSR_CREATE,
+      PERMISSIONS.SR_PSR_RECEIVE,
+      PERMISSIONS.SR_ISR_CREATE,
+      PERMISSIONS.SR_ISR_RECEIVE,
+      PERMISSIONS.SR_ISR_LINK,
+      PERMISSIONS.SR_REASSIGN,
+      PERMISSIONS.SR_DELEGATE,
+      PERMISSIONS.SR_CLOSE,
+      PERMISSIONS.SR_REOPEN,
+      PERMISSIONS.SR_DISPLAY_TO_PARENT,
+      PERMISSIONS.SR_CONFIG_MANAGE,
+      PERMISSIONS.SR_ASSIGN_EMAILS,
+      PERMISSIONS.SR_PRIORITY_OVERRIDE,
+      PERMISSIONS.SR_OFFLINE_ENTRY,
+      PERMISSIONS.EMAIL_TRIAGE_ACCESS,
+      PERMISSIONS.EMAIL_TRIAGE_CONVERT,
+      PERMISSIONS.EMAIL_TRIAGE_RESPOND,
+      PERMISSIONS.IVR_TRIAGE_ACCESS,
+      PERMISSIONS.IVR_TRIAGE_CONVERT,
+    ],
     isProjectRoute: true,
   },
   {

@@ -54,6 +54,18 @@ export interface FormFieldSchema {
   requiredConditions?: FieldCondition[];
   placeholder?: string;
   options?: string[];
+  optionsSource?: "manual" | "mdm";
+  mdm?: {
+    sourceId?: string;
+    dataType?: string;
+    labelField?: string;
+    valueField?: string;
+    searchParam?: string;
+    dependsOnField?: string;
+    dependsOnParam?: string;
+    dependsOnRemoteField?: string;
+    limit?: number;
+  };
   order?: number;
   allowedFileTypes?: string[];
   maxFileSizeMB?: number;
@@ -61,6 +73,12 @@ export interface FormFieldSchema {
   validation?: { minLength?: number; maxLength?: number; pattern?: string };
   /** When true, this field is exposed via the External / Public API */
   includeInPublicApi?: boolean;
+  /** Category Master scope — which interaction-type tree the cascade uses. */
+  categoryScope?: "normal" | "PSR" | "ISR";
+  /** When false, this field's value is hidden from the parent / student view. Default true. */
+  showToParent?: boolean;
+  /** Ticket status codes at which this field is shown on the detail. Empty/undefined = all statuses. */
+  visibleAtStatus?: number[];
 }
 
 export interface ConditionEngineResult {

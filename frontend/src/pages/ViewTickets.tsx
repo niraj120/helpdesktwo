@@ -30,7 +30,7 @@ interface Ticket {
   ticketNumber: string;
   subject: string;
   title: string;
-  status: string | number;
+  status: number;
   priority: string;
   category?: {
     name: string;
@@ -1045,28 +1045,34 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   }, [filteredTickets]);
 
   // Convert numeric status code to label string
-  const getStatusLabel = useCallback((status: string | number): string => {
+  const getStatusLabel = useCallback((status: unknown): string => {
     const numericMap: Record<number, string> = {
       1: "open",
       2: "in-progress",
       3: "pending",
       4: "resolved",
       5: "closed",
+      6: "re-open",
+      7: "re-opened-wip",
     };
     if (typeof status === "number") return numericMap[status] || "open";
     const n = Number(status);
     if (!isNaN(n) && numericMap[n]) return numericMap[n];
-    return status.toLowerCase();
+    return String(status ?? "")
+      .trim()
+      .toLowerCase();
   }, []);
 
   const getStatusDisplayName = useCallback(
-    (status: string | number): string => {
+    (status: unknown): string => {
       const labelMap: Record<string, string> = {
         open: "Open",
         "in-progress": "In Progress",
         pending: "Pending",
         resolved: "Resolved",
         closed: "Closed",
+        "re-open": "Re-open",
+        "re-opened-wip": "Re-opened WIP",
       };
       return labelMap[getStatusLabel(status)] || String(status);
     },
@@ -1075,13 +1081,15 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
 
   // Memoized status color getter to prevent creating new function on each render
   const getStatusColor = useCallback(
-    (status: string | number) => {
+    (status: unknown) => {
       const colors: Record<string, string> = {
         open: "#3B82F6",
         "in-progress": "#F59E0B",
         resolved: "#10B981",
         closed: "#6B7280",
         pending: "#EF4444",
+        "re-open": "#DC2626",
+        "re-opened-wip": "#F97316",
       };
       return colors[getStatusLabel(status)] || "#6B7280";
     },

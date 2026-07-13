@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SAC Helpdesk public sitemap (GIGW).
+  Lists only public, no-login pages. Update the <loc> host if the public SAC
+  domain (mapped from the parent government website) differs, and add any
+  additional public entry points there.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://helpdesk.hubblehox.ai/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://helpdesk.hubblehox.ai/login</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+</urlset>

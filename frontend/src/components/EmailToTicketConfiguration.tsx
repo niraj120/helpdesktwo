@@ -43,6 +43,15 @@ interface EmailConfig {
   updatedAt: string;
   inboundMethod?: "imap" | "webhook" | "sendgrid";
   webhookProvider?: string;
+  mappedUserId?: string;
+  mappedUser?: {
+    _id: string;
+    firstName?: string;
+    lastName?: string;
+    fullName?: string;
+    email?: string;
+  } | null;
+  autoCreateTicket?: boolean;
   // Task 8.2: Connection status tracking
   connectionStatus?: "connected" | "disconnected" | "error" | "untested";
   lastConnectionTest?: string;
@@ -449,6 +458,30 @@ const EmailToTicketConfiguration: React.FC = () => {
                           <span className="font-medium w-16">SMTP:</span>
                           <span className="truncate">
                             {config.smtpHost}:{config.smtpPort}
+                          </span>
+                        </div>
+                        <div className="flex items-center text-gray-600">
+                          <span className="font-medium w-16">Mode:</span>
+                          <span className="truncate">
+                            {config.autoCreateTicket === false
+                              ? "SR Email tab"
+                              : "Auto normal ticket"}
+                          </span>
+                        </div>
+                        <div className="flex items-center text-gray-600">
+                          <span className="font-medium w-16">Owner:</span>
+                          <span className="truncate">
+                            {config.mappedUser
+                              ? config.mappedUser.fullName ||
+                                [
+                                  config.mappedUser.firstName,
+                                  config.mappedUser.lastName,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" ") ||
+                                config.mappedUser.email ||
+                                "Mapped user"
+                              : "No owner"}
                           </span>
                         </div>
                       </div>

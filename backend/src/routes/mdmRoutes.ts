@@ -9,6 +9,11 @@ import {
   deleteMDMSource,
   testMDMSource,
   testMDMCredentials,
+  updateMDMCacheConfig,
+  syncMDMDatasetNow,
+  rebuildMDMJoinNow,
+  listMDMSyncJobs,
+  testMDMCacheLookup,
 } from "../controllers/mdmController";
 
 const router = Router();
@@ -18,6 +23,23 @@ router.use(auth);
 // Test endpoints (specific paths before /:id)
 router.post("/test-credentials", checkPermission("MDM_VIEW"), testMDMCredentials);
 router.post("/:id/test", checkPermission("MDM_VIEW"), testMDMSource);
+router.put("/:id/cache-config", checkPermission("MDM_MANAGE"), updateMDMCacheConfig);
+router.post(
+  "/:id/cache/datasets/:datasetKey/sync",
+  checkPermission("MDM_MANAGE"),
+  syncMDMDatasetNow,
+);
+router.post(
+  "/:id/cache/joins/:joinKey/rebuild",
+  checkPermission("MDM_MANAGE"),
+  rebuildMDMJoinNow,
+);
+router.get("/:id/cache/jobs", checkPermission("MDM_VIEW"), listMDMSyncJobs);
+router.get(
+  "/:id/cache/test-lookup",
+  checkPermission("MDM_VIEW"),
+  testMDMCacheLookup,
+);
 
 // CRUD
 router.get("/", checkPermission("MDM_VIEW"), listMDMSources);

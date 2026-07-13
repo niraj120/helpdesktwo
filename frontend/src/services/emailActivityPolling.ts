@@ -46,6 +46,7 @@ class EmailActivityPollingService {
   private lastCheckTimestamp: string | null = null;
   private callbacks: ActivityCallback[] = [];
   private statusCallbacks: StatusCallback[] = [];
+  private projectId: string | null = null;
 
   // Whether start() has been called (user intent to poll)
   private isStarted: boolean = false;
@@ -146,6 +147,13 @@ class EmailActivityPollingService {
     };
   }
 
+  public setProjectId(projectId?: string | null): void {
+    const next = projectId || null;
+    if (this.projectId === next) return;
+    this.projectId = next;
+    this.lastCheckTimestamp = null;
+  }
+
   // ─── Visibility & Idle ────────────────────────────────────────────────────
 
   private onVisibilityChange(): void {
@@ -226,6 +234,9 @@ class EmailActivityPollingService {
       const url = new URL(`${API_CONFIG.API_URL}/email-activity/recent`);
       if (this.lastCheckTimestamp) {
         url.searchParams.append("since", this.lastCheckTimestamp);
+      }
+      if (this.projectId) {
+        url.searchParams.append("projectId", this.projectId);
       }
 
       const response = await fetch(url.toString(), {

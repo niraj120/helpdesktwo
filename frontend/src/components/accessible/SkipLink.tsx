@@ -16,25 +16,7 @@ export const SkipLink: React.FC<SkipLinkProps> = ({
   return (
     <a
       href={href}
-      style={{
-        position: 'absolute',
-        left: '-9999px',
-        zIndex: 999,
-        padding: '1rem',
-        backgroundColor: '#3F41D1',
-        color: 'white',
-        textDecoration: 'none',
-        borderRadius: '4px',
-        fontWeight: 600,
-      }}
-      onFocus={(e) => {
-        e.currentTarget.style.left = '1rem';
-        e.currentTarget.style.top = '1rem';
-      }}
-      onBlur={(e) => {
-        e.currentTarget.style.left = '-9999px';
-        e.currentTarget.style.top = 'auto';
-      }}
+      className="skip-link"
     >
       {children}
     </a>

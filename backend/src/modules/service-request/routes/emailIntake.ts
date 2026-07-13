@@ -16,6 +16,8 @@ router.post(
   c.ingest,
 );
 router.get("/", checkPermission("EMAIL_TRIAGE_ACCESS"), c.list);
+router.post("/bulk-action", checkPermission(["EMAIL_TRIAGE_CONVERT", "EMAIL_TRIAGE_RESPOND"]), c.bulkAction);
+router.delete("/bulk", checkPermission("EMAIL_TRIAGE_CONVERT"), c.bulkDelete);
 router.get("/:id", checkPermission("EMAIL_TRIAGE_ACCESS"), c.getOne);
 router.post(
   "/:id/action",

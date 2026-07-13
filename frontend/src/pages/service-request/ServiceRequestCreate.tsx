@@ -7,6 +7,13 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { PERMISSIONS } from "../../constants/permissions";
 import { api } from "../../utils/api";
 import { serviceRequestApi } from "../../services/serviceRequests";
+import { FormRenderer } from "../../components/FormRenderer";
+import { searchPipeline } from "../../services/psrPipelineService";
+import { searchPsrTable } from "../../services/psrBuilderService";
+import { conditionEngine, FormFieldSchema } from "../../utils/conditionEngine";
+import HierarchyCategorySelector, {
+  CategoryHierarchyValue,
+} from "../../components/HierarchyCategorySelector";
 
 interface ProjectOpt {
   _id: string;
@@ -18,7 +25,10 @@ interface CategoryNode {
   name: string;
   parentId?: string | null;
   path?: string;
-  sr?: { proactiveHelpText?: string };
+  sr?: {
+    proactiveHelpText?: string;
+    appliesTo?: Array<"normal" | "PSR" | "ISR">;
+  };
 }
 interface ChildOpt {
   id?: string;
@@ -47,87 +57,175 @@ interface ClassifyChannel {
   routing?: { interactionType?: "PSR" | "ISR"; target?: string };
 }
 
+interface SrFormSchema {
+  id: string;
+  name: string;
+  interactionType: "PSR" | "ISR";
+  channel: string;
+  isActive?: boolean;
+  fields: FormFieldSchema[];
+}
+
 type Step = "type" | "classify" | "form";
 
-/** Mirrors backend SR_DEFAULT_CLASSIFY_CHANNELS — used as a safety fallback so
- * the wizard never dead-ends if a project has no channels persisted yet. */
-const DEFAULT_CHANNELS: ClassifyChannel[] = [
-  {
-    key: "existing_parent",
-    label: "Existing Parent",
-    description: "A current parent / student raising a request.",
-    icon: "👪",
-    color: "#2563EB",
-    enabled: true,
-    order: 1,
-    flow: "existing_parent",
-    routing: { interactionType: "PSR", target: "sr" },
-  },
-  {
-    key: "prospect_parent",
-    label: "Prospect Parent",
-    description: "Admissions or new-school enquiry. Forwards to CRM.",
-    icon: "🌱",
-    color: "#16a34a",
-    enabled: true,
-    order: 2,
-    flow: "prospect_parent",
-    routing: { target: "lead" },
-  },
-  {
-    key: "vendor",
-    label: "Vendor / Business",
-    description: "Supplies, licensing or services. Routes an SR to Procurement.",
-    icon: "📦",
-    color: "#b45309",
-    enabled: true,
-    order: 3,
-    flow: "vendor",
-    routing: { interactionType: "ISR", target: "procurement" },
-  },
-  {
-    key: "job",
-    label: "Job Application",
-    description: "Careers, teaching openings, or resumes. Routes an SR to HR.",
-    icon: "💼",
-    color: "#7c3aed",
-    enabled: true,
-    order: 4,
-    flow: "job",
-    routing: { interactionType: "ISR", target: "hr" },
-  },
-  {
-    key: "others",
-    label: "Others / General",
-    description: "General feedback or support questions. Routes a custom SR.",
-    icon: "🗂️",
-    color: "#0891b2",
-    enabled: true,
-    order: 5,
-    flow: "others",
-    routing: { interactionType: "PSR", target: "sr" },
-  },
-  {
-    key: "junk",
-    label: "Junk / Telemarketing",
-    description: "Spam, wrong number or blank voicemail. Archived as junk.",
-    icon: "🗑️",
-    color: "#6b7280",
-    enabled: true,
-    order: 6,
-    flow: "junk",
-    routing: { target: "junk_archive" },
-  },
-];
+type SourceContext = {
+  type: "email" | "ivr";
+  id: string;
+  sourceIds?: string[];
+  returnTo: string;
+  uniqueId?: string;
+  fromName?: string;
+  fromEmail?: string;
+  messageId?: string;
+  inReplyTo?: string;
+  references?: string[];
+  sourceEmailConfigId?: string;
+  callerName?: string;
+  callerMobile?: string;
+  subject?: string;
+  body?: string;
+};
 
-const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
-  embedded,
-}) => {
+const stripHtml = (value?: string) =>
+  String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const normalizeFieldKey = (value?: string) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+const CORE_SR_FIELD_KEYS = new Set([
+  "subject",
+  "title",
+  "description",
+  "comments",
+  "comment",
+  "remarks",
+]);
+
+const SUBJECT_FIELD_KEYS = new Set(["subject", "title"]);
+const DESCRIPTION_FIELD_KEYS = new Set([
+  "description",
+  "comments",
+  "comment",
+  "remarks",
+]);
+const SOURCE_EMAIL_FIELD_KEYS = new Set([
+  "email",
+  "parentemail",
+  "enquireremail",
+  "enquiryemail",
+  "fromemail",
+]);
+const SOURCE_NAME_FIELD_KEYS = new Set([
+  "name",
+  "parentname",
+  "enquirername",
+  "enquiryname",
+  "fullname",
+  "firstname",
+]);
+const SOURCE_MOBILE_FIELD_KEYS = new Set([
+  "mobile",
+  "phone",
+  "contact",
+  "contactnumber",
+  "parentmobile",
+]);
+
+const fieldMatchesAnyKey = (
+  field: { id?: string; label?: string; fieldName?: string; fieldLabel?: string; name?: string; key?: string },
+  keys: Set<string>,
+) =>
+  [
+    field.id,
+    field.label,
+    field.fieldName,
+    field.fieldLabel,
+    field.name,
+    field.key,
+  ]
+    .map(normalizeFieldKey)
+    .some((key) => keys.has(key));
+
+const applySourceValueToField = (
+  field: { id?: string; label?: string; fieldName?: string; fieldLabel?: string; name?: string; key?: string },
+  sourceContext?: SourceContext,
+) => {
+  if (!sourceContext || sourceContext.type !== "email") return "";
+  const keys = [
+    field.id,
+    field.label,
+    field.fieldName,
+    field.fieldLabel,
+    field.name,
+    field.key,
+  ].map(normalizeFieldKey);
+  if (keys.some((key) => SOURCE_EMAIL_FIELD_KEYS.has(key))) {
+    return sourceContext.fromEmail || "";
+  }
+  if (keys.some((key) => SOURCE_NAME_FIELD_KEYS.has(key))) {
+    return sourceContext.fromName || "";
+  }
+  if (keys.some((key) => SOURCE_MOBILE_FIELD_KEYS.has(key))) {
+    return "";
+  }
+  return "";
+};
+
+const normalizeSchemaValue = (value?: string) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+const deepestCategoryId = (value?: CategoryHierarchyValue) =>
+  value?.level5 ||
+  value?.level4 ||
+  value?.level3 ||
+  value?.level2 ||
+  value?.level1 ||
+  "";
+
+const isProspectParentSchema = (schema: SrFormSchema) => {
+  const channel = normalizeSchemaValue(schema.channel);
+  const name = normalizeSchemaValue(schema.name);
+  return (
+    schema.isActive !== false &&
+    normalizeSchemaValue(schema.interactionType) === "psr" &&
+    (channel === "prospectparent" ||
+      channel === "crmlead" ||
+      channel === "lead" ||
+      name.includes("prospectparent") ||
+      name.includes("crmlead"))
+  );
+};
+
+const ServiceRequestCreate: React.FC<{
+  embedded?: boolean;
+  hideProjectSelector?: boolean;
+}> = ({ embedded, hideProjectSelector }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const isProjectPortal = location.pathname.includes("/portal/");
+  const detailPath = (id: string) =>
+    isProjectPortal
+      ? `${location.pathname.replace(/\/service-requests(?:\/.*)?$/, "")}/service-requests/${id}`
+      : `/service-requests/${id}`;
   const linkedPsrId = (location.state as any)?.linkedPsrId as
     | string
     | undefined;
+  const linkedParentTicketId = ((location.state as any)?.linkedParentTicketId ||
+    linkedPsrId) as string | undefined;
+  const routeSourceContext = (location.state as any)?.sourceContext as
+    | SourceContext
+    | undefined;
+  const [resolvedSourceContext, setResolvedSourceContext] = useState<
+    SourceContext | undefined
+  >(routeSourceContext);
+  const sourceContext = resolvedSourceContext;
   const { currentProjectId, userProjects } = useProjectContext();
   const { hasPermission } = usePermissions();
 
@@ -144,23 +242,39 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [projectId, setProjectId] = useState(currentProjectId || "");
   const [config, setConfig] = useState<any>(null);
+  const [formSchemas, setFormSchemas] = useState<SrFormSchema[]>([]);
 
   const [step, setStep] = useState<Step>("type");
-  const [interactionType, setInteractionType] = useState<"PSR" | "ISR" | "">("");
+  const [interactionType, setInteractionType] = useState<"PSR" | "ISR" | "">(
+    "",
+  );
   const [channel, setChannel] = useState<ClassifyChannel | null>(null);
 
   const [categories, setCategories] = useState<CategoryNode[]>([]);
   const [categoryId, setCategoryId] = useState("");
+  const [categoryHierarchy, setCategoryHierarchy] =
+    useState<CategoryHierarchyValue>({});
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
+  const [formData, setFormData] = useState<Record<string, any>>({});
+  const effectiveSubject = subject || sourceContext?.subject || "";
+  const effectiveDescription = description || sourceContext?.body || "";
 
   // Existing-parent flow
   const [parentQuery, setParentQuery] = useState("");
   const [parentResults, setParentResults] = useState<ParentOpt[]>([]);
   const [parent, setParent] = useState<ParentOpt | null>(null);
   const [parentSource, setParentSource] = useState<string>("");
+  const [parentLookupError, setParentLookupError] = useState<string>("");
   const [selectedChildren, setSelectedChildren] = useState<number[]>([]);
   const [searching, setSearching] = useState(false);
+  // PSR pipeline search: stale-collection banner (US-4.2)
+  const [psrStaleWarning, setPsrStaleWarning] = useState<string | null>(null);
+
+  // Custom channel fields (category dropdowns, static dropdowns, text inputs
+  // configured in SR Settings → per-channel form builder)
+  const [customCatFields, setCustomCatFields] = useState<Record<string, CategoryHierarchyValue>>({});
+  const [customFieldData, setCustomFieldData] = useState<Record<string, any>>({})
 
   // Prospect-parent flow
   const [prospect, setProspect] = useState({
@@ -169,6 +283,9 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
     email: "",
     enquiry: "",
   });
+  const [prospectFormData, setProspectFormData] = useState<Record<string, any>>(
+    {},
+  );
 
   // Assignee-emails block (ISR)
   const [assigneeEmails, setAssigneeEmails] = useState("");
@@ -194,8 +311,101 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
 
   const singleProject = userProjects.length === 1;
 
+  useEffect(() => {
+    if (routeSourceContext?.type) {
+      setResolvedSourceContext(routeSourceContext);
+    }
+  }, [routeSourceContext?.type, routeSourceContext?.id]);
+
+  useEffect(() => {
+    if (routeSourceContext?.type || resolvedSourceContext?.type) return;
+    const params = new URLSearchParams(location.search);
+    const sourceType = params.get("sourceType");
+    const sourceId = params.get("sourceId");
+    if (!sourceId || (sourceType !== "email" && sourceType !== "ivr")) return;
+
+    let alive = true;
+    (async () => {
+      try {
+        if (sourceType === "email") {
+          const response = await serviceRequestApi.emailIntake.get(sourceId);
+          const email = response?.data || response;
+          if (!alive || !email) return;
+          setResolvedSourceContext({
+            type: "email",
+            id: email._id || sourceId,
+            returnTo: `${location.pathname}?tab=email`,
+            uniqueId: email.uniqueId,
+            fromName: email.fromName,
+            fromEmail: email.fromEmail,
+            subject: email.subject,
+            body: email.body || stripHtml(email.htmlBody),
+            messageId: email.messageId,
+            inReplyTo: email.inReplyTo,
+            references: email.references,
+            sourceEmailConfigId: email.projectEmailConfigId,
+          });
+        } else {
+          const response = await serviceRequestApi.ivr.get(sourceId);
+          const call = response?.data || response;
+          if (!alive || !call) return;
+          setResolvedSourceContext({
+            type: "ivr",
+            id: call._id || sourceId,
+            returnTo: `${location.pathname}?tab=ivr`,
+            callerName: call.callerName,
+            callerMobile: call.callerMobile,
+            subject: `IVR call from ${call.callerName || call.callerMobile}`,
+            body: `Converted from IVR call ${call.externalId || call._id || sourceId}. Caller: ${call.callerName || "Unknown"} (${call.callerMobile || ""}).`,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to restore SR source context", error);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [
+    location.pathname,
+    location.search,
+    resolvedSourceContext?.type,
+    routeSourceContext?.type,
+  ]);
+
+  const applySourceContextFields = () => {
+    if (!sourceContext?.type) return;
+    setInteractionType("PSR");
+    setStep("classify");
+    setSubject(sourceContext.subject || "");
+    setDescription(sourceContext.body || "");
+  };
+
+  const prefillFromSourceContext = () => {
+    if (!sourceContext || sourceContext.type !== "email") return;
+    setParentQuery(sourceContext.fromEmail || sourceContext.fromName || "");
+    setProspect((prev) => ({
+      ...prev,
+      name: prev.name || sourceContext.fromName || "",
+      email: prev.email || sourceContext.fromEmail || "",
+      enquiry: prev.enquiry || sourceContext.body || "",
+    }));
+    setProspectFormData((prev) => {
+      const next = { ...prev };
+      prospectFormFields.forEach((field: any) => {
+        const fieldName = field.fieldName || field.id || field.name || field.key;
+        if (!fieldName || next[fieldName]) return;
+        const value = applySourceValueToField(field, sourceContext);
+        if (value) next[fieldName] = value;
+      });
+      return next;
+    });
+  };
+
   /* ---- load projects + auto-pick ---- */
   useEffect(() => {
+    if (hideProjectSelector) return;
     (async () => {
       try {
         const res = await api.get("/projects", { params: { limit: 100 } });
@@ -206,7 +416,7 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
         console.error(e);
       }
     })();
-  }, []);
+  }, [hideProjectSelector]);
 
   useEffect(() => {
     if (!projectId && singleProject) setProjectId(userProjects[0]._id);
@@ -216,17 +426,18 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
   // Linked-ISR entry (from a PSR "Create linked ISR" button): force ISR + skip
   // the type step.
   useEffect(() => {
-    if (linkedPsrId) {
+    if (linkedParentTicketId) {
       setInteractionType("ISR");
-      setStep("classify");
+      setStep("form");
     }
-  }, [linkedPsrId]);
+  }, [linkedParentTicketId]);
 
   /* ---- load SR config + categories on project change ---- */
   useEffect(() => {
     if (!projectId) {
       setConfig(null);
       setCategories([]);
+      setFormSchemas([]);
       return;
     }
     (async () => {
@@ -236,6 +447,13 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
       } catch (e) {
         console.error(e);
         setConfig(null);
+      }
+      try {
+        const r = await serviceRequestApi.listForms(projectId);
+        setFormSchemas(r.data || []);
+      } catch (e) {
+        console.error(e);
+        setFormSchemas([]);
       }
       try {
         const res = await api.get("/categories", { params: { projectId } });
@@ -251,6 +469,9 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
   }, [projectId]);
 
   const leafCategories = useMemo(() => {
+    const activeType = ((channel?.routing?.interactionType as any) ||
+      interactionType ||
+      "PSR") as "PSR" | "ISR";
     const parentIds = new Set(
       categories
         .map((c) => (c.parentId ? String(c.parentId) : ""))
@@ -258,20 +479,37 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
     );
     return categories
       .filter((c) => !parentIds.has(String(c._id)))
+      .filter((c) => {
+        const appliesTo = c.sr?.appliesTo || [];
+        if (appliesTo.includes("PSR") && appliesTo.includes("ISR")) {
+          return activeType === "PSR";
+        }
+        return appliesTo.length === 1 && appliesTo[0] === activeType;
+      })
       .sort((a, b) => (a.path || a.name).localeCompare(b.path || b.name));
-  }, [categories]);
+  }, [categories, interactionType, channel]);
 
   const channels: ClassifyChannel[] = useMemo(() => {
-    // Fall back to the bundled defaults when the project has none persisted yet
-    // (e.g. config not seeded, or backend not yet restarted on this build).
-    const raw: ClassifyChannel[] = config?.classifyChannels?.length
-      ? config.classifyChannels
-      : DEFAULT_CHANNELS;
+    const raw: ClassifyChannel[] = config?.classifyChannels || [];
     return raw
       .filter((c) => c.enabled)
-      .filter((c) => !c.requiredPermission || hasPermission(c.requiredPermission))
+      .filter((c) => {
+        // PSR starts with a source/intent selection: existing parent,
+        // prospect, job, junk, etc. The selected card then decides the final
+        // routing and form. Do not hide cards only because their routing target
+        // eventually creates an ISR/lead/junk record.
+        if (interactionType === "PSR") return true;
+        return (
+          !interactionType ||
+          !c.routing?.interactionType ||
+          c.routing.interactionType === interactionType
+        );
+      })
+      .filter(
+        (c) => !c.requiredPermission || hasPermission(c.requiredPermission),
+      )
       .sort((a, b) => a.order - b.order);
-  }, [config]); // eslint-disable-line
+  }, [config, interactionType]); // eslint-disable-line
 
   const blocks = config?.blocks || {};
 
@@ -286,25 +524,161 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
   const onParentQuery = (q: string) => {
     setParentQuery(q);
     setParent(null);
+    setParentLookupError("");
     setSelectedChildren([]);
+    setPsrStaleWarning(null);
     if (debounce.current) clearTimeout(debounce.current);
-    if (q.trim().length < 2) {
+    if (q.trim().length < 3) {
       setParentResults([]);
       return;
     }
     debounce.current = setTimeout(async () => {
       try {
         setSearching(true);
-        const r = await serviceRequestApi.parentLookup(q.trim(), projectId);
-        setParentResults(r.data || []);
-        setParentSource(r.source?.name || "");
-      } catch (e) {
+        const lookupSource = config?.psr?.intake?.lookup?.source;
+        const psrBuilderTableId = config?.psr?.intake?.lookup?.psrBuilderTableId;
+        const psrPipelineId = config?.psr?.intake?.lookup?.psrPipelineId;
+
+        if (lookupSource === "psr_builder" && psrBuilderTableId) {
+          // Each PSR Builder row = one guardian→student mapping.
+          // Fetch up to 100 rows so all children of a matching parent are included,
+          // then group by parent and collect students as children[].
+          const res = await searchPsrTable(psrBuilderTableId, q.trim(), 100);
+          if (!res.success) {
+            setParentResults([]);
+            setParentLookupError(res.error || "PSR Builder table search failed.");
+            return;
+          }
+          if (res.data.total === 0 && q.trim().length >= 3) {
+            const collectionTotal: number = res.data.collectionTotal ?? 0;
+            if (collectionTotal === 0) {
+              // Table collection is genuinely empty — sync hasn't run yet
+              setPsrStaleWarning(
+                "The PSR Builder table is empty. Go to Integrations › PSR Builder and run a sync first.",
+              );
+            } else {
+              // Table has data but no row matches this query
+              setPsrStaleWarning(
+                `No results match "${q.trim()}". Try name, mobile number, email or student ID.`,
+              );
+            }
+          }
+          // Map flat table rows → ParentOpt, grouping by parent so all children appear together.
+          // Each row = one guardian→student mapping; same parent can appear in multiple rows.
+          const parentMap = new Map<string, ParentOpt>();
+          for (const doc of res.data.results) {
+            // Flexible column finder — matches any column whose key contains the pattern
+            const findCol = (...patterns: string[]) => {
+              for (const p of patterns) {
+                const key = Object.keys(doc).find(k => k.toLowerCase().includes(p.toLowerCase()));
+                if (key && doc[key] != null && doc[key] !== "") return String(doc[key]);
+              }
+              return "";
+            };
+
+            const parentFirstName = findCol("parent master - first name", "first name", "first_name");
+            const parentLastName  = findCol("parent master - last name",  "last name",  "last_name");
+            const parentName      = (parentFirstName + " " + parentLastName).trim() || findCol("parent master - name", "name") || "(no name)";
+            const mobile          = findCol("parent master - mobile", "mobile", "phone", "contact");
+            const email           = findCol("parent master - email",  "email");
+            const school          = findCol("school", "centre", "college");
+            const parentCode      = findCol("parent master - id", "guardian master - guardian id", "guardian id", "guardian_id", "parent id", "parent_id");
+
+            // Student / child info from student master columns
+            const studentId    = findCol("student master - id",         "student id",    "student_id");
+            const studentFirst = findCol("student master - first name",  "student first");
+            const studentLast  = findCol("student master - last name",   "student last");
+            const studentName  = (studentFirst + " " + studentLast).trim() || studentFirst || "";
+            const grade        = findCol("grade", "class", "standard");
+
+            // Key for grouping — prefer guardian/parent ID, fall back to name+mobile
+            const groupKey = parentCode || (parentName + "|" + mobile);
+
+            if (parentMap.has(groupKey)) {
+              // Add student as another child of the existing parent entry
+              if (studentName || studentId) {
+                parentMap.get(groupKey)!.children!.push({
+                  id:   studentId   || undefined,
+                  name: studentName || undefined,
+                  grade: grade      || undefined,
+                });
+              }
+            } else {
+              parentMap.set(groupKey, {
+                name:       parentName || undefined,
+                mobile:     mobile     || undefined,
+                email:      email      || undefined,
+                school:     school     || undefined,
+                parentCode: parentCode || undefined,
+                children:   (studentName || studentId)
+                  ? [{ id: studentId || undefined, name: studentName || undefined, grade: grade || undefined }]
+                  : [],
+              });
+            }
+          }
+          const results: ParentOpt[] = Array.from(parentMap.values())
+            .filter(r => r.name || r.mobile || r.email);
+          setParentResults(results);
+          setParentSource("PSR Builder");
+
+        } else if (psrPipelineId) {
+          // US-4.2 — Use new PSR Pipeline search endpoint
+          const res = await searchPipeline(psrPipelineId, q.trim(), {
+            limit: 25,
+          });
+          if (!res.success) {
+            setParentResults([]);
+            setParentLookupError(res.error || "PSR pipeline search failed.");
+            return;
+          }
+          const embedField =
+            config?.psr?.intake?.lookup?.psrEmbedField || "students";
+          const nameField = config?.psr?.intake?.lookup?.psrNameField || "name";
+          // Show stale banner if no results (collection might be empty)
+          if (res.data.total === 0 && q.trim().length >= 3) {
+            setPsrStaleWarning(
+              "No results found. The pipeline collection may be empty or not yet synced — run a sync in Integrations › PSR Pipelines.",
+            );
+          }
+          // US-4.2/4.3: Map pipeline documents → ParentOpt
+          const results: ParentOpt[] = res.data.results.map((doc: any) => ({
+            name: doc[nameField] || doc.name || doc.fullName || "",
+            mobile: doc.mobile || doc.phone || doc.contactNumber || "",
+            email: doc.email || doc.emailAddress || "",
+            school: doc.school || doc.schoolName || doc.centre || "",
+            parentCode: doc.parentCode || doc.externalId || doc.id || "",
+            // US-4.3: embedded students array — passed as children
+            children: Array.isArray(doc[embedField])
+              ? doc[embedField].map((c: any) => ({
+                  id: c.studentId || c.id || c._id,
+                  name: c.name || c.studentName || c.fullName || "",
+                  grade: c.grade || c.gradeLabel || c.class || "",
+                  enrollmentId:
+                    c.enrollmentId || c.admissionNo || c.rollNo || "",
+                }))
+              : [],
+          }));
+          setParentResults(results);
+          setParentSource("PSR Pipeline");
+        } else {
+          // Legacy MDM lookup (unchanged)
+          const r = await serviceRequestApi.parentLookup(q.trim(), projectId);
+          setParentResults(r.data || []);
+          setParentSource(r.source?.name || "");
+        }
+      } catch (e: any) {
         console.error(e);
         setParentResults([]);
+        setParentSource("");
+        setParentLookupError(
+          e?.response?.data?.message ||
+            e?.response?.data?.error ||
+            "Parent lookup failed.",
+        );
       } finally {
         setSearching(false);
       }
-    }, 350);
+    }, 250); // US-4.2: 250ms debounce
   };
 
   const sendOtp = async () => {
@@ -332,24 +706,38 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
     }
   };
 
-  const resetFlow = () => {
+  const resetFlow = (options?: { keepSourceContext?: boolean }) => {
     setChannel(null);
     setCategoryId("");
+    setCategoryHierarchy({});
     setSubject("");
     setDescription("");
+    setFormData({});
     setParent(null);
     setParentQuery("");
     setParentResults([]);
+    setParentSource("");
+    setParentLookupError("");
     setSelectedChildren([]);
     setProspect({ name: "", mobile: "", email: "", enquiry: "" });
+    setProspectFormData({});
     setAssigneeEmails("");
     setMsg(null);
-  };
+    setCustomCatFields({});
+    setCustomFieldData({});
+    if (options?.keepSourceContext) {
+      applySourceContextFields();
+    }
+  };;
 
   const pickType = (t: "PSR" | "ISR") => {
     setInteractionType(t);
-    resetFlow();
-    setStep("classify");
+    resetFlow({ keepSourceContext: true });
+    if (t === "PSR") {
+      setStep("classify");
+      return;
+    }
+    setStep("form");
   };
 
   const pickChannel = (c: ClassifyChannel) => {
@@ -362,26 +750,336 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
     (channel?.routing?.interactionType as any) || interactionType || "PSR";
 
   const flow = channel?.flow || "others";
+  const blockCfg = (key: string, fallback: Record<string, any>) => ({
+    ...fallback,
+    ...(blocks?.[key] || {}),
+  });
+  const parentLookupBlock = blockCfg("parentLookup", {
+    enabled: true,
+    label: "Search Parent (MDM)",
+    placeholder: "Search by parent name, mobile or email",
+    required: true,
+  });
+  const childSelectionBlock = blockCfg("childSelection", {
+    enabled: true,
+    label: "Select child(ren)",
+    required: true,
+  });
+  const categoryBlock = blockCfg("category", {
+    enabled: true,
+    label: "Category / Sub-category",
+    placeholder: "Select a sub-category...",
+    required: true,
+  });
+  const subjectBlock = blockCfg("subject", {
+    enabled: true,
+    label: "Subject",
+    placeholder: "Brief subject",
+    required: true,
+  });
+  const descriptionBlock = blockCfg("description", {
+    enabled: true,
+    label: "Description / Comments",
+    placeholder: "Details of the request / complaint",
+    required: false,
+  });
+  const dynamicFieldsBlock = blockCfg("dynamicFields", {
+    enabled: true,
+    label: "Additional Details",
+  });
+
+  const activeSrForm = useMemo(() => {
+    const type = linkedParentTicketId ? "ISR" : finalInteraction();
+    return (
+      formSchemas.find(
+        (s) =>
+          s.isActive !== false &&
+          s.interactionType === type &&
+          s.channel === "walk_in",
+      ) ||
+      formSchemas.find(
+        (s) =>
+          s.isActive !== false &&
+          s.interactionType === type &&
+          s.channel === "online",
+      ) ||
+      null
+    );
+  }, [formSchemas, interactionType, channel, linkedParentTicketId]);
+
+  const activeSrFormFields = useMemo(() => {
+    const fields = activeSrForm?.fields || [];
+    return fields.filter((field: any) => {
+      const keys = [
+        field.fieldName,
+        field.fieldLabel,
+        field.name,
+        field.label,
+        field.key,
+      ].map(normalizeFieldKey);
+      return !keys.some((key) => CORE_SR_FIELD_KEYS.has(key));
+    });
+  }, [activeSrForm]);
+
+  // ── Custom channel fields (from SR Settings → per-channel form builder) ──
+  const customChannelFields = useMemo(
+    () => ((config?.customChannelFields ?? {})[channel?.key ?? flow] ?? []) as Array<{
+      id: string; label: string; type: string; required?: boolean;
+      dataSource: string; staticOptions?: string[];
+    }>,
+    [config, channel, flow],
+  );
+  const customCategoryFieldsList = useMemo(
+    () => customChannelFields.filter(f => f.dataSource === "category"),
+    [customChannelFields],
+  );
+
+  const prospectSrForm = useMemo(() => {
+    if (flow !== "prospect_parent") return null;
+    return (
+      formSchemas.find(isProspectParentSchema) ||
+      formSchemas.find(
+        (s) =>
+          s.isActive !== false &&
+          normalizeSchemaValue(s.interactionType) === "psr" &&
+          normalizeSchemaValue(s.channel) === "online",
+      ) ||
+      null
+    );
+  }, [formSchemas, flow]);
+
+  const prospectFormFields = useMemo(() => {
+    const fields = prospectSrForm?.fields || [];
+    return fields.filter((field: any) => {
+      const keys = [
+        field.fieldName,
+        field.fieldLabel,
+        field.name,
+        field.label,
+        field.key,
+      ].map(normalizeFieldKey);
+      return !keys.some((key) => CORE_SR_FIELD_KEYS.has(key));
+    });
+  }, [prospectSrForm]);
+
+  useEffect(() => {
+    applySourceContextFields();
+    prefillFromSourceContext();
+  }, [
+    sourceContext?.type,
+    sourceContext?.subject,
+    sourceContext?.body,
+    sourceContext?.fromEmail,
+    sourceContext?.fromName,
+    prospectFormFields,
+  ]);
+
+  const visibleProspectFormData = () => {
+    if (!prospectFormFields.length) return {};
+    const { visibleFields } = conditionEngine(
+      prospectFormFields,
+      prospectFormData,
+    );
+    return Object.fromEntries(
+      Object.entries(prospectFormData).filter(([key]) =>
+        visibleFields.has(key),
+      ),
+    );
+  };
+
+  const prospectRequiredOk = useMemo(() => {
+    if (!prospectFormFields.length) return true;
+    const { visibleFields, requiredFields } = conditionEngine(
+      prospectFormFields,
+      prospectFormData,
+    );
+    for (const fieldName of requiredFields) {
+      if (!visibleFields.has(fieldName)) continue;
+      const value = prospectFormData[fieldName];
+      if (Array.isArray(value) && value.length === 0) return false;
+      if (
+        value === undefined ||
+        value === null ||
+        String(value).trim() === ""
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }, [prospectFormFields, prospectFormData]);
+
+  const conditionData = useMemo(
+    () => ({
+      ...formData,
+      level1: categoryHierarchy.level1Name,
+      level2: categoryHierarchy.level2Name,
+      level3: categoryHierarchy.level3Name,
+      level4: categoryHierarchy.level4Name,
+      level5: categoryHierarchy.level5Name,
+      category: categoryHierarchy.displayPath,
+      interactionType: linkedParentTicketId ? "ISR" : finalInteraction(),
+    }),
+    [
+      formData,
+      categoryHierarchy,
+      interactionType,
+      channel,
+      linkedParentTicketId,
+    ],
+  );
+
+  const visibleFormData = () => {
+    if (dynamicFieldsBlock.enabled === false) return {};
+    const fields = activeSrFormFields;
+    if (!fields.length) return {};
+    const { visibleFields } = conditionEngine(fields, conditionData);
+    return Object.fromEntries(
+      Object.entries(formData).filter(([key]) => visibleFields.has(key)),
+    );
+  };
+
+  const dynamicRequiredOk = useMemo(() => {
+    if (dynamicFieldsBlock.enabled === false) return true;
+    const fields = activeSrFormFields;
+    if (!fields.length) return true;
+    const { visibleFields, requiredFields } = conditionEngine(
+      fields,
+      conditionData,
+    );
+    for (const fieldName of requiredFields) {
+      if (!visibleFields.has(fieldName)) continue;
+      const value = formData[fieldName];
+      if (Array.isArray(value) && value.length === 0) return false;
+      if (
+        value === undefined ||
+        value === null ||
+        String(value).trim() === ""
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }, [activeSrFormFields, conditionData, formData, dynamicFieldsBlock]);
 
   const canSubmit = useMemo(() => {
     if (submitting || !projectId) return false;
     if (flow === "junk") return true;
-    if (flow === "prospect_parent")
-      return !!(prospect.name && (prospect.mobile || prospect.email));
-    if (!subject.trim()) return false;
-    if (flow === "existing_parent")
-      return !!parent && selectedChildren.length > 0 && !!categoryId;
-    return !!categoryId;
+    if (flow === "prospect_parent") {
+      return prospectFormFields.length > 0 && prospectRequiredOk;
+    }
+    if (!dynamicRequiredOk) return false;
+    if (
+      flow === "existing_parent" &&
+      parentLookupBlock.enabled !== false &&
+      parentLookupBlock.required !== false &&
+      !parent
+    )
+      return false;
+    if (
+      flow === "existing_parent" &&
+      childSelectionBlock.enabled !== false &&
+      childSelectionBlock.required !== false &&
+      selectedChildren.length === 0
+    )
+      return false;
+    // Skip hardcoded category/subject checks when custom channel fields are configured
+    // (those fields have their own required validation via customFieldsOk below).
+    if (customChannelFields.length === 0) {
+      if (
+        subjectBlock.enabled !== false &&
+        subjectBlock.required !== false &&
+        !effectiveSubject.trim()
+      )
+        return false;
+      if (
+        categoryBlock.enabled !== false &&
+        categoryBlock.required !== false &&
+        !categoryId
+      )
+        return false;
+    }
+    // Custom channel field required check.
+    // For category fields: deduplication renders only the "best" one, so we
+    // only require that at least ONE category field has a valid selection.
+    const anyCatSelected = customChannelFields
+      .filter(f => f.dataSource === "category")
+      .some(f => {
+        const h = customCatFields[f.id];
+        return !!deepestCategoryId(h);
+      });
+    const hasRequiredCat = customChannelFields.some(f => f.dataSource === "category" && f.required);
+
+    const customFieldsOk = customChannelFields
+      .filter(f => f.type !== "search" && f.required)
+      .every(f => {
+        if (f.dataSource === "category") {
+          // Any category field having a value satisfies ALL required category fields
+          return !hasRequiredCat || anyCatSelected;
+        }
+        if (fieldMatchesAnyKey(f, SUBJECT_FIELD_KEYS)) {
+          return !!effectiveSubject.trim();
+        }
+        if (fieldMatchesAnyKey(f, DESCRIPTION_FIELD_KEYS)) {
+          return !!effectiveDescription.trim();
+        }
+        return !!(customFieldData[f.id]?.toString().trim());
+      });
+    if (!customFieldsOk) return false;
+    if (
+      categoryBlock.enabled !== false &&
+      categoryBlock.required !== false &&
+      !categoryId &&
+      !anyCatSelected
+    )
+      return false;
+    return true;
   }, [
     submitting,
     projectId,
     flow,
     prospect,
-    subject,
+    prospectFormFields,
+    prospectRequiredOk,
+    effectiveSubject,
     parent,
     selectedChildren,
     categoryId,
+    dynamicRequiredOk,
+    parentLookupBlock,
+    childSelectionBlock,
+    categoryBlock,
+    subjectBlock,
+    customChannelFields,
+    customCatFields,
+    customFieldData,
+    effectiveDescription,
   ]);
+
+  const markSourceConverted = async (ticketId?: string, ticketNumber?: string) => {
+    if (!sourceContext?.id || !ticketId) return;
+    if (sourceContext.type === "email") {
+      const ids = sourceContext.sourceIds?.length
+        ? sourceContext.sourceIds
+        : [sourceContext.id];
+      await Promise.all(
+        ids.map((id) =>
+          serviceRequestApi.emailIntake.action(id, {
+            type: "converted",
+            refId: ticketId,
+            refNumber: ticketNumber,
+            remark: "Converted through New Request flow",
+          }),
+        ),
+      );
+      return;
+    }
+    if (sourceContext.type === "ivr") {
+      await serviceRequestApi.ivr.markConverted(sourceContext.id, {
+        ticketId,
+        ticketNumber,
+      });
+    }
+  };
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -400,15 +1098,47 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
 
       // Prospect — create a lead, not an SR.
       if (flow === "prospect_parent") {
+        const leadFormData = visibleProspectFormData();
+        const leadName =
+          leadFormData.name ||
+          leadFormData.parentName ||
+          [
+            leadFormData.firstName || leadFormData.parentFirstName,
+            leadFormData.lastName || leadFormData.parentLastName,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .trim() ||
+          "";
+        const studentName =
+          leadFormData.studentName ||
+          [leadFormData.studentFirstName, leadFormData.studentLastName]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
         await serviceRequestApi.leads.create({
           projectId,
-          name: prospect.name,
-          mobile: prospect.mobile,
-          email: prospect.email,
-          enquiry: prospect.enquiry,
-          source: "sr_wizard",
+          name: leadName,
+          contactNumber:
+            leadFormData.contactNumber ||
+            leadFormData.mobile ||
+            leadFormData.phone,
+          email:
+            leadFormData.email || leadFormData.parentEmail,
+          studentName,
+          grade: leadFormData.gradeLabel || leadFormData.grade,
+          notes:
+            leadFormData.notes ||
+            leadFormData.enquiry ||
+            leadFormData.query,
+          formData: leadFormData,
+          source: sourceContext?.type || "online",
+          syncCrm: true,
         });
-        setMsg({ type: "ok", text: "Lead forwarded to CRM." });
+        setMsg({
+          type: "ok",
+          text: "Lead saved and CRM sync status updated in Leads.",
+        });
         setTimeout(() => {
           resetFlow();
           setStep("type");
@@ -419,19 +1149,107 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
       const chosenChildren = (parent?.children || []).filter((_, i) =>
         selectedChildren.includes(i),
       );
+      const selectedCategoryLabel =
+        categoryHierarchy.displayPath ||
+        categories.find((c) => String(c._id) === categoryId)?.path ||
+        categories.find((c) => String(c._id) === categoryId)?.name;
+      const standardCategoryId = deepestCategoryId(categoryHierarchy) || categoryId;
+      const derivedSubject =
+        effectiveSubject.trim() ||
+        [
+          finalInteraction(),
+          selectedCategoryLabel,
+          parent?.name || channel?.label,
+        ]
+          .filter(Boolean)
+          .join(" - ") ||
+        "Service Request";
 
       const payload: any = {
         projectId,
-        interactionType: linkedPsrId ? "ISR" : finalInteraction(),
+        interactionType: linkedParentTicketId ? "ISR" : finalInteraction(),
         requestType: "SR",
-        channel: "walk_in",
-        categoryId,
-        subject: subject.trim(),
-        description: description.trim(),
+        channel: sourceContext?.type || "walk_in",
+        categoryId: standardCategoryId || undefined,
+        categoryHierarchy: standardCategoryId ? categoryHierarchy : undefined,
+        subject: derivedSubject,
+        description: effectiveDescription.trim(),
         classification: channel?.key,
+        formData: visibleFormData(),
+        metadata: sourceContext
+          ? {
+              sourceContext,
+              ...(sourceContext.type === "email"
+                ? {
+                    emailIntakeId: sourceContext.id,
+                    fromName: sourceContext.fromName,
+                    fromEmail: sourceContext.fromEmail,
+                    emailMessageId: sourceContext.messageId,
+                    emailInReplyTo: sourceContext.inReplyTo,
+                    emailReferences: sourceContext.references,
+                    sourceEmailConfigId: sourceContext.sourceEmailConfigId,
+                  }
+                : {
+                    callIntakeId: sourceContext.id,
+                    callerName: sourceContext.callerName,
+                    callerMobile: sourceContext.callerMobile,
+                  }),
+            }
+          : undefined,
+        ...(sourceContext?.type === "email"
+          ? {
+              sourceEmail: sourceContext.fromEmail,
+              sourceEmailName: sourceContext.fromName,
+              sourceEmailMessageId: sourceContext.messageId,
+              sourceEmailConfigId: sourceContext.sourceEmailConfigId,
+            }
+          : {}),
         skipDuplicateCheck: true,
       };
-      if (linkedPsrId) payload.linkedPsrId = linkedPsrId;
+      if (linkedParentTicketId)
+        payload.linkedParentTicketId = linkedParentTicketId;
+
+      // Merge custom channel field values (category, static, text) into formData
+      const extraFields: Record<string, any> = { ...customFieldData };
+      Object.entries(customCatFields).forEach(([id, hier]) => {
+        extraFields[`${id}_hierarchy`] = hier;
+        if (!extraFields[id]) {
+          extraFields[id] = hier.displayPath || hier.level5Name || hier.level4Name || hier.level3Name || hier.level2Name || hier.level1Name || "";
+        }
+      });
+      if (Object.keys(extraFields).length) {
+        payload.formData = { ...(payload.formData || {}), ...extraFields };
+      }
+      // When custom channel fields include a category picker, use it as the
+      // ticket's categoryId and categoryHierarchy (replaces hardcoded fields).
+      if (customCategoryFieldsList.length > 0) {
+        const customHierarchy = customCategoryFieldsList
+          .map((field) => customCatFields[field.id])
+          .find((hier) => !!deepestCategoryId(hier));
+        const customCategoryId = deepestCategoryId(customHierarchy);
+        if (customCategoryId) {
+          payload.categoryId = customCategoryId;
+          payload.categoryHierarchy = customHierarchy;
+        }
+      }
+      if (
+        categoryBlock.enabled !== false &&
+        categoryBlock.required !== false &&
+        !payload.categoryId
+      ) {
+        setMsg({ type: "err", text: "Please select a category before creating the service request." });
+        setSubmitting(false);
+        return;
+      }
+      // When custom text field is labelled "Subject", use it as the ticket subject
+      if (customChannelFields.length > 0 && !effectiveSubject.trim()) {
+        const subjectField = customChannelFields.find(
+          f => f.label?.toLowerCase() === "subject" && f.type !== "search"
+        );
+        if (subjectField && customFieldData[subjectField.id]) {
+          payload.subject = customFieldData[subjectField.id];
+        }
+      }
 
       if (flow === "existing_parent" && parent) {
         payload.parent = {
@@ -444,7 +1262,10 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
         payload.children = chosenChildren;
         const firstChildId = chosenChildren.find((c) => c.id)?.id;
         if (firstChildId) payload.studentUserId = firstChildId;
-        payload.metadata = { studentName: chosenChildren[0]?.name };
+        payload.metadata = {
+          ...(payload.metadata || {}),
+          studentName: chosenChildren[0]?.name,
+        };
       }
 
       // Assignee emails (ISR) block
@@ -461,7 +1282,11 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
       }
 
       // Priority & schedule block
-      if (canPriority && blocks?.prioritySchedule?.enabled && overridePriority) {
+      if (
+        canPriority &&
+        blocks?.prioritySchedule?.enabled &&
+        overridePriority
+      ) {
         payload.priority = priority;
         if (scheduleDate) payload.scheduleDispatchDate = scheduleDate;
       }
@@ -469,7 +1294,10 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
       // Offline / RE-entry block
       if (canOffline && blocks?.offlineReEntry?.enabled && createdByRE) {
         if (requesterEmail && !otpVerified) {
-          setMsg({ type: "err", text: "Verify the requester email (OTP) first." });
+          setMsg({
+            type: "err",
+            text: "Verify the requester email (OTP) first.",
+          });
           setSubmitting(false);
           return;
         }
@@ -479,8 +1307,9 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
 
       const r = await serviceRequestApi.create(payload);
       const num = r.data?.ticketNumber;
+      await markSourceConverted(r.data?.ticketId, num);
       setMsg({ type: "ok", text: `Created ${num}. Redirecting…` });
-      setTimeout(() => navigate(`/tickets/${r.data?.ticketId}`), 900);
+      setTimeout(() => navigate(detailPath(r.data?.ticketId)), 900);
     } catch (e: any) {
       setMsg({
         type: "err",
@@ -593,12 +1422,7 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
               gap: 12,
               alignItems: "flex-start",
             }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.borderColor = c.color || SR.primary)
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.borderColor = SR.border)
-            }
+            className="sr-request-source-card"
           >
             <span
               style={{
@@ -636,7 +1460,7 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
 
   /* ---------- step: form ---------- */
   const renderProjectField = () =>
-    singleProject ? (
+    hideProjectSelector ? null : singleProject ? (
       <div style={{ marginBottom: 14 }}>
         <label style={label}>Project</label>
         <div
@@ -660,6 +1484,8 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
           onChange={(e) => {
             setProjectId(e.target.value);
             setCategoryId("");
+            setCategoryHierarchy({});
+            setFormData({});
           }}
         >
           <option value="">Select a project…</option>
@@ -674,16 +1500,46 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
 
   const renderExistingParent = () => (
     <>
-      <label style={label}>Search Parent (MDM)</label>
-      <input
-        style={ctrl}
-        placeholder="Search by parent name, mobile, email, school…"
-        value={parent ? parent.name || "" : parentQuery}
-        onChange={(e) => onParentQuery(e.target.value)}
-      />
+      {parentLookupBlock.enabled !== false && (
+        <>
+          <label style={label}>
+            {parentLookupBlock.label || "Search Parent (MDM)"}
+            {parentLookupBlock.required !== false && (
+              <span style={{ color: SR.danger }}> *</span>
+            )}
+          </label>
+          <input
+            style={ctrl}
+            placeholder="Search by parent name, mobile, email, school…"
+            value={parent ? parent.name || "" : parentQuery}
+            onChange={(e) => onParentQuery(e.target.value)}
+          />
+        </>
+      )}
       {parentSource && (
         <div style={{ fontSize: 11, color: SR.sub, marginTop: 4 }}>
           Source: {parentSource}
+        </div>
+      )}
+      {parentLookupError && (
+        <div style={{ fontSize: 12, color: SR.danger, marginTop: 6 }}>
+          {parentLookupError}
+        </div>
+      )}
+      {/* US-4.2 — stale collection banner */}
+      {psrStaleWarning && !parentLookupError && (
+        <div
+          style={{
+            fontSize: 12,
+            color: "#92400e",
+            background: "#fffbeb",
+            border: "1px solid #fde68a",
+            borderRadius: 6,
+            padding: "6px 10px",
+            marginTop: 6,
+          }}
+        >
+          ⚠ {psrStaleWarning}
         </div>
       )}
       {!parent && parentResults.length > 0 && (
@@ -727,7 +1583,7 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
         </div>
       )}
 
-      {parent && (
+      {parent && parentLookupBlock.enabled !== false && (
         <div
           style={{
             marginTop: 12,
@@ -761,95 +1617,243 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
               .join("  •  ")}
           </div>
 
-          <label style={{ ...label, marginTop: 12 }}>
-            Select child(ren) <span style={{ color: SR.danger }}>*</span>
-          </label>
-          {(parent.children || []).length === 0 ? (
-            <p style={{ fontSize: 12, color: SR.sub }}>
-              No children found for this parent.
-            </p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {(parent.children || []).map((ch, i) => {
-                const sel = selectedChildren.includes(i);
-                return (
-                  <label
-                    key={i}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "8px 10px",
-                      border: `1px solid ${sel ? SR.primary : SR.border}`,
-                      borderRadius: 8,
-                      cursor: "pointer",
-                      background: sel ? "#eff6ff" : "#fff",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={sel}
-                      onChange={() =>
-                        setSelectedChildren((prev) =>
-                          prev.includes(i)
-                            ? prev.filter((x) => x !== i)
-                            : [...prev, i],
-                        )
-                      }
-                    />
-                    <span style={{ fontSize: 13, color: SR.text }}>
-                      {ch.name || "—"}
-                      {ch.grade ? (
-                        <span style={{ color: SR.sub }}> · {ch.grade}</span>
-                      ) : null}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
+          {childSelectionBlock.enabled !== false && (
+            <>
+              <label style={{ ...label, marginTop: 12 }}>
+                {childSelectionBlock.label || "Select child(ren)"}
+                {childSelectionBlock.required !== false && (
+                  <span style={{ color: SR.danger }}> *</span>
+                )}
+              </label>
+              {(parent.children || []).length === 0 ? (
+                <p style={{ fontSize: 12, color: SR.sub }}>
+                  No children found for this parent.
+                </p>
+              ) : (
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                >
+                  {(parent.children || []).map((ch, i) => {
+                    const sel = selectedChildren.includes(i);
+                    return (
+                      <label
+                        key={i}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "8px 10px",
+                          border: `1px solid ${sel ? SR.primary : SR.border}`,
+                          borderRadius: 8,
+                          cursor: "pointer",
+                          background: sel ? "#eff6ff" : "#fff",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={sel}
+                          onChange={() =>
+                            setSelectedChildren((prev) =>
+                              prev.includes(i)
+                                ? prev.filter((x) => x !== i)
+                                : [...prev, i],
+                            )
+                          }
+                        />
+                        <span style={{ fontSize: 13, color: SR.text }}>
+                          {ch.name || "—"}
+                          {ch.grade ? (
+                            <span style={{ color: SR.sub }}> · {ch.grade}</span>
+                          ) : null}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
     </>
   );
 
-  const renderProspect = () => (
-    <>
-      <label style={label}>Parent / Enquirer Name *</label>
-      <input
-        style={{ ...ctrl, marginBottom: 12 }}
-        value={prospect.name}
-        onChange={(e) => setProspect({ ...prospect, name: e.target.value })}
-      />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+  const renderProspect = () => {
+    if (prospectFormFields.length > 0) {
+      return (
         <div>
-          <label style={label}>Mobile</label>
-          <input
-            style={ctrl}
-            value={prospect.mobile}
-            onChange={(e) =>
-              setProspect({ ...prospect, mobile: e.target.value })
+          <div style={{ marginBottom: 10, fontWeight: 800, color: SR.text }}>
+            {prospectSrForm?.name || "Prospect Parent Details"}
+          </div>
+          <FormRenderer
+            fields={prospectFormFields}
+            formData={prospectFormData}
+            projectId={projectId}
+            onChange={(fieldName, value) =>
+              setProspectFormData((prev) => ({ ...prev, [fieldName]: value }))
             }
           />
         </div>
-        <div>
-          <label style={label}>Email</label>
-          <input
-            style={ctrl}
-            value={prospect.email}
-            onChange={(e) => setProspect({ ...prospect, email: e.target.value })}
-          />
-        </div>
+      );
+    }
+
+    return (
+      <div
+        style={{
+          border: "1px solid #fde68a",
+          background: "#fffbeb",
+          color: "#92400e",
+          borderRadius: 10,
+          padding: 14,
+          fontSize: 13,
+          lineHeight: 1.5,
+        }}
+      >
+        Prospect Parent form is not configured for this project. Configure it
+        from SR Settings → Prospect Parent → CRM sync API → Create form from CRM
+        body, then save.
       </div>
-      <label style={{ ...label, marginTop: 12 }}>Enquiry</label>
-      <textarea
-        style={{ ...ctrl, minHeight: 90 }}
-        value={prospect.enquiry}
-        onChange={(e) => setProspect({ ...prospect, enquiry: e.target.value })}
-        placeholder="Admission / school enquiry details"
-      />
-    </>
-  );
+    );
+  };
+
+  // Renders dropdown/text/category fields configured in SR Settings → channel form builder
+  const renderCustomChannelFields = () => {
+    const allFields = customChannelFields.filter(f => f.type !== "search");
+    if (!allFields.length) return null;
+    // Only one HierarchyCategorySelector per form — it already cascades through
+    // every configured level (Category → Subcategory → Topic …).
+    // If multiple Category Master fields exist, pick the one with the broadest
+    // coverage: prefer no maxLevel (full hierarchy), otherwise the highest maxLevel.
+    const catFields = allFields.filter(f => f.dataSource === "category");
+    const bestCatField: typeof catFields[0] | undefined =
+      catFields.find(f => !(f as any).categoryMaxLevel) ??          // prefer full hierarchy
+      catFields.reduce<typeof catFields[0] | undefined>((best, f) =>
+        best === undefined ||
+        ((f as any).categoryMaxLevel ?? 99) > ((best as any).categoryMaxLevel ?? 99)
+          ? f : best,
+        undefined,
+      );
+    let categoryConsumed = false;
+    const fields = allFields.filter(f => {
+      if (f.dataSource !== "category") return true;
+      if (f === bestCatField && !categoryConsumed) { categoryConsumed = true; return true; }
+      return false; // skip extra category fields
+    });
+    return (
+      <>
+        {fields.map(field => {
+          // Category Master: HierarchyCategorySelector renders its own level labels
+          // (Category *, Subcategory, Topic…) so we never show a redundant outer label.
+          // For all other field types the admin-set label is the only label.
+          const isCat = field.dataSource === "category";
+          const isSubjectField = fieldMatchesAnyKey(field, SUBJECT_FIELD_KEYS);
+          const isDescriptionField = fieldMatchesAnyKey(
+            field,
+            DESCRIPTION_FIELD_KEYS,
+          );
+
+          const control = (() => {
+            if (isCat) {
+              return projectId ? (
+                <HierarchyCategorySelector
+                  projectId={projectId}
+                  value={customCatFields[field.id] || {}}
+                  ticketType={finalInteraction()}
+                  mode="online"
+                  maxLevel={(field as any).categoryMaxLevel}
+                  onChange={value => {
+                    setCustomCatFields(prev => ({ ...prev, [field.id]: value }));
+                    setCustomFieldData(prev => ({ ...prev, [field.id]: value.displayPath || "" }));
+                  }}
+                />
+              ) : null;
+            }
+            if (field.dataSource === "static" && (field.staticOptions || []).length) {
+              return (
+                <select
+                  style={ctrl}
+                  value={customFieldData[field.id] || ""}
+                  onChange={e => setCustomFieldData(prev => ({ ...prev, [field.id]: e.target.value }))}
+                  required={!!field.required}
+                >
+                  <option value="">— Select —</option>
+                  {(field.staticOptions || []).map((opt: string) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              );
+            }
+            if (field.type === "textarea") {
+              return (
+                <textarea
+                  style={{ ...ctrl, minHeight: 80, resize: "vertical" }}
+                  value={
+                    isDescriptionField
+                      ? effectiveDescription
+                      : isSubjectField
+                        ? effectiveSubject
+                        : customFieldData[field.id] || ""
+                  }
+                  onChange={e => {
+                    if (isDescriptionField) {
+                      setDescription(e.target.value);
+                      return;
+                    }
+                    if (isSubjectField) {
+                      setSubject(e.target.value);
+                      return;
+                    }
+                    setCustomFieldData(prev => ({ ...prev, [field.id]: e.target.value }));
+                  }}
+                  required={!!field.required}
+                />
+              );
+            }
+            return (
+              <input
+                type={field.type === "mobile" ? "tel" : field.type === "email" ? "email" : field.type === "date" ? "date" : "text"}
+                style={ctrl}
+                value={
+                  isSubjectField
+                    ? effectiveSubject
+                    : isDescriptionField
+                      ? effectiveDescription
+                      : customFieldData[field.id] || ""
+                }
+                onChange={e => {
+                  if (isSubjectField) {
+                    setSubject(e.target.value);
+                    return;
+                  }
+                  if (isDescriptionField) {
+                    setDescription(e.target.value);
+                    return;
+                  }
+                  setCustomFieldData(prev => ({ ...prev, [field.id]: e.target.value }));
+                }}
+                required={!!field.required}
+              />
+            );
+          })();
+
+          return (
+            <div key={field.id} style={{ marginTop: 14 }}>
+              {/* Skip the outer label for category fields — HierarchyCategorySelector
+                  already renders its own level labels (Category *, Subcategory, …).
+                  Showing field.label on top would duplicate e.g. "Category" twice. */}
+              {!isCat && (
+                <label style={label}>
+                  {field.label}
+                  {field.required && <span style={{ color: SR.danger }}> *</span>}
+                </label>
+              )}
+              {control}
+            </div>
+          );
+        })}
+      </>
+    );
+  };
 
   const renderCategoryAndDetails = () => {
     const selectedCategory = categories.find(
@@ -857,48 +1861,130 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
     );
     return (
       <>
-        <label style={{ ...label, marginTop: 14 }}>Category / Sub-category</label>
-        <select
-          style={{ ...ctrl, marginBottom: 6 }}
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-        >
-          <option value="">Select a sub-category…</option>
-          {leafCategories.map((c) => (
-            <option key={c._id} value={c._id}>
-              {c.path || c.name}
-            </option>
-          ))}
-        </select>
-        {selectedCategory?.sr?.proactiveHelpText && (
-          <div
-            style={{
-              background: SR.successBg,
-              border: "1px solid #a7f3d0",
-              borderRadius: 8,
-              padding: "10px 12px",
-              fontSize: 13,
-              color: "#065f46",
-              marginTop: 6,
-            }}
-          >
-            {selectedCategory.sr.proactiveHelpText}
-          </div>
+        {categoryBlock.enabled !== false && (
+          <>
+            <label style={{ ...label, marginTop: 14 }}>
+              {categoryBlock.label || "Category / Sub-category"}
+              {categoryBlock.required !== false && (
+                <span style={{ color: SR.danger }}> *</span>
+              )}
+            </label>
+            {projectId && (
+              <div style={{ marginBottom: 8 }}>
+                <HierarchyCategorySelector
+                  projectId={projectId}
+                  value={categoryHierarchy}
+                  ticketType={finalInteraction()}
+                  mode="online"
+                  onChange={(value) => {
+                    setCategoryHierarchy(value);
+                    setCategoryId(
+                      value.level5 ||
+                        value.level4 ||
+                        value.level3 ||
+                        value.level2 ||
+                        value.level1 ||
+                        "",
+                    );
+                  }}
+                />
+              </div>
+            )}
+            <select
+              style={{
+                ...ctrl,
+                marginBottom: 6,
+                display: projectId ? "none" : "block",
+              }}
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+            >
+              <option value="">Select a sub-category…</option>
+              {leafCategories.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.path || c.name}
+                </option>
+              ))}
+            </select>
+          </>
         )}
-        <label style={{ ...label, marginTop: 14 }}>Subject</label>
-        <input
-          style={{ ...ctrl, marginBottom: 12 }}
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          placeholder="Brief subject"
-        />
-        <label style={label}>Description / Comments</label>
-        <textarea
-          style={{ ...ctrl, minHeight: 100 }}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Details of the request / complaint"
-        />
+        {categoryBlock.enabled !== false &&
+          selectedCategory?.sr?.proactiveHelpText && (
+            <div
+              style={{
+                background: SR.successBg,
+                border: "1px solid #a7f3d0",
+                borderRadius: 8,
+                padding: "10px 12px",
+                fontSize: 13,
+                color: "#065f46",
+                marginTop: 6,
+              }}
+            >
+              {selectedCategory.sr.proactiveHelpText}
+            </div>
+          )}
+        {subjectBlock.enabled !== false && (
+          <>
+            <label style={{ ...label, marginTop: 14 }}>
+              {subjectBlock.label || "Subject"}
+              {subjectBlock.required !== false && (
+                <span style={{ color: SR.danger }}> *</span>
+              )}
+            </label>
+            <input
+              style={{ ...ctrl, marginBottom: 12 }}
+                  value={effectiveSubject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder={subjectBlock.placeholder || "Brief subject"}
+            />
+          </>
+        )}
+        {descriptionBlock.enabled !== false && (
+          <>
+            <label style={label}>
+              {descriptionBlock.label || "Description / Comments"}
+              {descriptionBlock.required === true && (
+                <span style={{ color: SR.danger }}> *</span>
+              )}
+            </label>
+            <textarea
+              style={{ ...ctrl, minHeight: 100 }}
+                  value={effectiveDescription}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={
+                descriptionBlock.placeholder ||
+                "Details of the request / complaint"
+              }
+            />
+          </>
+        )}
+        {dynamicFieldsBlock.enabled !== false &&
+          activeSrFormFields.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 800,
+                  color: SR.text,
+                  marginBottom: 10,
+                }}
+              >
+                {dynamicFieldsBlock.label ||
+                  activeSrForm?.name ||
+                  "Additional Details"}
+              </div>
+              <FormRenderer
+                fields={activeSrFormFields}
+                formData={conditionData}
+                onChange={(fieldName, value) =>
+                  setFormData((prev) => ({ ...prev, [fieldName]: value }))
+                }
+                projectId={projectId}
+                branding={{ primaryColor: SR.primary }}
+              />
+            </div>
+          )}
       </>
     );
   };
@@ -910,8 +1996,8 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
       <div style={{ ...card, marginTop: 0 }}>
         <label style={label}>Specific assignee(s) — email</label>
         <p style={{ fontSize: 12, color: SR.sub, margin: "0 0 6px" }}>
-          Use when one or more specific people should own this ISR. First email =
-          primary assignee.
+          Use when one or more specific people should own this ISR. First email
+          = primary assignee.
         </p>
         <textarea
           style={{ ...ctrl, minHeight: 70 }}
@@ -929,7 +2015,12 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
     canPriority && blocks?.prioritySchedule?.enabled ? (
       <div style={{ ...card, marginTop: 0 }}>
         <label
-          style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14 }}
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            fontSize: 14,
+          }}
         >
           <input
             type="checkbox"
@@ -978,7 +2069,12 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
     canOffline && blocks?.offlineReEntry?.enabled ? (
       <div style={{ ...card, marginTop: 0 }}>
         <label
-          style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14 }}
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            fontSize: 14,
+          }}
         >
           <input
             type="checkbox"
@@ -1044,14 +2140,46 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
     <>
       <div style={card}>
         <BackBar
-          onBack={() => setStep("classify")}
-          label={`${finalInteraction()} · ${channel?.label || ""}`}
+          onBack={() => {
+            if (interactionType === "PSR" && !linkedParentTicketId) {
+              setStep("classify");
+              return;
+            }
+            setStep("type");
+          }}
+          label={
+            interactionType === "ISR"
+              ? "ISR"
+              : `${finalInteraction()} · ${channel?.label || ""}`
+          }
         />
         {flow === "existing_parent" && renderExistingParent()}
         {flow === "prospect_parent" && renderProspect()}
-        {flow !== "prospect_parent" &&
-          flow !== "junk" &&
-          renderCategoryAndDetails()}
+        {flow !== "prospect_parent" && flow !== "junk" && renderCustomChannelFields()}
+        {flow !== "prospect_parent" && flow !== "junk" && (
+          // When custom channel fields are configured, skip the hardcoded category/
+          // subject/description blocks — they are replaced by the custom fields.
+          // Fall back to the standard blocks only when no custom fields are defined.
+          customChannelFields.length === 0
+            ? renderCategoryAndDetails()
+            : activeSrFormFields.length > 0 && dynamicFieldsBlock.enabled !== false
+              ? (
+                <div style={{ marginTop: 18 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: SR.text, marginBottom: 10 }}>
+                    {dynamicFieldsBlock.label || activeSrForm?.name || "Additional Details"}
+                  </div>
+                  <FormRenderer
+                    fields={activeSrFormFields}
+                    formData={conditionData}
+                    onChange={(fieldName, value) =>
+                      setFormData((prev) => ({ ...prev, [fieldName]: value }))
+                    }
+                    projectId={projectId}
+                    branding={{ primaryColor: SR.primary }}
+                  />
+                </div>
+              ) : null
+        )}
         {flow === "junk" && (
           <p style={{ fontSize: 13, color: SR.sub }}>
             This call will be logged as junk / telemarketing. No ticket is
@@ -1106,24 +2234,62 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
       subtitle="Raise a PSR or ISR — pick the type, classify, then fill the form."
       embedded={embedded}
     >
-      {linkedPsrId && (
+      {sourceContext && (
         <div
           style={{
             ...srStyles.card,
             maxWidth: 760,
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            justifyContent: "space-between",
+            gap: 12,
+            borderLeft: "4px solid #7C3AED",
+            fontSize: 13,
+            color: SR.text,
+          }}
+        >
+          <span>
+            Creating PSR from{" "}
+            <strong>{sourceContext.type === "email" ? "Email" : "IVR"}</strong>
+            {sourceContext.uniqueId ? ` ${sourceContext.uniqueId}` : ""}.
+          </span>
+          <button
+            type="button"
+            style={{ ...srButton("neutral"), flexShrink: 0 }}
+            onClick={() => navigate(sourceContext.returnTo)}
+          >
+            {sourceContext.type === "email" ? "Back to Email" : "Back to IVR"}
+          </button>
+        </div>
+      )}
+      {linkedParentTicketId && (
+        <div
+          style={{
+            ...srStyles.card,
+            maxWidth: 760,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
             borderLeft: "4px solid #2563EB",
             fontSize: 13,
             color: SR.text,
           }}
         >
-          🔗 Creating an <strong>ISR linked to the parent PSR</strong>. It will
-          appear under the PSR's Linked ISRs.
+          <span>
+            Creating an <strong>ISR linked to this ticket</strong>. It will appear
+            under the ticket's Linked ISRs.
+          </span>
+          <button
+            type="button"
+            style={{ ...srButton("neutral"), flexShrink: 0 }}
+            onClick={() => navigate(detailPath(linkedParentTicketId))}
+          >
+            Back to ticket
+          </button>
         </div>
       )}
-      {step === "type" && !linkedPsrId && renderTypeStep()}
+      {step === "type" && !linkedParentTicketId && renderTypeStep()}
       {step === "classify" && renderClassifyStep()}
       {step === "form" && renderFormStep()}
     </SrPage>
@@ -1151,11 +2317,12 @@ const TypeCard: React.FC<{
       cursor: disabled ? "not-allowed" : "pointer",
       opacity: disabled ? 0.5 : 1,
     }}
-    onMouseEnter={(e) => !disabled && (e.currentTarget.style.borderColor = color)}
-    onMouseLeave={(e) => (e.currentTarget.style.borderColor = SR.border)}
+    className="sr-request-source-card"
   >
     <div style={{ fontSize: 26 }}>{icon}</div>
-    <div style={{ fontWeight: 700, fontSize: 15, marginTop: 8, color: SR.text }}>
+    <div
+      style={{ fontWeight: 700, fontSize: 15, marginTop: 8, color: SR.text }}
+    >
       {title}
     </div>
     <div style={{ fontSize: 13, color: SR.sub, marginTop: 4 }}>{desc}</div>
@@ -1166,7 +2333,9 @@ const BackBar: React.FC<{ onBack: () => void; label: string }> = ({
   onBack,
   label,
 }) => (
-  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+  <div
+    style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}
+  >
     <button
       onClick={onBack}
       style={{

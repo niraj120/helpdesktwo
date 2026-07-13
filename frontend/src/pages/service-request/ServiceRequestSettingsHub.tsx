@@ -5,27 +5,20 @@ import SrTabs from "../../components/sr/SrTabs";
 import { srStyles, SR } from "../../utils/srTheme";
 import { useProjectContext } from "../../contexts/ProjectContext";
 import { api } from "../../utils/api";
-import ServiceRequestSettings from "./ServiceRequestSettings";
+import SRSettingsNew from "./SRSettingsNew";
 import ServiceRequestRouting from "./ServiceRequestRouting";
 import ServiceRequestFormSchemas from "./ServiceRequestFormSchemas";
-import RoleMappingRules from "./RoleMappingRules";
-import ServiceRequestClusters from "./ServiceRequestClusters";
 import ServiceRequestClassifyChannels from "./ServiceRequestClassifyChannels";
 import PsrDetailLayoutSettings from "./PsrDetailLayoutSettings";
+import ServiceRequestNotifications from "./ServiceRequestNotifications";
 
-/**
- * One settings home. Pick the project once at the top, then move between the
- * General / Routing / Forms / Role Mapping tabs without re-selecting. Clusters
- * spans projects, so that tab ignores the project picker.
- */
 const TABS = [
-  { key: "general", label: "General", icon: "⚙️" },
-  { key: "routing", label: "Routing", icon: "🧭" },
-  { key: "channels", label: "Classify Channels", icon: "🗂️" },
-  { key: "detail", label: "Detail Layout", icon: "Layout" },
-  { key: "forms", label: "Forms", icon: "📝" },
-  { key: "rolemap", label: "Role Mapping", icon: "👤" },
-  { key: "clusters", label: "Clusters", icon: "🏫" },
+  { key: "general", label: "Configure" },
+  { key: "channels", label: "Channels" },
+  { key: "routing", label: "Routing" },
+  { key: "forms", label: "Forms" },
+  { key: "notifications", label: "Notifications" },
+  { key: "layout", label: "Detail Layout" },
 ];
 
 interface ProjectOpt {
@@ -45,6 +38,10 @@ const ServiceRequestSettingsHub: React.FC = () => {
   const [projectId, setProjectId] = useState(currentProjectId || "");
 
   useEffect(() => {
+    if (!projectId && currentProjectId) setProjectId(currentProjectId);
+  }, [currentProjectId, projectId]);
+
+  useEffect(() => {
     (async () => {
       try {
         const res = await api.get("/projects", { params: { limit: 100 } });
@@ -57,57 +54,52 @@ const ServiceRequestSettingsHub: React.FC = () => {
     })();
   }, []);
 
-  const usesProject = active !== "clusters";
-
   return (
     <SrPage
-      title="Service Request Settings"
-      subtitle="Set up everything for service requests in one place — pick a project once, then move between sections."
+      title="Ticket Type Settings"
+      subtitle="Enable PSR/ISR as configurable ticket types and reuse the normal ticket platform wherever possible."
       actions={
-        usesProject ? (
-          <select
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            style={{ ...srStyles.ctrl, minWidth: 240 }}
-          >
-            <option value="">Select a project…</option>
-            {projects.map((p) => (
-              <option key={p._id} value={p._id}>
-                {p.name}
-                {p.code ? ` (${p.code})` : ""}
-              </option>
-            ))}
-          </select>
-        ) : undefined
+        <select
+          value={projectId}
+          onChange={(e) => setProjectId(e.target.value)}
+          style={{ ...srStyles.ctrl, minWidth: 240 }}
+        >
+          <option value="">Select a project...</option>
+          {projects.map((p) => (
+            <option key={p._id} value={p._id}>
+              {p.name}
+              {p.code ? ` (${p.code})` : ""}
+            </option>
+          ))}
+        </select>
       }
     >
       <SrTabs tabs={TABS} active={active} onChange={setActive} />
 
-      {usesProject && !projectId && (
+      {!projectId && (
         <div style={{ ...srStyles.card, color: SR.sub }}>
-          👆 Pick a project above to configure its settings.
+          Pick a project above to configure its settings.
         </div>
       )}
 
-      {active === "general" && projectId && (
-        <ServiceRequestSettings embedded projectId={projectId} />
-      )}
-      {active === "routing" && projectId && (
-        <ServiceRequestRouting embedded projectId={projectId} />
+      {active === "general" && (
+        <SRSettingsNew projectId={projectId} />
       )}
       {active === "channels" && projectId && (
         <ServiceRequestClassifyChannels embedded projectId={projectId} />
       )}
-      {active === "detail" && projectId && (
-        <PsrDetailLayoutSettings embedded projectId={projectId} />
+      {active === "routing" && projectId && (
+        <ServiceRequestRouting embedded projectId={projectId} />
       )}
       {active === "forms" && projectId && (
         <ServiceRequestFormSchemas embedded projectId={projectId} />
       )}
-      {active === "rolemap" && projectId && (
-        <RoleMappingRules embedded projectId={projectId} />
+      {active === "notifications" && projectId && (
+        <ServiceRequestNotifications projectId={projectId} />
       )}
-      {active === "clusters" && <ServiceRequestClusters embedded />}
+      {active === "layout" && projectId && (
+        <PsrDetailLayoutSettings embedded projectId={projectId} />
+      )}
     </SrPage>
   );
 };

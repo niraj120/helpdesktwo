@@ -1,72 +1,90 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import SrPage from "../../components/sr/SrPage";
 import { srStyles, srButton } from "../../utils/srTheme";
 import { useProjectContext } from "../../contexts/ProjectContext";
 import { api } from "../../utils/api";
 import { serviceRequestApi } from "../../services/serviceRequests";
+import { PERMISSIONS } from "../../constants/permissions";
+import { usePermissions } from "../../hooks/usePermissions";
 
 interface ProjectOpt {
   _id: string;
   name: string;
   code?: string;
 }
-interface CategoryNode {
-  _id: string;
-  name: string;
-  parentId?: string | null;
-  path?: string;
-}
+
 interface Intake {
   _id: string;
   uniqueId: string;
   fromName?: string;
   fromEmail: string;
   subject: string;
+  body?: string;
+  htmlBody?: string;
+  messageId?: string;
+  inReplyTo?: string;
+  references?: string[];
+  projectEmailConfigId?: string;
   receivedAt: string;
   dueAt?: string;
   status: string;
-  senderType?: string;
+  actions?: Array<{
+    type: string;
+    refType?: string;
+    refId?: string;
+    refNumber?: string;
+  }>;
 }
 
-const SENDER_TYPES = [
-  { v: "existing_student", l: "Existing Student" },
-  { v: "left_student", l: "Left Student" },
-  { v: "new_admission", l: "New Admission" },
-  { v: "others", l: "Others" },
-];
-const ACTIONS = [
-  { v: "psr", l: "Generate PSR" },
-  { v: "isr", l: "Generate ISR" },
-  { v: "lead", l: "Create Lead" },
-  { v: "responded", l: "Responded (reply)" },
-  { v: "duplicate", l: "Duplicate" },
-  { v: "forward", l: "Forward" },
-  { v: "repository", l: "Repository" },
-];
+const stripHtml = (value?: string) =>
+  String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
-const EmailTriageInbox: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
+const LIVE_REFRESH_INTERVAL_MS = 15000;
+
+const EmailTriageInbox: React.FC<{
+  embedded?: boolean;
+  hideProjectSelector?: boolean;
+}> = ({ embedded, hideProjectSelector }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isProjectPortal = location.pathname.includes("/portal/");
+  const serviceBasePath = isProjectPortal
+    ? `${location.pathname.replace(/\/service-requests(?:\/.*)?$/, "")}/service-requests`
+    : "/service-requests";
+  const detailPath = (id: string) => `${serviceBasePath}/${id}`;
+
+  const { hasPermission } = usePermissions();
+  const canConvert = hasPermission(PERMISSIONS.EMAIL_TRIAGE_CONVERT);
   const { currentProjectId } = useProjectContext();
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [projectId, setProjectId] = useState(currentProjectId || "");
   const [status, setStatus] = useState("open");
   const [rows, setRows] = useState<Intake[]>([]);
-  const [categories, setCategories] = useState<CategoryNode[]>([]);
-  const [selected, setSelected] = useState<Intake | null>(null);
+  const knownRowIdsRef = useRef<Set<string>>(new Set());
+  const hasLoadedRowsRef = useRef(false);
+  const [unreadRowIds, setUnreadRowIds] = useState<Set<string>>(new Set());
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showIngest, setShowIngest] = useState(false);
-  const [ingestForm, setIngestForm] = useState({ fromEmail: "", subject: "", body: "" });
-
-  // action panel state
-  const [actType, setActType] = useState("psr");
-  const [senderType, setSenderType] = useState("existing_student");
-  const [categoryId, setCategoryId] = useState("");
-  const [remark, setRemark] = useState("");
-  const [replyContent, setReplyContent] = useState("");
-  const [refNumber, setRefNumber] = useState("");
-  const [leadForm, setLeadForm] = useState({ name: "", email: "", contactNumber: "", grade: "", enquiryNo: "" });
-  const [wip, setWip] = useState(false);
+  const [ingestForm, setIngestForm] = useState({
+    fromEmail: "",
+    subject: "",
+    body: "",
+  });
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    if (hideProjectSelector && currentProjectId && projectId !== currentProjectId) {
+      setProjectId(currentProjectId);
+    }
+  }, [hideProjectSelector, currentProjectId, projectId]);
+
+  useEffect(() => {
+    if (hideProjectSelector) return;
     (async () => {
       try {
         const res = await api.get("/projects", { params: { limit: 100 } });
@@ -77,67 +95,152 @@ const EmailTriageInbox: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
         console.error(e);
       }
     })();
+  }, [hideProjectSelector]);
+
+  const markRowRead = (id: string) => {
+    setUnreadRowIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const highlightUnreadRow = (id: string) =>
+    unreadRowIds.has(id)
+      ? { background: "#fffbeb", boxShadow: "inset 3px 0 0 #f59e0b" }
+      : {};
+
+  const rememberRows = useCallback((items: Intake[], silent?: boolean) => {
+    const ids = new Set(items.map((item) => item._id).filter(Boolean));
+    if (silent && hasLoadedRowsRef.current) {
+      const newIds = items
+        .map((item) => item._id)
+        .filter((id) => id && !knownRowIdsRef.current.has(id));
+      if (newIds.length) {
+        setUnreadRowIds((prev) => {
+          const next = new Set(prev);
+          newIds.forEach((id) => next.add(id));
+          return next;
+        });
+      }
+    } else if (!silent) {
+      setUnreadRowIds(new Set());
+    }
+    knownRowIdsRef.current = ids;
+    hasLoadedRowsRef.current = true;
   }, []);
 
-  const load = async () => {
+  const load = useCallback(async (options?: { silent?: boolean }) => {
     try {
       const r = await serviceRequestApi.emailIntake.list({
         projectId: projectId || undefined,
         status,
       });
-      setRows(r.items || []);
+      const items = r.items || [];
+      rememberRows(items, options?.silent);
+      setRows(items);
     } catch (e) {
       console.error(e);
       setRows([]);
     }
-  };
+  }, [projectId, rememberRows, status]);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, status]);
+  }, [load]);
 
   useEffect(() => {
-    if (!projectId) {
-      setCategories([]);
-      return;
-    }
-    serviceRequestApi
-      .categoriesForProject(projectId)
-      .then((r) => setCategories(r?.data || r || []))
-      .catch(() => setCategories([]));
-  }, [projectId]);
+    const refreshSilently = () => load({ silent: true });
+    const intervalId = window.setInterval(refreshSilently, LIVE_REFRESH_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshSilently();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [load]);
 
-  const leaves = useMemo(() => {
-    const parents = new Set(
-      categories.map((c) => (c.parentId ? String(c.parentId) : "")).filter(Boolean),
-    );
-    return categories.filter((c) => !parents.has(String(c._id)));
-  }, [categories]);
+  const startEmailPsr = (email: Intake, override?: Partial<Record<string, any>>) => {
+    navigate(`${serviceBasePath}?tab=new&sourceType=email&sourceId=${email._id}`, {
+      state: {
+        sourceContext: {
+          type: "email",
+          id: email._id,
+          returnTo: `${serviceBasePath}?tab=email`,
+          uniqueId: email.uniqueId,
+          fromName: email.fromName,
+          fromEmail: email.fromEmail,
+          subject: email.subject,
+          body: email.body || stripHtml(email.htmlBody),
+          messageId: email.messageId,
+          inReplyTo: email.inReplyTo,
+          references: email.references,
+          sourceEmailConfigId: email.projectEmailConfigId,
+          ...override,
+        },
+      },
+    });
+  };
 
-  const submitAction = async () => {
-    if (!selected) return;
-    setMsg(null);
+  const markEmailJunk = async (email: Intake) => {
     try {
-      await serviceRequestApi.emailIntake.action(selected._id, {
-        type: actType,
-        senderType,
-        categoryId: actType === "psr" || actType === "isr" ? categoryId : undefined,
-        remark,
-        replyContent: actType === "responded" ? replyContent : undefined,
-        refNumber: actType === "duplicate" ? refNumber : undefined,
-        lead: actType === "lead" ? leadForm : undefined,
-        wip,
+      await serviceRequestApi.emailIntake.action(email._id, {
+        type: "junk",
+        remark: "Marked as junk from email triage",
       });
-      setMsg("Action recorded.");
-      setSelected(null);
-      setRemark("");
-      setReplyContent("");
-      setRefNumber("");
-      setWip(false);
+      setMsg("Email marked as junk.");
+      setSelectedId(null);
       load();
     } catch (e: any) {
-      setMsg(e?.response?.data?.message || "Action failed.");
+      setMsg(e?.response?.data?.message || "Failed to mark email as junk.");
+    }
+  };
+
+  const toggleRowSelection = (id: string) => {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allRowsSelected =
+    rows.length > 0 && rows.every((row) => selectedRowIds.has(row._id));
+
+  const bulkEmailAction = async (type: "junk") => {
+    const ids = Array.from(selectedRowIds);
+    if (!ids.length) return;
+    try {
+      await serviceRequestApi.emailIntake.bulkAction({
+        ids,
+        type,
+        remark: "Bulk marked as junk from email triage",
+      });
+      setMsg(`${ids.length} email(s) updated.`);
+      setSelectedRowIds(new Set());
+      setSelectedId(null);
+      load();
+    } catch (e: any) {
+      setMsg(e?.response?.data?.message || "Bulk action failed.");
+    }
+  };
+
+  const bulkDeleteEmails = async () => {
+    const ids = Array.from(selectedRowIds);
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} selected email(s)?`)) return;
+    try {
+      await serviceRequestApi.emailIntake.bulkDelete(ids);
+      setMsg(`${ids.length} email(s) deleted.`);
+      setSelectedRowIds(new Set());
+      setSelectedId(null);
+      load();
+    } catch (e: any) {
+      setMsg(e?.response?.data?.message || "Delete failed.");
     }
   };
 
@@ -170,11 +273,22 @@ const EmailTriageInbox: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     color: "#374151",
     cursor: "pointer",
   };
+  const statusChip = (value: string): React.CSSProperties => ({
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: 9999,
+    padding: "2px 8px",
+    fontSize: 11,
+    fontWeight: 700,
+    color: value === "junk" ? "#991b1b" : value === "closed" ? "#047857" : "#1d4ed8",
+    background: value === "junk" ? "#fee2e2" : value === "closed" ? "#ecfdf5" : "#eef2ff",
+    textTransform: "capitalize",
+  });
 
   return (
     <SrPage
       title="Email Triage Inbox"
-      subtitle="Read, classify and convert emails into PSR/ISR/leads."
+      subtitle="Review inbound emails and convert them into PSR through the configured New Request flow."
       embedded={embedded}
       actions={
         <button onClick={() => setShowIngest(!showIngest)} style={srButton("neutral")}>
@@ -182,126 +296,206 @@ const EmailTriageInbox: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
         </button>
       }
     >
+      {msg && <div style={{ marginBottom: 12, fontSize: 13, color: "#047857" }}>{msg}</div>}
 
-        {msg && <div style={{ marginBottom: 12, fontSize: 13, color: "#047857" }}>{msg}</div>}
-
-        <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        {!hideProjectSelector && (
           <select style={ctrl} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
             <option value="">All projects</option>
             {projects.map((p) => (
               <option key={p._id} value={p._id}>{p.name}</option>
             ))}
           </select>
-          <select style={ctrl} value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="open">Open</option>
-            <option value="wip">WIP</option>
-            <option value="closed">Closed</option>
-            <option value="all">All</option>
-          </select>
-        </div>
-
-        {showIngest && (
-          <div style={card}>
-            <strong>Ingest test email</strong> (requires a selected project)
-            <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-              <input style={{ ...ctrl, flex: 1 }} placeholder="From email" value={ingestForm.fromEmail} onChange={(e) => setIngestForm({ ...ingestForm, fromEmail: e.target.value })} />
-              <input style={{ ...ctrl, flex: 2 }} placeholder="Subject" value={ingestForm.subject} onChange={(e) => setIngestForm({ ...ingestForm, subject: e.target.value })} />
-            </div>
-            <textarea style={{ ...ctrl, width: "100%", minHeight: 60, marginTop: 8 }} placeholder="Body" value={ingestForm.body} onChange={(e) => setIngestForm({ ...ingestForm, body: e.target.value })} />
-            <button onClick={ingest} style={{ ...srButton("success"), marginTop: 8 }}>Ingest</button>
-          </div>
         )}
+        <select style={ctrl} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="open">Open</option>
+          <option value="wip">WIP</option>
+          <option value="closed">Closed</option>
+          <option value="junk">Junk</option>
+          <option value="all">All</option>
+        </select>
+      </div>
 
+      {showIngest && (
         <div style={card}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={th}>Unique ID</th>
-                <th style={th}>From</th>
-                <th style={th}>Subject</th>
-                <th style={th}>Received</th>
-                <th style={th}>Due</th>
-                <th style={th}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr><td style={{ ...td, color: "#9ca3af" }} colSpan={6}>No emails.</td></tr>
-              ) : (
-                rows.map((r) => (
-                  <tr
-                    key={r._id}
-                    onClick={() => setSelected(r)}
-                    style={{
-                      cursor: "pointer",
-                      background: selected?._id === r._id ? "#eef2ff" : "transparent",
-                      transition: "background 0.12s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (selected?._id !== r._id)
-                        e.currentTarget.style.background = "#f8fafc";
-                    }}
-                    onMouseLeave={(e) => {
-                      if (selected?._id !== r._id)
-                        e.currentTarget.style.background = "transparent";
-                    }}
-                  >
-                    <td style={td}>{r.uniqueId}</td>
-                    <td style={td}>{r.fromName || r.fromEmail}</td>
-                    <td style={td}>{r.subject}</td>
-                    <td style={td}>{new Date(r.receivedAt).toLocaleString()}</td>
-                    <td style={td}>{r.dueAt ? new Date(r.dueAt).toLocaleString() : "—"}</td>
-                    <td style={td}>{r.status}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {selected && (
-          <div style={card}>
-            <strong>Action on {selected.uniqueId}</strong> — {selected.subject}
-            <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-              <select style={ctrl} value={senderType} onChange={(e) => setSenderType(e.target.value)}>
-                {SENDER_TYPES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
-              </select>
-              <select style={ctrl} value={actType} onChange={(e) => setActType(e.target.value)}>
-                {ACTIONS.map((a) => <option key={a.v} value={a.v}>{a.l}</option>)}
-              </select>
-            </div>
-
-            {(actType === "psr" || actType === "isr") && (
-              <select style={{ ...ctrl, marginTop: 10, width: "100%" }} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                <option value="">Select sub-category…</option>
-                {leaves.map((c) => <option key={c._id} value={c._id}>{c.path || c.name}</option>)}
-              </select>
-            )}
-            {actType === "responded" && (
-              <textarea style={{ ...ctrl, width: "100%", minHeight: 70, marginTop: 10 }} placeholder="Reply to send to the sender" value={replyContent} onChange={(e) => setReplyContent(e.target.value)} />
-            )}
-            {actType === "duplicate" && (
-              <input style={{ ...ctrl, marginTop: 10, width: "100%" }} placeholder="Existing SR number" value={refNumber} onChange={(e) => setRefNumber(e.target.value)} />
-            )}
-            {actType === "lead" && (
-              <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-                <input style={{ ...ctrl, flex: 1 }} placeholder="Name" value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} />
-                <input style={{ ...ctrl, flex: 1 }} placeholder="Contact" value={leadForm.contactNumber} onChange={(e) => setLeadForm({ ...leadForm, contactNumber: e.target.value })} />
-                <input style={{ ...ctrl, flex: 1 }} placeholder="Grade" value={leadForm.grade} onChange={(e) => setLeadForm({ ...leadForm, grade: e.target.value })} />
-              </div>
-            )}
-
-            <input style={{ ...ctrl, marginTop: 10, width: "100%" }} placeholder="Remark (optional)" value={remark} onChange={(e) => setRemark(e.target.value)} />
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
-              <input type="checkbox" checked={wip} onChange={(e) => setWip(e.target.checked)} />
-              Keep open (WIP) — more actions needed on this email
-            </label>
-            <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
-              <button onClick={submitAction} style={srButton("primary")}>Submit action</button>
-              <button onClick={() => setSelected(null)} style={cancelBtn}>Cancel</button>
-            </div>
+          <strong>Ingest test email</strong> (requires a selected project)
+          <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+            <input style={{ ...ctrl, flex: 1 }} placeholder="From email" value={ingestForm.fromEmail} onChange={(e) => setIngestForm({ ...ingestForm, fromEmail: e.target.value })} />
+            <input style={{ ...ctrl, flex: 2 }} placeholder="Subject" value={ingestForm.subject} onChange={(e) => setIngestForm({ ...ingestForm, subject: e.target.value })} />
           </div>
-        )}
+          <textarea style={{ ...ctrl, width: "100%", minHeight: 60, marginTop: 8 }} placeholder="Body" value={ingestForm.body} onChange={(e) => setIngestForm({ ...ingestForm, body: e.target.value })} />
+          <button onClick={ingest} style={{ ...srButton("success"), marginTop: 8 }}>Ingest</button>
+        </div>
+      )}
+
+      {canConvert && selectedRowIds.size > 0 && (
+        <div
+          style={{
+            ...card,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 12,
+            borderColor: "#bfdbfe",
+            background: "#f8fbff",
+          }}
+        >
+          <strong>{selectedRowIds.size} email(s) selected</strong>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" onClick={() => bulkEmailAction("junk")} style={srButton("danger")}>
+              Mark Junk
+            </button>
+            <button type="button" onClick={bulkDeleteEmails} style={srButton("danger")}>
+              Delete
+            </button>
+            <button type="button" onClick={() => setSelectedRowIds(new Set())} style={cancelBtn}>
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div style={card}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              {canConvert && (
+                <th style={{ ...th, width: 42 }}>
+                  <input
+                    type="checkbox"
+                    checked={allRowsSelected}
+                    onChange={() =>
+                      setSelectedRowIds(
+                        allRowsSelected ? new Set() : new Set(rows.map((row) => row._id)),
+                      )
+                    }
+                  />
+                </th>
+              )}
+              <th style={th}>Unique ID</th>
+              <th style={th}>From</th>
+              <th style={th}>Subject</th>
+              <th style={th}>Received</th>
+              <th style={th}>Due</th>
+              <th style={th}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+                  <tr><td style={{ ...td, color: "#9ca3af" }} colSpan={canConvert ? 7 : 6}>No emails.</td></tr>
+            ) : (
+              rows.map((r) => {
+                const expanded = selectedId === r._id;
+                const ticketAction = [...(r.actions || [])]
+                  .reverse()
+                  .find((a) => a.refType === "ticket" && a.refId);
+                const bodyPreview = r.body || stripHtml(r.htmlBody);
+                return (
+                  <React.Fragment key={r._id}>
+                    <tr
+                      className={expanded ? "sr-triage-row sr-triage-row--selected" : "sr-triage-row"}
+                      onClick={() => {
+                        markRowRead(r._id);
+                        setSelectedId(expanded ? null : r._id);
+                      }}
+                      style={{
+                        cursor: "pointer",
+                        background: expanded ? "#eef2ff" : "transparent",
+                        transition: "background 0.12s ease",
+                        ...(!expanded ? highlightUnreadRow(r._id) : {}),
+                      }}
+                        >
+                          {canConvert && (
+                            <td style={td}>
+                              <input
+                                type="checkbox"
+                                checked={selectedRowIds.has(r._id)}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={() => toggleRowSelection(r._id)}
+                              />
+                            </td>
+                          )}
+                          <td style={td}>{r.uniqueId}</td>
+                      <td style={td}>{r.fromName || r.fromEmail}</td>
+                      <td style={td}>{r.subject}</td>
+                      <td style={td}>{new Date(r.receivedAt).toLocaleString()}</td>
+                      <td style={td}>{r.dueAt ? new Date(r.dueAt).toLocaleString() : "-"}</td>
+                      <td style={td}>
+                        <span style={statusChip(r.status)}>{r.status}</span>
+                        {ticketAction?.refId && (
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              navigate(detailPath(String(ticketAction.refId)));
+                            }}
+                            style={{
+                              marginLeft: 8,
+                              border: "1px solid #a7f3d0",
+                              background: "#ecfdf5",
+                              color: "#047857",
+                              borderRadius: 8,
+                              padding: "4px 8px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {ticketAction.refNumber || "View SR"}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {expanded && (
+                      <tr>
+                            <td colSpan={canConvert ? 7 : 6} style={{ ...td, background: "#f8fafc" }}>
+                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, background: "#fff", padding: 14 }}>
+                            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
+                              From {r.fromName || r.fromEmail} - {new Date(r.receivedAt).toLocaleString()}
+                            </div>
+                            <div style={{ fontWeight: 800, marginBottom: 8 }}>{r.subject}</div>
+                            <div
+                              style={{
+                                whiteSpace: "pre-wrap",
+                                color: "#334155",
+                                fontSize: 13,
+                                lineHeight: 1.55,
+                                border: "1px solid #eef2f7",
+                                borderRadius: 10,
+                                padding: 12,
+                                maxHeight: 260,
+                                overflow: "auto",
+                                background: "#fbfdff",
+                              }}
+                            >
+                              {bodyPreview || "No email body captured."}
+                            </div>
+                            <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+                              {canConvert && (
+                                <>
+                                  <button type="button" onClick={() => startEmailPsr(r)} style={srButton("primary")}>
+                                    Create PSR
+                                  </button>
+                                  <button type="button" onClick={() => markEmailJunk(r)} style={srButton("danger")}>
+                                    Mark as Junk
+                                  </button>
+                                </>
+                              )}
+                              <button type="button" onClick={() => setSelectedId(null)} style={cancelBtn}>
+                                Collapse
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </SrPage>
   );
 };

@@ -1,18 +1,21 @@
-import React, { useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import React from "react";
+import { useLocation } from "react-router-dom";
+import AgentTicketDetail from "../AgentTicketDetail";
 
 /**
- * SR detail is consolidated into the standard ticket detail page
- * (AgentTicketDetail), which now renders the SR lifecycle panel for PSR/ISR
- * tickets (audit Step E). This route redirects to keep old links working.
+ * PSR/ISR detail must use the same ticket-detail experience as normal queries.
+ *
+ * Keep this route as a wrapper instead of a redirect:
+ * - /service-requests/:id remains guarded by SR permissions.
+ * - /tickets/:id remains guarded by normal ticket permissions.
+ * - Both render the same detail UI, including SR progress, Linked ISR, PSL Call,
+ *   replies, notes, history, audit, and the right-side query panels.
  */
 const ServiceRequestDetail: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  useEffect(() => {
-    if (id) navigate(`/tickets/${id}`, { replace: true });
-  }, [id, navigate]);
-  return null;
+  const location = useLocation();
+  const isProjectPortal = location.pathname.includes("/portal/");
+
+  return <AgentTicketDetail wrapWithLayout={!isProjectPortal} />;
 };
 
 export default ServiceRequestDetail;

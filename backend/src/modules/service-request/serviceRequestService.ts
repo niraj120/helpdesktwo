@@ -28,6 +28,9 @@ import {
   findDuplicateServiceRequests,
   DuplicateQuery,
 } from "./srDuplicateDetection";
+import { resolveSrReopenBlock } from "./srMasterData";
+import { renderTemplate } from "./srConditionEngine";
+import { SrNotificationTemplate } from "../../models/SrNotificationTemplate";
 
 export class SrError extends Error {
   status: number;
@@ -93,30 +96,54 @@ async function getProjectSrConfig(projectId: any) {
 }
 
 // ── Re-open assignee (configurable) ──────────────────────────────────────────
-// Vector re-opens auto-assign to the Principal. Configurable via sr.reopen so
-// the actual person/role can be set later without code changes.
-async function resolveReopenAssignee(
+// Vector re-opens auto-assign to the Principal. Configurable so the actual
+// person/role can be set without code changes. Resolution order:
+//   1. category(+center) reopen block on CategoryAssignmentConfig
+//   2. project-level sr.reopen
+async function resolveRoleAssignee(
+  roleId: string,
   projectId: any,
 ): Promise<mongoose.Types.ObjectId | null> {
+  const inProject = await User.findOne({
+    role: roleId,
+    isActive: true,
+    projects: projectId,
+  })
+    .select("_id")
+    .lean();
+  if (inProject) return inProject._id as any;
+  const anyUser = await User.findOne({ role: roleId, isActive: true })
+    .select("_id")
+    .lean();
+  return anyUser ? (anyUser._id as any) : null;
+}
+
+async function resolveReopenAssignee(
+  projectId: any,
+  categoryId?: any,
+  centerId?: any,
+): Promise<mongoose.Types.ObjectId | null> {
+  // 1. Category(+center) reopen block takes precedence when configured.
+  if (categoryId) {
+    const block = await resolveSrReopenBlock(
+      String(projectId),
+      String(categoryId),
+      centerId ? String(centerId) : null,
+    );
+    if (block?.assignToUserId)
+      return new mongoose.Types.ObjectId(block.assignToUserId);
+    if (block?.assignToRoleId) {
+      const u = await resolveRoleAssignee(block.assignToRoleId, projectId);
+      if (u) return u;
+    }
+  }
+  // 2. Project-level fallback (sr.reopen).
   const cfg = await getProjectSrConfig(projectId);
   const r = cfg.reopen || {};
   if (r.assignToUserId) return new mongoose.Types.ObjectId(r.assignToUserId);
   if (r.assignToRoleId) {
-    const inProject = await User.findOne({
-      role: r.assignToRoleId,
-      isActive: true,
-      projects: projectId,
-    })
-      .select("_id")
-      .lean();
-    if (inProject) return inProject._id as any;
-    const anyUser = await User.findOne({
-      role: r.assignToRoleId,
-      isActive: true,
-    })
-      .select("_id")
-      .lean();
-    if (anyUser) return anyUser._id as any;
+    const u = await resolveRoleAssignee(r.assignToRoleId, projectId);
+    if (u) return u;
   }
   return null;
 }
@@ -131,6 +158,7 @@ const EVENT_TRIGGER: Record<string, string> = {
   delegated: "sr_task_assigned",
   reopened: "sr_reopened",
   parent_closed: "sr_closed",
+  cancelled: "ticket_status_changed",
 };
 
 export async function notifySrWatchers(
@@ -142,6 +170,43 @@ export async function notifySrWatchers(
     const recipients = new Set<string>();
     if (ticket.assignedTo) recipients.add(String(ticket.assignedTo));
     (ticket.cc || []).forEach((u: any) => recipients.add(String(u)));
+
+    // Per-project, per-event template (#9). Missing/disabled → built-in default.
+    let title = `Service Request ${ticket.ticketNumber}`;
+    let body = `Update: ${event.replace(/_/g, " ")}`;
+    const tpl = await SrNotificationTemplate.findOne({
+      projectId: ticket.project,
+      event,
+      enabled: true,
+    }).lean();
+    if (tpl) {
+      const values = {
+        ...((ticket.metadata as any)?.formData || {}),
+        subject: ticket.subject,
+        status: ticket.status,
+      };
+      const ctx = { ticketNumber: ticket.ticketNumber, subject: ticket.subject, values };
+      if (tpl.subject?.trim()) title = renderTemplate(tpl.subject, ctx);
+      if (tpl.body?.trim()) body = renderTemplate(tpl.body, ctx);
+      // Template CC users
+      (tpl.ccUsers || []).forEach((u: any) => recipients.add(String(u)));
+      // Template CC roles → active project members
+      if ((tpl.ccRoles || []).length) {
+        const roleUsers = await User.find({
+          role: { $in: tpl.ccRoles },
+          isActive: true,
+          projects: ticket.project,
+        })
+          .select("_id")
+          .lean();
+        roleUsers.forEach((u: any) => recipients.add(String(u._id)));
+      }
+      // Notify the parent / requester when the template opts in.
+      if (tpl.toParent && ticket.createdBy) {
+        recipients.add(String(ticket.createdBy));
+      }
+    }
+
     if (actorId) recipients.delete(actorId); // don't notify the actor
 
     const triggerType = EVENT_TRIGGER[event] || "ticket_status_changed";
@@ -154,8 +219,8 @@ export async function notifySrWatchers(
       triggerType,
       entityType: "ticket" as const,
       entityId: ticket._id,
-      title: `Service Request ${ticket.ticketNumber}`,
-      body: `Update: ${event.replace(/_/g, " ")}`,
+      title,
+      body,
       deepLinkUrl: `/service-requests/${ticket._id}`,
     }));
     if (docs.length) await Notification.insertMany(docs as any);
@@ -309,7 +374,7 @@ export async function delegateSr(
 /** Parent final closure + feedback. Satisfied → Closed; else awaits re-open. */
 export async function parentCloseSr(
   ticketId: string,
-  opts: { satisfied: boolean; comments?: string },
+  opts: { satisfied: boolean; comments?: string; rating?: number },
   actorId: string,
 ) {
   const ticket = await loadSr(ticketId);
@@ -327,7 +392,57 @@ export async function parentCloseSr(
   // TODO(Phase 2 wiring): persist a FeedbackResponse (CSAT) record.
   await ticket.save();
   await notifySrWatchers(ticket, "parent_closed", actorId);
+
+  // #10 Not-happy escalation — notify a configurable manager when the parent
+  // is unsatisfied (or rates at/below the threshold) and did not re-open.
+  await notifyManagerOnNegativeFeedback(ticket, opts, actorId);
   return ticket;
+}
+
+/**
+ * Notify the configured manager (user or role) when parent feedback is
+ * negative. Fire-and-forget: never blocks the closure on notification errors.
+ */
+async function notifyManagerOnNegativeFeedback(
+  ticket: any,
+  opts: { satisfied: boolean; rating?: number },
+  actorId?: string,
+) {
+  try {
+    const cfg = await getProjectSrConfig(ticket.project);
+    const fb = cfg.feedback;
+    if (!fb?.notifyManagerOnNegative) return;
+    const ratedLow =
+      opts.rating != null && Number(opts.rating) <= (fb.ratingThreshold ?? 2);
+    const negative = opts.satisfied === false || ratedLow;
+    if (!negative) return;
+
+    let managerId: mongoose.Types.ObjectId | null = null;
+    if (fb.notifyUserId && mongoose.Types.ObjectId.isValid(fb.notifyUserId)) {
+      managerId = new mongoose.Types.ObjectId(fb.notifyUserId);
+    } else if (fb.notifyRoleId) {
+      managerId = await resolveRoleAssignee(fb.notifyRoleId, ticket.project);
+    }
+    if (!managerId) return;
+
+    await Notification.create({
+      recipientUserId: managerId,
+      triggeredByUserId: actorId
+        ? new mongoose.Types.ObjectId(actorId)
+        : undefined,
+      projectId: ticket.project,
+      triggerType: "sr_reopened",
+      entityType: "ticket",
+      entityId: ticket._id,
+      title: `Unhappy parent feedback — ${ticket.ticketNumber}`,
+      body: `Parent was not satisfied${
+        opts.rating != null ? ` (rated ${opts.rating})` : ""
+      }. Please follow up.`,
+      deepLinkUrl: `/service-requests/${ticket._id}`,
+    } as any);
+  } catch (e) {
+    console.error("[sr] negative-feedback notify error:", e);
+  }
 }
 
 /** Re-open (parent/PSL, once) → auto-assign Principal (resolver pending). */
@@ -350,7 +465,11 @@ export async function reopenSr(
     reopenedBy: oid(actorId),
     reopenedAt: new Date(),
   };
-  const principal = await resolveReopenAssignee(ticket.project);
+  const principal = await resolveReopenAssignee(
+    ticket.project,
+    ticket.category,
+    (ticket as any).metadata?.centerId,
+  );
   if (principal) ticket.assignedTo = principal;
   addFollowUp(ticket, `Re-opened: ${opts.reason || ""}`, actorId);
   await ticket.save();
@@ -406,6 +525,71 @@ export async function pslSatisfactionCall(
   return ticket;
 }
 
+/**
+ * Cancel an SR. Reason is required. Optionally link a replacement SR (two-way),
+ * e.g. when the original was raised under the wrong sub-category. Cancel is a
+ * terminal transition allowed from any live status (guarded by SR_CANCEL).
+ */
+export async function cancelSr(
+  ticketId: string,
+  actorId: string,
+  opts: { reason: string; replacementSrId?: string },
+) {
+  const ticket = await loadSr(ticketId);
+  const reason = (opts.reason || "").trim();
+  if (!reason) throw new SrError("A cancellation reason is required.", 400);
+
+  const transition = getTransition(ticket.status, SR_STATUS.CANCEL);
+  if (!transition) {
+    throw new SrError(
+      "This service request cannot be cancelled from its current status.",
+      400,
+    );
+  }
+
+  let replacement: any = null;
+  if (opts.replacementSrId) {
+    if (!mongoose.Types.ObjectId.isValid(opts.replacementSrId)) {
+      throw new SrError("Invalid replacement service request id.", 400);
+    }
+    if (String(opts.replacementSrId) === String(ticket._id)) {
+      throw new SrError("A request cannot replace itself.", 400);
+    }
+    replacement = await Ticket.findById(opts.replacementSrId);
+    if (!replacement || !replacement.interactionType || replacement.interactionType === "normal") {
+      throw new SrError("Replacement service request not found.", 404);
+    }
+    if (String(replacement.project) !== String(ticket.project)) {
+      throw new SrError(
+        "Replacement service request belongs to a different project.",
+        400,
+      );
+    }
+  }
+
+  recordChange(ticket, "status", ticket.status, SR_STATUS.CANCEL, actorId);
+  ticket.status = SR_STATUS.CANCEL;
+  ticket.cancel = {
+    reason,
+    replacementSrId: replacement ? (replacement._id as any) : undefined,
+    by: oid(actorId),
+    at: new Date(),
+  };
+  addFollowUp(ticket, `Cancelled: ${reason}`, actorId, true);
+  await ticket.save();
+
+  // Two-way link on the replacement so both sides cross-reference.
+  if (replacement) {
+    replacement.metadata = replacement.metadata || {};
+    (replacement.metadata as any).replacesCancelledSrId = String(ticket._id);
+    replacement.markModified("metadata");
+    await replacement.save();
+  }
+
+  await notifySrWatchers(ticket, "cancelled", actorId);
+  return ticket;
+}
+
 export async function checkSrDuplicates(q: DuplicateQuery) {
   return findDuplicateServiceRequests(q);
 }
@@ -415,6 +599,7 @@ export async function checkSrDuplicates(q: DuplicateQuery) {
 export interface ListSrParams {
   projectId?: string;
   interactionType?: string; // "PSR" | "ISR" | "all"
+  viewScope?: "project" | "assigned" | "raised" | "my";
   status?: string;
   assignedTo?: string;
   search?: string;
@@ -435,6 +620,13 @@ export interface ListSrParams {
   page?: number;
   limit?: number;
   scope?: ProjectScope; // restrict to the requester's projects
+  viewerId?: string;
+  viewerEmail?: string;
+  access?: {
+    all?: boolean;
+    own?: boolean;
+    assigned?: boolean;
+  };
 }
 
 const csv = (value?: string): string[] =>
@@ -453,6 +645,43 @@ const endOfDay = (date: Date): Date => {
   const end = new Date(date);
   end.setHours(23, 59, 59, 999);
   return end;
+};
+
+const castObjectIdFilter = (value: any): any => {
+  if (!value) return value;
+  if (typeof value === "string" && mongoose.Types.ObjectId.isValid(value)) {
+    return new mongoose.Types.ObjectId(value);
+  }
+  if (Array.isArray(value)) return value.map((v) => castObjectIdFilter(v));
+  if (typeof value === "object") {
+    const next: any = { ...value };
+    if (Array.isArray(next.$in)) next.$in = next.$in.map((v: any) => castObjectIdFilter(v));
+    if (Array.isArray(next.$nin)) next.$nin = next.$nin.map((v: any) => castObjectIdFilter(v));
+    if (next.$eq) next.$eq = castObjectIdFilter(next.$eq);
+    return next;
+  }
+  return value;
+};
+
+const objectIdQueryFields = new Set([
+  "_id",
+  "project",
+  "createdBy",
+  "assignedTo",
+  "linkedPsrId",
+]);
+
+const castAggregationObjectIds = (query: any): any => {
+  if (!query || typeof query !== "object") return query;
+  if (Array.isArray(query)) return query.map((item) => castAggregationObjectIds(item));
+  return Object.fromEntries(
+    Object.entries(query).map(([key, value]) => [
+      key,
+      objectIdQueryFields.has(key)
+        ? castObjectIdFilter(value)
+        : castAggregationObjectIds(value),
+    ]),
+  );
 };
 
 const applyDateRange = (
@@ -478,6 +707,21 @@ const applyCsvFilter = (query: any, field: string, value?: string) => {
 const addAnd = (query: any, condition: any) => {
   query.$and = query.$and || [];
   query.$and.push(condition);
+};
+
+const raisedByViewerConditions = (viewerId: string, viewerEmail?: string) => {
+  const conditions: any[] = [
+    { createdBy: viewerId },
+    { "metadata.raisedByUserId": viewerId },
+    { "metadata.createdByAgentId": viewerId },
+    { "metadata.createdByREUserId": viewerId },
+  ];
+  if (viewerEmail) {
+    conditions.push({
+      "metadata.createdByAgentEmail": viewerEmail.toLowerCase(),
+    });
+  }
+  return conditions;
 };
 
 const categoryFilter = (categoryId: string) => ({
@@ -525,12 +769,52 @@ export async function listServiceRequests(params: ListSrParams) {
   const it = params.interactionType || "PSR";
 
   const q: any = {
-    interactionType: it === "all" ? { $ne: "normal" } : it,
+    interactionType: it === "all" ? { $in: ["PSR", "ISR"] } : it,
   };
   if (params.scope) {
     applyProjectScope(q, "project", params.projectId, params.scope);
   } else if (params.projectId) {
     q.project = params.projectId;
+  }
+
+  const requestedScope = params.viewScope;
+  const viewScope = ["project", "assigned", "raised", "my"].includes(
+    requestedScope || "",
+  )
+    ? requestedScope
+    : params.access?.all
+      ? "project"
+      : "my";
+  if (params.viewerId) {
+    const visibility: any[] = [];
+    if (viewScope === "project") {
+      if (!params.access?.all) {
+        throw new SrError("Forbidden: project service request access required", 403);
+      }
+    } else if (viewScope === "assigned") {
+      if (!params.access?.assigned) {
+        throw new SrError("Forbidden: assigned service request access required", 403);
+      }
+      visibility.push({ assignedTo: params.viewerId });
+    } else if (viewScope === "raised") {
+      if (!params.access?.own) {
+        throw new SrError("Forbidden: own service request access required", 403);
+      }
+      visibility.push(
+        ...raisedByViewerConditions(params.viewerId, params.viewerEmail),
+      );
+    } else {
+      if (params.access?.own) {
+        visibility.push(
+          ...raisedByViewerConditions(params.viewerId, params.viewerEmail),
+        );
+      }
+      if (params.access?.assigned) visibility.push({ assignedTo: params.viewerId });
+    }
+    if (viewScope !== "project" && !visibility.length) {
+      throw new SrError("Forbidden: insufficient service request access", 403);
+    }
+    if (visibility.length) addAnd(q, { $or: visibility });
   }
 
   const statuses = csv(params.status).filter((s) => s !== "all").map(Number);
@@ -589,7 +873,7 @@ export async function listServiceRequests(params: ListSrParams) {
 
   // Base query for the status-counter strip: every filter EXCEPT status, so the
   // counters stay stable while a status is selected (mirrors View Queries).
-  const qBase: any = { ...q };
+  const qBase: any = castAggregationObjectIds(q);
   delete qBase.status;
 
   const allowedSorts = new Set([
@@ -666,19 +950,21 @@ export async function listServiceRequests(params: ListSrParams) {
   return { items, total, page, limit, statusCounts };
 }
 
-/** ISRs linked to a parent PSR (for the detail panel + popover). */
-export async function listLinkedIsrs(psrId: string, scope?: ProjectScope) {
-  if (!mongoose.Types.ObjectId.isValid(psrId)) {
-    throw new SrError("Invalid PSR id", 400);
+/** ISRs linked to a parent ticket (normal ticket or PSR). */
+export async function listLinkedIsrs(parentTicketId: string, scope?: ProjectScope) {
+  if (!mongoose.Types.ObjectId.isValid(parentTicketId)) {
+    throw new SrError("Invalid parent ticket id", 400);
   }
-  const psr = await Ticket.findById(psrId).select("interactionType project").lean();
-  if (!psr || (psr as any).interactionType !== "PSR") {
-    throw new SrError("Parent PSR not found", 404);
+  const parent = await Ticket.findById(parentTicketId)
+    .select("interactionType project")
+    .lean();
+  if (!parent || (parent as any).interactionType === "ISR") {
+    throw new SrError("Parent ticket not found", 404);
   }
-  if (scope && !canAccessProject(scope, (psr as any).project)) {
-    throw new SrError("Parent PSR not found", 404);
+  if (scope && !canAccessProject(scope, (parent as any).project)) {
+    throw new SrError("Parent ticket not found", 404);
   }
-  const items = await Ticket.find({ linkedPsrId: psrId })
+  const items = await Ticket.find({ linkedPsrId: parentTicketId })
     .sort({ createdAt: -1 })
     .select("ticketNumber subject status priority assignedTo createdAt")
     .populate("assignedTo", "firstName lastName fullName email")
@@ -688,15 +974,15 @@ export async function listLinkedIsrs(psrId: string, scope?: ProjectScope) {
   return { items, total, done };
 }
 
-/** Link an existing ISR to a parent PSR (same project, ISR not already linked elsewhere). */
+/** Link an existing ISR to a parent ticket (same project, ISR not chained). */
 export async function linkIsrToPsr(
   isrId: string,
-  psrId: string,
+  parentTicketId: string,
   scope?: ProjectScope,
 ) {
   if (
     !mongoose.Types.ObjectId.isValid(isrId) ||
-    !mongoose.Types.ObjectId.isValid(psrId)
+    !mongoose.Types.ObjectId.isValid(parentTicketId)
   ) {
     throw new SrError("Invalid id", 400);
   }
@@ -704,22 +990,32 @@ export async function linkIsrToPsr(
   if (!isr || isr.interactionType !== "ISR") {
     throw new SrError("ISR not found", 404);
   }
-  const psr = await Ticket.findById(psrId).select("interactionType project").lean();
-  if (!psr || (psr as any).interactionType !== "PSR") {
-    throw new SrError("Parent PSR not found", 404);
+  const parent = await Ticket.findById(parentTicketId)
+    .select("interactionType project")
+    .lean();
+  if (!parent || (parent as any).interactionType === "ISR") {
+    throw new SrError("Parent ticket not found", 404);
   }
-  if (String(isr.project) !== String((psr as any).project)) {
-    throw new SrError("ISR and PSR belong to different projects", 400);
+  if (String(isr.project) !== String((parent as any).project)) {
+    throw new SrError("ISR and parent ticket belong to different projects", 400);
   }
   if (scope && !canAccessProject(scope, isr.project)) {
     throw new SrError("ISR not found", 404);
   }
-  isr.linkedPsrId = new mongoose.Types.ObjectId(psrId) as any;
+  isr.linkedPsrId = new mongoose.Types.ObjectId(parentTicketId) as any;
   await isr.save();
-  return { ticketId: String(isr._id), linkedPsrId: psrId };
+  return { ticketId: String(isr._id), linkedPsrId: parentTicketId };
 }
 
-export async function getServiceRequest(id: string, scope?: ProjectScope) {
+export async function getServiceRequest(
+  id: string,
+  scope?: ProjectScope,
+  viewer?: {
+    userId?: string;
+    email?: string;
+    access?: { all?: boolean; own?: boolean; assigned?: boolean };
+  },
+) {
   const ticket = await Ticket.findById(id)
     .populate("assignedTo", "firstName lastName fullName email")
     .populate("createdBy", "firstName lastName fullName email")
@@ -732,6 +1028,29 @@ export async function getServiceRequest(id: string, scope?: ProjectScope) {
   }
   if (scope && !canAccessProject(scope, (ticket as any).project)) {
     throw new SrError("Service request not found", 404);
+  }
+  if (!viewer?.access?.all && viewer?.userId) {
+    const metadata = ((ticket as any).metadata || {}) as Record<string, any>;
+    const actorIds = [
+      metadata.raisedByUserId,
+      metadata.createdByAgentId,
+      metadata.createdByREUserId,
+    ].filter(Boolean);
+    const isOwn =
+      viewer.access?.own &&
+      (String((ticket as any).createdBy?._id || (ticket as any).createdBy || "") ===
+        String(viewer.userId) ||
+        actorIds.some((id) => String(id) === String(viewer.userId)) ||
+        (!!viewer.email &&
+          String(metadata.createdByAgentEmail || "").toLowerCase() ===
+            viewer.email.toLowerCase()));
+    const isAssigned =
+      viewer.access?.assigned &&
+      String((ticket as any).assignedTo?._id || (ticket as any).assignedTo || "") ===
+        String(viewer.userId);
+    if (!isOwn && !isAssigned) {
+      throw new SrError("Service request not found", 404);
+    }
   }
   return ticket;
 }

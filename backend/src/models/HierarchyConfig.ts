@@ -20,6 +20,15 @@ export interface IVisibilitySettings {
   showInFilters: number[]; // Which levels to show in filter dropdowns
 }
 
+export type HierarchyConfigScope = "normal" | "PSR" | "ISR";
+
+export interface IScopedHierarchyConfig {
+  levelCount: number;
+  levels: IHierarchyLevel[];
+  visibilitySettings: IVisibilitySettings;
+  priorityFromLevel: number;
+}
+
 /**
  * Main HierarchyConfig document interface
  * Stores the hierarchy configuration for each project
@@ -30,6 +39,7 @@ export interface IHierarchyConfig extends Document {
   levels: IHierarchyLevel[];
   visibilitySettings: IVisibilitySettings;
   priorityFromLevel: number; // Which level determines the ticket priority (1-4, 0 means manual selection)
+  scopedConfigs?: Partial<Record<Exclude<HierarchyConfigScope, "normal">, IScopedHierarchyConfig>>;
   isActive: boolean;
   createdBy: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
@@ -46,7 +56,7 @@ const HierarchyLevelSchema = new Schema<IHierarchyLevel>(
       type: Number,
       required: true,
       min: 1,
-      max: 5,
+      max: 10,
     },
     displayName: {
       type: String,
@@ -78,15 +88,15 @@ const VisibilitySettingsSchema = new Schema<IVisibilitySettings>(
   {
     showInOnlineForm: {
       type: [Number],
-      default: [1, 2, 3, 4, 5],
+      default: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     },
     showInOfflineForm: {
       type: [Number],
-      default: [1, 2, 3, 4, 5],
+      default: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     },
     showInTicketDisplay: {
       type: [Number],
-      default: [1, 2, 3, 4, 5],
+      default: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     },
     showInFilters: {
       type: [Number],
@@ -112,7 +122,7 @@ const HierarchyConfigSchema = new Schema<IHierarchyConfig>(
       type: Number,
       required: true,
       min: 1,
-      max: 5,
+      max: 10,
       default: 1, // Default to single-level (current system)
     },
     levels: {
@@ -121,21 +131,21 @@ const HierarchyConfigSchema = new Schema<IHierarchyConfig>(
       validate: {
         validator: function (levels: IHierarchyLevel[]) {
           // Must have at least 1 level and at most 5 levels
-          if (levels.length < 1 || levels.length > 5) return false;
+          if (levels.length < 1 || levels.length > 10) return false;
           // Level numbers must be sequential starting from 1
           return levels.every(
             (level, index) => level.levelNumber === index + 1,
           );
         },
-        message: "Levels must be sequential from 1 to 5",
+        message: "Levels must be sequential from 1 to 10",
       },
     },
     visibilitySettings: {
       type: VisibilitySettingsSchema,
       default: () => ({
-        showInOnlineForm: [1, 2, 3, 4, 5],
-        showInOfflineForm: [1, 2, 3, 4, 5],
-        showInTicketDisplay: [1, 2, 3, 4, 5],
+        showInOnlineForm: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        showInOfflineForm: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        showInTicketDisplay: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         showInFilters: [1, 2],
       }),
     },
@@ -143,7 +153,21 @@ const HierarchyConfigSchema = new Schema<IHierarchyConfig>(
       type: Number,
       default: 0, // 0 means manual priority selection, 1-5 means use priority from that level's category
       min: 0,
-      max: 5,
+      max: 10,
+    },
+    scopedConfigs: {
+      PSR: {
+        levelCount: { type: Number, min: 1, max: 10 },
+        levels: { type: [HierarchyLevelSchema], default: undefined },
+        visibilitySettings: { type: VisibilitySettingsSchema, default: undefined },
+        priorityFromLevel: { type: Number, min: 0, max: 10, default: 0 },
+      },
+      ISR: {
+        levelCount: { type: Number, min: 1, max: 10 },
+        levels: { type: [HierarchyLevelSchema], default: undefined },
+        visibilitySettings: { type: VisibilitySettingsSchema, default: undefined },
+        priorityFromLevel: { type: Number, min: 0, max: 10, default: 0 },
+      },
     },
     isActive: {
       type: Boolean,

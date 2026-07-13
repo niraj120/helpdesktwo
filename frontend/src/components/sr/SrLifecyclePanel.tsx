@@ -1,7 +1,11 @@
 import React, { useRef, useState } from "react";
 import { serviceRequestApi, SR_STATUS_META } from "../../services/serviceRequests";
 import { SR, srButton } from "../../utils/srTheme";
+import { usePermissions } from "../../hooks/usePermissions";
 import MessageBanner, { SrMessage } from "./MessageBanner";
+
+/** Live statuses an SR may be cancelled from (mirrors backend SR_CANCELABLE_FROM). */
+const CANCELABLE_FROM = [1, 2, 4, 6, 7];
 
 const NEXT_STATUSES: Record<number, number[]> = {
   1: [2, 4],
@@ -33,6 +37,7 @@ const SrLifecyclePanel: React.FC<Props> = ({
 }) => {
   const id: string = ticket?._id;
   const status: number = ticket?.status;
+  const { hasPermission } = usePermissions();
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<SrMessage | null>(null);
@@ -42,14 +47,18 @@ const SrLifecyclePanel: React.FC<Props> = ({
   const [displayToParent, setDisplayToParent] = useState(false);
 
   const [action, setAction] = useState<
-    "" | "reassign" | "delegate" | "reopen" | "pslCall"
+    "" | "reassign" | "delegate" | "reopen" | "pslCall" | "cancel"
   >("");
   const [userQuery, setUserQuery] = useState("");
   const [userResults, setUserResults] = useState<any[]>([]);
   const [targetUser, setTargetUser] = useState<any>(null);
   const [remark, setRemark] = useState("");
   const [pslSatisfied, setPslSatisfied] = useState("yes");
+  const [replacementQuery, setReplacementQuery] = useState("");
+  const [replacementResults, setReplacementResults] = useState<any[]>([]);
+  const [replacementSr, setReplacementSr] = useState<any>(null);
   const debounce = useRef<any>(null);
+  const repDebounce = useRef<any>(null);
 
   const reset = () => {
     setToStatus("");
@@ -60,6 +69,34 @@ const SrLifecyclePanel: React.FC<Props> = ({
     setTargetUser(null);
     setUserQuery("");
     setRemark("");
+    setReplacementQuery("");
+    setReplacementResults([]);
+    setReplacementSr(null);
+  };
+
+  const onReplacementQuery = (q: string) => {
+    setReplacementQuery(q);
+    setReplacementSr(null);
+    if (repDebounce.current) clearTimeout(repDebounce.current);
+    if (q.trim().length < 2) {
+      setReplacementResults([]);
+      return;
+    }
+    repDebounce.current = setTimeout(async () => {
+      try {
+        const r = await serviceRequestApi.list({
+          projectId: ticket?.project?._id || ticket?.project,
+          search: q.trim(),
+          limit: 8,
+        } as any);
+        const items = (r as any)?.data?.items || (r as any)?.items || [];
+        setReplacementResults(
+          items.filter((t: any) => String(t._id) !== String(id)),
+        );
+      } catch (e) {
+        console.error(e);
+      }
+    }, 350);
   };
 
   const wrap = async (fn: () => Promise<any>, okText: string) => {
@@ -341,6 +378,15 @@ const SrLifecyclePanel: React.FC<Props> = ({
         >
           PSL Call
         </button>
+        {CANCELABLE_FROM.includes(status) && hasPermission("SR_CANCEL") && (
+          <button
+            disabled={busy}
+            style={srButton("danger")}
+            onClick={() => setAction(action === "cancel" ? "" : "cancel")}
+          >
+            Cancel SR
+          </button>
+        )}
       </div>
 
       {action === "reopen" && (
@@ -360,6 +406,86 @@ const SrLifecyclePanel: React.FC<Props> = ({
           >
             Confirm re-open
           </button>
+        </div>
+      )}
+
+      {action === "cancel" && (
+        <div style={actionPanel}>
+          <label style={label}>Cancellation reason *</label>
+          <textarea
+            style={{ ...ctrl, width: "100%", minHeight: 74, resize: "vertical" }}
+            value={remark}
+            onChange={(e) => setRemark(e.target.value)}
+            placeholder="Why is this request being cancelled?"
+          />
+          <label style={label}>Replacement SR (optional)</label>
+          <input
+            style={{ ...ctrl, width: "100%" }}
+            placeholder="Search by SR number or subject..."
+            value={replacementSr ? replacementSr.ticketNumber : replacementQuery}
+            onChange={(e) => onReplacementQuery(e.target.value)}
+          />
+          {!replacementSr && replacementResults.length > 0 && (
+            <div
+              style={{
+                border: `1px solid ${SR.border}`,
+                borderRadius: 10,
+                marginTop: 6,
+                maxHeight: 180,
+                overflowY: "auto",
+                background: "#fff",
+              }}
+            >
+              {replacementResults.map((t) => (
+                <div
+                  key={t._id}
+                  onClick={() => {
+                    setReplacementSr(t);
+                    setReplacementResults([]);
+                  }}
+                  style={{
+                    padding: "9px 12px",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    borderBottom: `1px solid ${SR.rowBorder}`,
+                  }}
+                >
+                  <strong>{t.ticketNumber}</strong>{" "}
+                  <span style={{ color: SR.sub }}>{t.subject || ""}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {replacementSr && (
+            <button
+              type="button"
+              onClick={() => {
+                setReplacementSr(null);
+                setReplacementQuery("");
+              }}
+              style={{ ...secondaryButton, marginTop: 8, padding: "6px 10px" }}
+            >
+              Clear replacement
+            </button>
+          )}
+          <div>
+            <button
+              style={{ ...srButton("danger"), marginTop: 12 }}
+              disabled={busy || !remark.trim()}
+              onClick={() =>
+                wrap(
+                  () =>
+                    serviceRequestApi.cancel(id, {
+                      reason: remark,
+                      replacementSrId: replacementSr?._id || undefined,
+                    }),
+                  "Service request cancelled.",
+                )
+              }
+            >
+              Confirm cancel
+            </button>
+          </div>
         </div>
       )}
 

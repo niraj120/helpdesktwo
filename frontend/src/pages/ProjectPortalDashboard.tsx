@@ -41,6 +41,8 @@ import MyTickets from "./MyTickets";
 import TicketAssignment from "./TicketAssignment";
 import AgentTicketDetail from "./AgentTicketDetail";
 import AuthenticatedStudentSubmitTicket from "./AuthenticatedStudentSubmitTicket";
+import ServiceRequestsHub from "./service-request/ServiceRequestsHub";
+import ServiceRequestDetail from "./service-request/ServiceRequestDetail";
 import { API_CONFIG } from "../config/constants";
 
 interface ProjectBranding {
@@ -1419,10 +1421,17 @@ const ProjectPortalDashboard = () => {
     const hasOfflinePermission = permissions.some(
       (p) => p.startsWith("OFFLINE_") || p.startsWith("STUDENT_"),
     );
+    const hasServiceRequestPermission = permissions.some(
+      (p) =>
+        p.startsWith("SR_") ||
+        p.startsWith("EMAIL_TRIAGE_") ||
+        p.startsWith("IVR_TRIAGE_"),
+    );
 
     return {
       dashboard: hasDashboardPermission, // Now permission-based, not hardcoded
       tickets: hasTicketPermission,
+      serviceRequests: hasServiceRequestPermission,
       knowledgeBase: hasKnowledgeBasePermission,
       users: hasUserPermission,
       audit: hasAuditPermission,
@@ -1590,6 +1599,67 @@ const ProjectPortalDashboard = () => {
           element={
             <ProtectedRoute permission={PERMISSIONS.FAQ_VIEW}>
               <FAQViewer />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/service-requests"
+          element={
+            <ProtectedRoute
+              permission={[
+                PERMISSIONS.SR_VIEW_ALL,
+                PERMISSIONS.SR_VIEW_OWN,
+                PERMISSIONS.SR_VIEW_ASSIGNED,
+                PERMISSIONS.SR_PSR_CREATE,
+                PERMISSIONS.SR_PSR_RECEIVE,
+                PERMISSIONS.SR_ISR_CREATE,
+                PERMISSIONS.SR_ISR_RECEIVE,
+                PERMISSIONS.SR_ISR_LINK,
+                PERMISSIONS.SR_REASSIGN,
+                PERMISSIONS.SR_DELEGATE,
+                PERMISSIONS.SR_CLOSE,
+                PERMISSIONS.SR_REOPEN,
+                PERMISSIONS.SR_DISPLAY_TO_PARENT,
+                PERMISSIONS.SR_CONFIG_MANAGE,
+                PERMISSIONS.SR_ASSIGN_EMAILS,
+                PERMISSIONS.SR_PRIORITY_OVERRIDE,
+                PERMISSIONS.SR_OFFLINE_ENTRY,
+                PERMISSIONS.EMAIL_TRIAGE_ACCESS,
+                PERMISSIONS.EMAIL_TRIAGE_CONVERT,
+                PERMISSIONS.EMAIL_TRIAGE_RESPOND,
+                PERMISSIONS.IVR_TRIAGE_ACCESS,
+                PERMISSIONS.IVR_TRIAGE_CONVERT,
+              ]}
+            >
+              <ServiceRequestsHub />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/service-requests/:id"
+          element={
+            <ProtectedRoute
+              permission={[
+                PERMISSIONS.SR_VIEW_ALL,
+                PERMISSIONS.SR_VIEW_OWN,
+                PERMISSIONS.SR_VIEW_ASSIGNED,
+                PERMISSIONS.SR_PSR_CREATE,
+                PERMISSIONS.SR_PSR_RECEIVE,
+                PERMISSIONS.SR_ISR_CREATE,
+                PERMISSIONS.SR_ISR_RECEIVE,
+                PERMISSIONS.SR_ISR_LINK,
+                PERMISSIONS.SR_REASSIGN,
+                PERMISSIONS.SR_DELEGATE,
+                PERMISSIONS.SR_CLOSE,
+                PERMISSIONS.SR_REOPEN,
+                PERMISSIONS.SR_DISPLAY_TO_PARENT,
+                PERMISSIONS.SR_CONFIG_MANAGE,
+                PERMISSIONS.SR_ASSIGN_EMAILS,
+                PERMISSIONS.SR_PRIORITY_OVERRIDE,
+                PERMISSIONS.SR_OFFLINE_ENTRY,
+              ]}
+            >
+              <ServiceRequestDetail />
             </ProtectedRoute>
           }
         />

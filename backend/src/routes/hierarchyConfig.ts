@@ -10,6 +10,7 @@ import {
   createHierarchyCategory,
   updateHierarchyCategory,
   deleteHierarchyCategory,
+  replicateCategoryScope,
   bulkUploadCategories,
   downloadBulkTemplate,
 } from "../controllers/hierarchyConfigController";
@@ -72,6 +73,18 @@ router.post(
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
   createHierarchyCategory,
+);
+
+/**
+ * @route   POST /api/hierarchy-config/:projectId/categories/replicate-scope
+ * @desc    Replicate PSR category hierarchy into ISR as independent records
+ * @access  Private - requires MASTER_DATA_MANAGE_CATEGORIES permission
+ */
+router.post(
+  "/:projectId/categories/replicate-scope",
+  authMiddleware,
+  requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  replicateCategoryScope,
 );
 
 /**

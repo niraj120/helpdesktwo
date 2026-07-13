@@ -60,7 +60,7 @@ export default function NetworkStatusNotifier() {
           id: SLOW_TOAST_ID,
           duration: 5000,
           icon: "🐢",
-          style: { background: "#b45309", color: "#fff" },
+          className: "app-toast-warning",
         });
       }
     };

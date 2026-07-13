@@ -204,8 +204,8 @@ export const exportTickets = async (req: Request, res: Response) => {
       const ids = new Set<string>();
       for (const t of tickets as any[]) {
         const h = t.categoryHierarchy || {};
-        for (const lvl of ['level1', 'level2', 'level3', 'level4', 'level5']) {
-          const v = h[lvl];
+        for (let n = 1; n <= 10; n++) {
+          const v = h[`level${n}`];
           if (v) ids.add(String(v));
         }
       }

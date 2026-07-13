@@ -61,6 +61,10 @@ export const upsertAssignmentConfig = async (
       rolePool = [],
       ccUsers = [],
       ccRoles = [],
+      reopen,
+      centerOverrides,
+      autoClose,
+      autoForwardTo,
       isActive = true,
     } = req.body;
 
@@ -68,6 +72,67 @@ export const upsertAssignmentConfig = async (
       res.status(400).json({ success: false, error: "Invalid categoryId" });
       return;
     }
+
+    // Normalizers — convert id strings to ObjectIds, drop blanks.
+    const toOid = (id: any) =>
+      id && mongoose.Types.ObjectId.isValid(String(id))
+        ? new mongoose.Types.ObjectId(String(id))
+        : undefined;
+    const toOidArr = (arr: any) =>
+      Array.isArray(arr) ? arr.map(toOid).filter(Boolean) : [];
+    const normReopen = (r: any) =>
+      r && (r.assignToUserId || r.assignToRoleId || r.ccUsers?.length || r.ccRoles?.length)
+        ? {
+            assignToUserId: toOid(r.assignToUserId),
+            assignToRoleId: toOid(r.assignToRoleId),
+            ccUsers: toOidArr(r.ccUsers),
+            ccRoles: toOidArr(r.ccRoles),
+          }
+        : undefined;
+    const VALID_OPS = [
+      "equals",
+      "not_equals",
+      "contains",
+      "not_contains",
+      "is_empty",
+      "is_not_empty",
+      "greater_than",
+      "less_than",
+    ];
+    const normAutoClose = (ac: any) => {
+      if (!ac || typeof ac !== "object") return undefined;
+      const conditions = Array.isArray(ac.conditions)
+        ? ac.conditions
+            .filter((c: any) => c?.field && VALID_OPS.includes(c.operator))
+            .map((c: any) => ({
+              field: String(c.field),
+              operator: String(c.operator),
+              value: c.value != null ? String(c.value) : undefined,
+            }))
+        : [];
+      return {
+        enabled: !!ac.enabled,
+        match: ac.match === "any" ? "any" : "all",
+        conditions,
+        remarkTemplate: ac.remarkTemplate ? String(ac.remarkTemplate) : undefined,
+      };
+    };
+
+    const normCenterOverrides = Array.isArray(centerOverrides)
+      ? centerOverrides
+          .filter((o: any) => toOid(o?.centerId))
+          .map((o: any) => ({
+            centerId: toOid(o.centerId),
+            mode: ["round-robin", "by-role", "by-user", "manual"].includes(o.mode)
+              ? o.mode
+              : undefined,
+            agentPool: toOidArr(o.agentPool),
+            rolePool: toOidArr(o.rolePool),
+            ccUsers: toOidArr(o.ccUsers),
+            ccRoles: toOidArr(o.ccRoles),
+            reopen: normReopen(o.reopen),
+          }))
+      : [];
 
     const validModes = ["round-robin", "by-role", "by-user", "manual"];
     if (!validModes.includes(mode)) {
@@ -99,6 +164,15 @@ export const upsertAssignmentConfig = async (
           // SR (PSR/ISR) CC watchers — Phase 1
           ccUsers: ccUsers.map((id: string) => new mongoose.Types.ObjectId(id)),
           ccRoles: ccRoles.map((id: string) => new mongoose.Types.ObjectId(id)),
+          // Category re-open routing + per-center overrides (SR)
+          reopen: normReopen(reopen) ?? null,
+          centerOverrides: normCenterOverrides,
+          // Auto-close rule (#8)
+          autoClose: normAutoClose(autoClose) ?? null,
+          // Email auto-forward targets (#11)
+          autoForwardTo: Array.isArray(autoForwardTo)
+            ? autoForwardTo.map((s: any) => String(s).trim()).filter(Boolean)
+            : [],
           isActive,
           updatedBy: userId,
         },

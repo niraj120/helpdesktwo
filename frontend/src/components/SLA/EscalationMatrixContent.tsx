@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { API_CONFIG } from "../../config/constants";
 import {
   getAllEscalationMatrices,
@@ -64,11 +64,61 @@ interface SLARule {
 interface CategoryItem {
   _id: string;
   name: string;
+  code?: string | number;
+  level?: number;
+  parentId?: string | null;
+  path?: string;
   isActive: boolean;
+  sr?: {
+    appliesTo?: CategoryScope[];
+  };
 }
 
 // Alias for backward compatibility
 type Priority = SLARule;
+type CategoryScope = "normal" | "PSR" | "ISR";
+
+const CATEGORY_SCOPE_OPTIONS: Array<{
+  value: CategoryScope;
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: "normal",
+    label: "Normal Ticket",
+    hint: "Use existing normal ticket categories.",
+  },
+  {
+    value: "PSR",
+    label: "PSR",
+    hint: "Parent Service Request categories.",
+  },
+  {
+    value: "ISR",
+    label: "ISR",
+    hint: "Internal Service Request categories.",
+  },
+];
+
+const getCategoryScope = (category: CategoryItem): CategoryScope => {
+  const appliesTo = category.sr?.appliesTo || [];
+  if (appliesTo.length === 0) return "normal";
+  if (appliesTo.includes("PSR") && appliesTo.includes("ISR")) {
+    return "PSR";
+  }
+  if (appliesTo.length === 1) return appliesTo[0];
+  return "normal";
+};
+
+const getCategoryPath = (category: CategoryItem): string =>
+  category.path && category.path.trim().length > 0
+    ? category.path
+    : category.name;
+
+const getCategoryLevel = (category: CategoryItem): number =>
+  typeof category.level === "number" && category.level > 0
+    ? category.level
+    : 1;
 
 /**
  * EscalationMatrixContent
@@ -119,6 +169,9 @@ const EscalationMatrixContent: React.FC = () => {
     CategoryItem[]
   >([]);
   const [linkedCategoryIds, setLinkedCategoryIds] = useState<string[]>([]);
+  const [categoryScope, setCategoryScope] = useState<CategoryScope>("normal");
+  const [shouldInferCategoryScope, setShouldInferCategoryScope] =
+    useState(false);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [projectUsers, setProjectUsers] = useState<
     {
@@ -223,6 +276,45 @@ const EscalationMatrixContent: React.FC = () => {
     }
   }, [formData.projectIds, showModal]);
 
+  useEffect(() => {
+    if (!shouldInferCategoryScope || availableCategories.length === 0) return;
+    const selectedCategory = availableCategories.find((cat) =>
+      linkedCategoryIds.includes(cat._id),
+    );
+    if (selectedCategory) {
+      setCategoryScope(getCategoryScope(selectedCategory));
+    }
+    setShouldInferCategoryScope(false);
+  }, [availableCategories, linkedCategoryIds, shouldInferCategoryScope]);
+
+  const scopedCategories = useMemo(
+    () =>
+      availableCategories.filter(
+        (category) => getCategoryScope(category) === categoryScope,
+      ),
+    [availableCategories, categoryScope],
+  );
+
+  const groupedCategories = useMemo(() => {
+    const groups = scopedCategories.reduce<Record<number, CategoryItem[]>>(
+      (acc, category) => {
+        const level = getCategoryLevel(category);
+        acc[level] = acc[level] || [];
+        acc[level].push(category);
+        return acc;
+      },
+      {},
+    );
+    return Object.entries(groups)
+      .map(([level, categories]) => ({
+        level: Number(level),
+        categories: categories.sort((a, b) =>
+          getCategoryPath(a).localeCompare(getCategoryPath(b)),
+        ),
+      }))
+      .sort((a, b) => a.level - b.level);
+  }, [scopedCategories]);
+
   // Restore selected priorities after priorities are loaded (for edit mode)
   useEffect(() => {
     if (priorities.length > 0 && pendingPrioritiesToRestore.length > 0) {
@@ -316,6 +408,16 @@ const EscalationMatrixContent: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCategoryScopeChange = (scope: CategoryScope) => {
+    setCategoryScope(scope);
+    setLinkedCategoryIds((prev) =>
+      prev.filter((id) => {
+        const category = availableCategories.find((cat) => cat._id === id);
+        return category ? getCategoryScope(category) === scope : false;
+      }),
+    );
   };
 
   const fetchRoles = async () => {
@@ -500,6 +602,8 @@ const EscalationMatrixContent: React.FC = () => {
   const openCreateModal = () => {
     setEditingMatrix(null);
     setLinkedCategoryIds([]);
+    setCategoryScope("normal");
+    setShouldInferCategoryScope(false);
     setFormData({
       name: "",
       description: "",
@@ -521,6 +625,8 @@ const EscalationMatrixContent: React.FC = () => {
           slaUnit: "hrs",
           levelType: "reassign" as "reassign" | "notify",
           notifyUserIds: [],
+          ccUserIds: [],
+          ccRoleIds: [],
           slaThresholdType: "fixed" as "fixed" | "percent",
           isActive: true,
         },
@@ -593,6 +699,14 @@ const EscalationMatrixContent: React.FC = () => {
         (l as any).notifyUserIds?.map((id: any) =>
           typeof id === "object" ? (id._id ?? String(id)) : String(id),
         ) ?? [],
+      ccUserIds:
+        (l as any).ccUserIds?.map((id: any) =>
+          typeof id === "object" ? (id._id ?? String(id)) : String(id),
+        ) ?? [],
+      ccRoleIds:
+        (l as any).ccRoleIds?.map((id: any) =>
+          typeof id === "object" ? (id._id ?? String(id)) : String(id),
+        ) ?? [],
       slaThresholdType: (l as any).slaThresholdType ?? "fixed",
       slaThresholdPercent: (l as any).slaThresholdPercent,
       isActive: l.isActive,
@@ -615,6 +729,14 @@ const EscalationMatrixContent: React.FC = () => {
           levelType: (l as any).levelType || "reassign",
           notifyUserIds:
             (l as any).notifyUserIds?.map((id: any) =>
+              typeof id === "object" ? (id._id ?? String(id)) : String(id),
+            ) ?? [],
+          ccUserIds:
+            (l as any).ccUserIds?.map((id: any) =>
+              typeof id === "object" ? (id._id ?? String(id)) : String(id),
+            ) ?? [],
+          ccRoleIds:
+            (l as any).ccRoleIds?.map((id: any) =>
               typeof id === "object" ? (id._id ?? String(id)) : String(id),
             ) ?? [],
           slaThresholdType: (l as any).slaThresholdType ?? "fixed",
@@ -712,9 +834,14 @@ const EscalationMatrixContent: React.FC = () => {
           typeof id === "object" ? (id._id ?? String(id)) : String(id),
         ),
       );
+      setShouldInferCategoryScope(true);
     } else {
       setLinkedCategoryIds(
         (fullMatrix.linkedCategories || []).map((lc) => lc.categoryId),
+      );
+      setShouldInferCategoryScope(
+        savedScopeMode === "CATEGORY" &&
+          (fullMatrix.linkedCategories || []).length > 0,
       );
     }
 
@@ -995,6 +1122,8 @@ const EscalationMatrixContent: React.FC = () => {
         slaUnit: "hrs" as SlaUnit,
         levelType: "reassign" as "reassign" | "notify",
         notifyUserIds: [] as string[],
+        ccUserIds: [] as string[],
+        ccRoleIds: [] as string[],
         slaThresholdType: "fixed" as "fixed" | "percent",
         isActive: true,
       },
@@ -2301,18 +2430,80 @@ const EscalationMatrixContent: React.FC = () => {
                         <p
                           style={{
                             fontSize: "13px",
-                            fontWeight: 500,
+                            fontWeight: 600,
                             color: "#0e7490",
                             marginBottom: "10px",
                           }}
                         >
-                          Select categories this matrix applies to *
+                          1. Select ticket flow
+                        </p>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              "repeat(auto-fit, minmax(170px, 1fr))",
+                            gap: "8px",
+                            marginBottom: "16px",
+                          }}
+                        >
+                          {CATEGORY_SCOPE_OPTIONS.map((option) => {
+                            const active = categoryScope === option.value;
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() =>
+                                  handleCategoryScopeChange(option.value)
+                                }
+                                style={{
+                                  border: active
+                                    ? "2px solid #0891b2"
+                                    : "1px solid #d1d5db",
+                                  borderRadius: "8px",
+                                  backgroundColor: active ? "#ecfeff" : "white",
+                                  padding: "10px 12px",
+                                  textAlign: "left",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: "13px",
+                                    fontWeight: 700,
+                                    color: active ? "#0e7490" : "#111827",
+                                    marginBottom: "3px",
+                                  }}
+                                >
+                                  {option.label}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: "11px",
+                                    color: "#6b7280",
+                                    lineHeight: 1.35,
+                                  }}
+                                >
+                                  {option.hint}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p
+                          style={{
+                            fontSize: "13px",
+                            fontWeight: 600,
+                            color: "#0e7490",
+                            marginBottom: "10px",
+                          }}
+                        >
+                          2. Select categories this matrix applies to *
                         </p>
                         {categoriesLoading ? (
                           <p style={{ fontSize: "13px", color: "#6b7280" }}>
                             Loading categories…
                           </p>
-                        ) : availableCategories.length === 0 ? (
+                        ) : scopedCategories.length === 0 ? (
                           <p
                             style={{
                               fontSize: "13px",
@@ -2320,62 +2511,120 @@ const EscalationMatrixContent: React.FC = () => {
                               fontStyle: "italic",
                             }}
                           >
-                            No categories found for this project.
+                            No{" "}
+                            {categoryScope === "normal"
+                              ? "normal ticket"
+                              : categoryScope}{" "}
+                            categories found for this project.
                           </p>
                         ) : (
                           <div
                             style={{
-                              display: "grid",
-                              gridTemplateColumns:
-                                "repeat(auto-fill, minmax(200px, 1fr))",
-                              gap: "8px",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "12px",
                             }}
                           >
-                            {availableCategories.map((cat) => {
-                              const checked = linkedCategoryIds.includes(
-                                cat._id,
-                              );
-                              return (
-                                <label
-                                  key={cat._id}
+                            {groupedCategories.map((group) => (
+                              <div key={group.level}>
+                                <div
                                   style={{
                                     display: "flex",
                                     alignItems: "center",
-                                    padding: "10px 12px",
-                                    border: checked
-                                      ? "2px solid #0891b2"
-                                      : "1px solid #e5e7eb",
-                                    borderRadius: "8px",
-                                    backgroundColor: checked
-                                      ? "#ecfeff"
-                                      : "white",
-                                    cursor: "pointer",
-                                    fontSize: "13px",
+                                    justifyContent: "space-between",
+                                    marginBottom: "6px",
                                   }}
                                 >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => {
-                                      setLinkedCategoryIds((prev) =>
-                                        checked
-                                          ? prev.filter((id) => id !== cat._id)
-                                          : [...prev, cat._id],
-                                      );
-                                    }}
-                                    style={{ marginRight: "8px" }}
-                                  />
                                   <span
                                     style={{
-                                      color: "#374151",
-                                      fontWeight: checked ? 500 : 400,
+                                      fontSize: "12px",
+                                      fontWeight: 700,
+                                      color: "#164e63",
                                     }}
                                   >
-                                    {cat.name}
+                                    Level {group.level}
                                   </span>
-                                </label>
-                              );
-                            })}
+                                  <span
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#64748b",
+                                    }}
+                                  >
+                                    {group.categories.length} item
+                                    {group.categories.length === 1 ? "" : "s"}
+                                  </span>
+                                </div>
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns:
+                                      "repeat(auto-fill, minmax(260px, 1fr))",
+                                    gap: "8px",
+                                  }}
+                                >
+                                  {group.categories.map((cat) => {
+                                    const checked = linkedCategoryIds.includes(
+                                      cat._id,
+                                    );
+                                    return (
+                                      <label
+                                        key={cat._id}
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "flex-start",
+                                          padding: "10px 12px",
+                                          border: checked
+                                            ? "2px solid #0891b2"
+                                            : "1px solid #e5e7eb",
+                                          borderRadius: "8px",
+                                          backgroundColor: checked
+                                            ? "#ecfeff"
+                                            : "white",
+                                          cursor: "pointer",
+                                          fontSize: "13px",
+                                          gap: "8px",
+                                        }}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => {
+                                            setLinkedCategoryIds((prev) =>
+                                              checked
+                                                ? prev.filter(
+                                                    (id) => id !== cat._id,
+                                                  )
+                                                : [...prev, cat._id],
+                                            );
+                                          }}
+                                          style={{ marginTop: "2px" }}
+                                        />
+                                        <span
+                                          style={{
+                                            color: "#374151",
+                                            fontWeight: checked ? 600 : 400,
+                                            lineHeight: 1.35,
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              display: "inline-block",
+                                              fontSize: "11px",
+                                              color: "#0891b2",
+                                              fontWeight: 700,
+                                              marginRight: "6px",
+                                            }}
+                                          >
+                                            L{getCategoryLevel(cat)}
+                                          </span>
+                                          {getCategoryPath(cat)}
+                                        </span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         )}
                         {linkedCategoryIds.length > 0 && (
@@ -3776,6 +4025,94 @@ const EscalationMatrixContent: React.FC = () => {
                                 </select>
                               </div>
                             )}
+
+                            {/* Per-level CC — users + roles notified on this
+                                level's escalation, regardless of level type. */}
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "4px",
+                                minWidth: "160px",
+                                maxWidth: "220px",
+                              }}
+                              title="CC on this level's escalation. Notified in addition to the assignee. Leave empty for none."
+                            >
+                              <span
+                                style={{
+                                  fontSize: "11px",
+                                  color: "#6b7280",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                CC users
+                              </span>
+                              <select
+                                multiple
+                                value={level.ccUserIds ?? []}
+                                onChange={(e) => {
+                                  const selected = Array.from(
+                                    e.target.selectedOptions,
+                                  ).map((o) => o.value);
+                                  updateLevel(
+                                    index,
+                                    "ccUserIds" as keyof EscalationLevelFormData,
+                                    selected,
+                                  );
+                                }}
+                                style={{
+                                  padding: "4px",
+                                  border: "1px solid #d1d5db",
+                                  borderRadius: "6px",
+                                  fontSize: "12px",
+                                  height: "60px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {notifyUsers.map((u) => (
+                                  <option key={u._id} value={u._id}>
+                                    {u.firstName} {u.lastName}
+                                  </option>
+                                ))}
+                              </select>
+                              <span
+                                style={{
+                                  fontSize: "11px",
+                                  color: "#6b7280",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                CC roles
+                              </span>
+                              <select
+                                multiple
+                                value={level.ccRoleIds ?? []}
+                                onChange={(e) => {
+                                  const selected = Array.from(
+                                    e.target.selectedOptions,
+                                  ).map((o) => o.value);
+                                  updateLevel(
+                                    index,
+                                    "ccRoleIds" as keyof EscalationLevelFormData,
+                                    selected,
+                                  );
+                                }}
+                                style={{
+                                  padding: "4px",
+                                  border: "1px solid #d1d5db",
+                                  borderRadius: "6px",
+                                  fontSize: "12px",
+                                  height: "60px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {roles.map((r) => (
+                                  <option key={r._id} value={r._id}>
+                                    {r.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
 
                             <div
                               style={{

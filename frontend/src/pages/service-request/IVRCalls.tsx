@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import SrPage from "../../components/sr/SrPage";
 import { srStyles, srButton } from "../../utils/srTheme";
 import { useProjectContext } from "../../contexts/ProjectContext";
 import { api } from "../../utils/api";
 import { serviceRequestApi } from "../../services/serviceRequests";
+import { PERMISSIONS } from "../../constants/permissions";
+import { usePermissions } from "../../hooks/usePermissions";
 
 interface ProjectOpt {
   _id: string;
@@ -19,12 +21,25 @@ interface CategoryNode {
 }
 interface Call {
   _id: string;
+  externalId?: string;
+  callToNumber?: string;
   callerName?: string;
   callerMobile: string;
   schoolName?: string;
   callType: string;
+  provider?: string;
+  direction?: string;
+  startStamp?: string;
+  answerStamp?: string;
+  endStamp?: string;
   durationSeconds?: number;
   voiceNoteUrl?: string;
+  recordingUrl?: string;
+  digitsDialed?: string[];
+  answeredAgentName?: string;
+  answeredAgentNumber?: string;
+  answeredAgentId?: string;
+  providerCallStatus?: string;
   receivedAt: string;
   registered: boolean;
   studentCount?: number;
@@ -61,16 +76,47 @@ const CALL_STATUS_META: Record<string, { color: string; bg: string }> = {
   new: { color: "#1d4ed8", bg: "#eef2ff" },
   assigned: { color: "#b45309", bg: "#fffbeb" },
   converted: { color: "#047857", bg: "#ecfdf5" },
+  junk: { color: "#991b1b", bg: "#fee2e2" },
 };
 
-const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
+const LIVE_REFRESH_INTERVAL_MS = 15000;
+
+const IVRCalls: React.FC<{
+  embedded?: boolean;
+  hideProjectSelector?: boolean;
+}> = ({ embedded, hideProjectSelector }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isProjectPortal = location.pathname.includes("/portal/");
+  const detailPath = (id: string) =>
+    isProjectPortal
+      ? `${location.pathname.replace(/\/service-requests(?:\/.*)?$/, "")}/service-requests/${id}`
+      : `/service-requests/${id}`;
+  const serviceBasePath = isProjectPortal
+    ? `${location.pathname.replace(/\/service-requests(?:\/.*)?$/, "")}/service-requests`
+    : "/service-requests";
+  const { hasAnyPermission } = usePermissions();
+  const canConvert = hasAnyPermission([
+    PERMISSIONS.IVR_TRIAGE_CONVERT,
+    PERMISSIONS.SR_PSR_CREATE,
+  ]);
+  const canReassign = hasAnyPermission([
+    PERMISSIONS.IVR_AGENT_MANAGE,
+    PERMISSIONS.IVR_TRIAGE_CONVERT,
+  ]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [agents, setAgents] = useState<any[]>([]);
+  const [reassignUserId, setReassignUserId] = useState("");
+  const [reassigning, setReassigning] = useState(false);
   const { currentProjectId } = useProjectContext();
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [projectId, setProjectId] = useState(currentProjectId || "");
   const [callType, setCallType] = useState("all");
   const [registered, setRegistered] = useState("all");
   const [rows, setRows] = useState<Call[]>([]);
+  const knownRowIdsRef = useRef<Set<string>>(new Set());
+  const hasLoadedRowsRef = useRef(false);
+  const [unreadRowIds, setUnreadRowIds] = useState<Set<string>>(new Set());
   const [categories, setCategories] = useState<CategoryNode[]>([]);
   const [selected, setSelected] = useState<Call | null>(null);
   const [requesterType, setRequesterType] = useState("prospective_parent");
@@ -81,6 +127,13 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const [ingestForm, setIngestForm] = useState({ callerName: "", callerMobile: "", callType: "answered" });
 
   useEffect(() => {
+    if (hideProjectSelector && currentProjectId && projectId !== currentProjectId) {
+      setProjectId(currentProjectId);
+    }
+  }, [hideProjectSelector, currentProjectId, projectId]);
+
+  useEffect(() => {
+    if (hideProjectSelector) return;
     (async () => {
       try {
         const res = await api.get("/projects", { params: { limit: 100 } });
@@ -91,25 +144,73 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
         console.error(e);
       }
     })();
+  }, [hideProjectSelector]);
+
+  const markRowRead = (id: string) => {
+    setUnreadRowIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const highlightUnreadRow = (id: string) =>
+    unreadRowIds.has(id)
+      ? { background: "#fffbeb", boxShadow: "inset 3px 0 0 #f59e0b" }
+      : {};
+
+  const rememberRows = useCallback((items: Call[], silent?: boolean) => {
+    const ids = new Set(items.map((item) => item._id).filter(Boolean));
+    if (silent && hasLoadedRowsRef.current) {
+      const newIds = items
+        .map((item) => item._id)
+        .filter((id) => id && !knownRowIdsRef.current.has(id));
+      if (newIds.length) {
+        setUnreadRowIds((prev) => {
+          const next = new Set(prev);
+          newIds.forEach((id) => next.add(id));
+          return next;
+        });
+      }
+    } else if (!silent) {
+      setUnreadRowIds(new Set());
+    }
+    knownRowIdsRef.current = ids;
+    hasLoadedRowsRef.current = true;
   }, []);
 
-  const load = async () => {
+  const load = useCallback(async (options?: { silent?: boolean }) => {
     try {
       const r = await serviceRequestApi.ivr.list({
         projectId: projectId || undefined,
         callType,
         registered,
       });
-      setRows(r.items || []);
+      const items = r.items || [];
+      rememberRows(items, options?.silent);
+      setRows(items);
     } catch (e) {
       console.error(e);
       setRows([]);
     }
-  };
+  }, [callType, projectId, registered, rememberRows]);
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, callType, registered]);
+  }, [load]);
+
+  useEffect(() => {
+    const refreshSilently = () => load({ silent: true });
+    const intervalId = window.setInterval(refreshSilently, LIVE_REFRESH_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshSilently();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [load]);
 
   useEffect(() => {
     if (!projectId) {
@@ -128,6 +229,44 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     );
     return categories.filter((c) => !parents.has(String(c._id)));
   }, [categories]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setAgents([]);
+      return;
+    }
+    api
+      .get("/users", { params: { project: projectId, isActive: true, limit: 1000 } })
+      .then((r) => setAgents((r as any).data?.data || []))
+      .catch(() => setAgents([]));
+  }, [projectId]);
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const doBulkReassign = async () => {
+    if (!reassignUserId || selectedIds.size === 0) return;
+    setReassigning(true);
+    setMsg(null);
+    try {
+      const r = await serviceRequestApi.ivr.bulkReassign(
+        Array.from(selectedIds),
+        reassignUserId,
+      );
+      setMsg(`Reassigned ${r.data?.reassigned ?? 0} call(s).`);
+      setSelectedIds(new Set());
+      setReassignUserId("");
+      load();
+    } catch (e: any) {
+      setMsg(e?.response?.data?.message || "Bulk reassign failed.");
+    } finally {
+      setReassigning(false);
+    }
+  };
 
   const openConvert = (call: Call) => {
     setSelected(call);
@@ -164,6 +303,34 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
       load();
     } catch (e: any) {
       setMsg(e?.response?.data?.message || "Failed.");
+    }
+  };
+
+  const startIvrPsr = (call: Call) => {
+    navigate(`${serviceBasePath}?tab=new&sourceType=ivr&sourceId=${call._id}`, {
+      state: {
+        sourceContext: {
+          type: "ivr",
+          id: call._id,
+          returnTo: `${serviceBasePath}?tab=ivr`,
+          callerName: call.callerName,
+          callerMobile: call.callerMobile,
+          subject: `IVR call from ${call.callerName || call.callerMobile}`,
+          body: `Converted from IVR call ${call.externalId || call._id}. Caller: ${call.callerName || "Unknown"} (${call.callerMobile}).`,
+        },
+      },
+    });
+  };
+
+  const markJunk = async (call: Call) => {
+    try {
+      await serviceRequestApi.ivr.markJunk(call._id, { remark });
+      setMsg("Marked as junk.");
+      setSelected(null);
+      setRemark("");
+      load();
+    } catch (e: any) {
+      setMsg(e?.response?.data?.message || "Failed to mark junk.");
     }
   };
 
@@ -246,10 +413,12 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
               {t.l}
             </button>
           ))}
-          <select style={{ ...ctrl, marginLeft: "auto" }} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-            <option value="">All projects</option>
-            {projects.map((p) => <option key={p._id} value={p._id}>{p.name}</option>)}
-          </select>
+          {!hideProjectSelector && (
+            <select style={{ ...ctrl, marginLeft: "auto" }} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">All projects</option>
+              {projects.map((p) => <option key={p._id} value={p._id}>{p.name}</option>)}
+            </select>
+          )}
         </div>
 
         {showIngest && (
@@ -267,16 +436,59 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
           </div>
         )}
 
+        {canReassign && selectedIds.size > 0 && (
+          <div
+            style={{
+              ...card,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+              background: "#eef2ff",
+              border: "1px solid #c7d2fe",
+            }}
+          >
+            <strong style={{ fontSize: 13, color: "#3730a3" }}>
+              {selectedIds.size} selected
+            </strong>
+            <select
+              style={{ ...ctrl, minWidth: 220 }}
+              value={reassignUserId}
+              onChange={(e) => setReassignUserId(e.target.value)}
+            >
+              <option value="">Reassign to…</option>
+              {agents.map((u) => (
+                <option key={u._id} value={u._id}>
+                  {`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={doBulkReassign}
+              disabled={reassigning || !reassignUserId}
+              style={srButton("primary")}
+            >
+              {reassigning ? "Reassigning…" : "Reassign"}
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              style={cancelBtn}
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         <div style={card}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
                 <th style={th}>Caller Info</th>
-                <th style={th}>School</th>
+                <th style={th}>IVR Details</th>
                 <th style={th}>Received</th>
                 <th style={th}>Duration</th>
                 <th style={th}>Call Type</th>
-                <th style={th}>Voice Note</th>
+                <th style={th}>Recording</th>
                 <th style={th}>Status</th>
                 <th style={th}>Call Status</th>
                 <th style={{ ...th, textAlign: "right" }}>Actions</th>
@@ -291,16 +503,21 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                   return (
                     <tr
                       key={c._id}
-                      style={{ transition: "background 0.12s ease" }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.background = "#f8fafc")
-                      }
-                      onMouseLeave={(e) =>
-                        (e.currentTarget.style.background = "transparent")
-                      }
+                      className="sr-triage-row"
+                      onClick={() => markRowRead(c._id)}
+                      style={{ transition: "background 0.12s ease", ...highlightUnreadRow(c._id) }}
                     >
                       <td style={td}>
-                        <div style={{ fontWeight: 600 }}>
+                        {canReassign && (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(c._id)}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => toggleSelect(c._id)}
+                            style={{ marginRight: 8, verticalAlign: "middle" }}
+                          />
+                        )}
+                        <div style={{ fontWeight: 600, display: "inline-block", verticalAlign: "middle" }}>
                           {c.callerName || "Unknown Caller"}{" "}
                           {c.registered ? (
                             <Chip text="Registered" color="#047857" bg="#ecfdf5" />
@@ -308,12 +525,23 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                             <Chip text="Unregistered" color="#b91c1c" bg="#fef2f2" />
                           )}
                         </div>
-                        <div style={{ color: "#6b7280", fontSize: 12 }}>📞 {c.callerMobile}</div>
+                        <div style={{ color: "#6b7280", fontSize: 12 }}>Phone: {c.callerMobile}</div>
+                        {c.externalId ? (
+                          <div style={{ color: "#94a3b8", fontSize: 11 }}>ID: {c.externalId}</div>
+                        ) : null}
                         {c.studentCount ? (
                           <div style={{ color: "#1d4ed8", fontSize: 12 }}>{c.studentCount} students</div>
                         ) : null}
                       </td>
-                      <td style={td}>{c.schoolName || (c.registered ? "—" : "Not Registered")}</td>
+                      <td style={td}>
+                        <div>{c.callToNumber || "DID not captured"}</div>
+                        <div style={{ color: "#6b7280", fontSize: 12 }}>
+                          Digit: {c.digitsDialed?.length ? c.digitsDialed.join(", ") : "-"}
+                        </div>
+                        <div style={{ color: "#6b7280", fontSize: 12 }}>
+                          Agent: {c.answeredAgentName || c.answeredAgentNumber || c.answeredAgentId || "-"}
+                        </div>
+                      </td>
                       <td style={td}>{new Date(c.receivedAt).toLocaleString()}</td>
                       <td style={td}>{c.callType === "missed" ? "No duration" : fmtDuration(c.durationSeconds)}</td>
                       <td style={td}>
@@ -324,8 +552,8 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                         )}
                       </td>
                       <td style={td}>
-                        {c.voiceNoteUrl ? (
-                          <audio controls src={c.voiceNoteUrl} style={{ height: 28 }} />
+                        {c.recordingUrl || c.voiceNoteUrl ? (
+                          <audio controls src={c.recordingUrl || c.voiceNoteUrl} style={{ height: 28 }} />
                         ) : (
                           "—"
                         )}
@@ -337,22 +565,68 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                       </td>
                       <td style={td}>
                         <Chip text={c.callStatus.toUpperCase()} color={cs.color} bg={cs.bg} />
+                        {c.providerCallStatus ? (
+                          <div style={{ color: "#6b7280", fontSize: 12, marginTop: 4 }}>
+                            {c.providerCallStatus}
+                          </div>
+                        ) : null}
                       </td>
                       <td style={{ ...td, textAlign: "right" }}>
                         {c.callStatus === "converted" && c.convertedTicketId ? (
+                          <div style={{ display: "inline-flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                            <button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                markRowRead(c._id);
+                                c.convertedTicketId &&
+                                  navigate(detailPath(c.convertedTicketId));
+                              }}
+                              style={{ background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0", borderRadius: 10, padding: "6px 12px", fontWeight: 600, cursor: "pointer" }}
+                            >
+                              {c.convertedTicketNumber || "View PSR"}
+                            </button>
+                            {canConvert && (
+                              <button
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  markRowRead(c._id);
+                                  openConvert(c);
+                                }}
+                                style={{ ...srButton("neutral"), padding: "6px 12px" }}
+                              >
+                                Raise another PSR
+                              </button>
+                            )}
+                          </div>
+                        ) : c.callStatus === "junk" ? (
+                          <Chip text="Junk" color="#991b1b" bg="#fee2e2" />
+                        ) : canConvert ? (
+                          <div style={{ display: "inline-flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
                           <button
-                            onClick={() => navigate(`/tickets/${c.convertedTicketId}`)}
-                            style={{ background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0", borderRadius: 10, padding: "6px 12px", fontWeight: 600, cursor: "pointer" }}
-                          >
-                            {c.convertedTicketNumber || "View PSR"}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => openConvert(c)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              markRowRead(c._id);
+                              startIvrPsr(c);
+                            }}
                             style={{ ...srButton("primary"), padding: "6px 12px" }}
                           >
-                            + {c.registered ? "Raise SR" : "Convert SR"}
+                            Convert to PSR
                           </button>
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              markRowRead(c._id);
+                              markJunk(c);
+                            }}
+                            style={{ ...srButton("danger"), padding: "6px 12px" }}
+                          >
+                            Mark Junk
+                          </button>
+                          </div>
+                        ) : (
+                          <span style={{ color: "#94a3b8", fontSize: 12 }}>
+                            View only
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -381,12 +655,19 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
             </div>
             <input style={{ ...ctrl, width: "100%", marginTop: 10 }} placeholder="Remark / on-call notes (optional)" value={remark} onChange={(e) => setRemark(e.target.value)} />
             <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
-              <button onClick={convert} style={srButton("primary")}>
-                Convert to PSR
-              </button>
-              <button onClick={resolveOnCall} style={srButton("neutral")}>
-                Resolve on call (OCR)
-              </button>
+              {canConvert && (
+                <>
+                  <button onClick={convert} style={srButton("primary")}>
+                    Convert to PSR
+                  </button>
+                  <button onClick={resolveOnCall} style={srButton("neutral")}>
+                    Resolve on call (OCR)
+                  </button>
+                  <button onClick={() => markJunk(selected)} style={srButton("danger")}>
+                    Mark Junk
+                  </button>
+                </>
+              )}
               <button onClick={() => setSelected(null)} style={cancelBtn}>Cancel</button>
             </div>
           </div>

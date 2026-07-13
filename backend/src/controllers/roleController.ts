@@ -1,6 +1,7 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/auth";
 import { Role } from "../models/Role";
+import { Permission } from "../models/Permission";
 import { logActivity } from "../utils/logger";
 import multer from "multer";
 import path from "path";
@@ -51,11 +52,66 @@ async function syncRolePermissionsToJunctionTable(
   }
 }
 
+async function ensureSuperAdminHasAllPermissions(): Promise<void> {
+  const superAdmin = await Role.findOne({ code: "SUPER_ADMIN" });
+  if (!superAdmin) return;
+
+  const allPermissions = await Permission.find({ isActive: true }, "_id").lean();
+  const allPermissionIds = allPermissions.map((permission: any) =>
+    permission._id.toString(),
+  );
+  const existing = new Set(
+    (superAdmin.permissions || []).map((permission: any) =>
+      permission.toString(),
+    ),
+  );
+  const missing = allPermissionIds.filter((id) => !existing.has(id));
+
+  if (missing.length > 0) {
+    superAdmin.permissions = allPermissionIds as any;
+    await superAdmin.save();
+
+    const { User } = await import("../models/User");
+    await User.updateMany(
+      { role: superAdmin._id },
+      { $inc: { tokenVersion: 1 } },
+    );
+  }
+
+  await syncRolePermissionsToJunctionTable(
+    superAdmin._id,
+    allPermissionIds,
+  );
+}
+
+function parseBooleanFormValue(value: any): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return value.toLowerCase() === "true";
+  return Boolean(value);
+}
+
+function parseProjectIds(value: any): any[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 // @desc    Get all roles
 // @route   GET /api/roles
 // @access  Private
 export const getRoles = async (req: AuthRequest, res: Response) => {
   try {
+    await ensureSuperAdminHasAllPermissions();
+
     const {
       projectId,
       includeSystem = "true",
@@ -118,6 +174,8 @@ export const getRoles = async (req: AuthRequest, res: Response) => {
 // @access  Private
 export const getRoleById = async (req: AuthRequest, res: Response) => {
   try {
+    await ensureSuperAdminHasAllPermissions();
+
     const role = await Role.findById(req.params.id).populate("permissions");
     if (!role) {
       res.status(404).json({
@@ -219,6 +277,14 @@ export const createRole = async (req: AuthRequest, res: Response) => {
       }
     }
     sanitizedPermissions = [...new Set(sanitizedPermissions)];
+
+    if (roleCode === "SUPER_ADMIN") {
+      const allPermissions = await Permission.find({ isActive: true }, "_id")
+        .lean();
+      sanitizedPermissions = allPermissions.map((permission: any) =>
+        permission._id.toString(),
+      );
+    }
 
     // Prepare role data
     const roleData: any = {
@@ -351,8 +417,14 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    // Prevent updating system roles' project mapping
-    if (role.type === "system" && (projects || projectId)) {
+    const projectsToUpdate = parseProjectIds(projects);
+    const hasProjectMappingUpdate =
+      (Array.isArray(projectsToUpdate) && projectsToUpdate.length > 0) ||
+      !!projectId;
+
+    // Prevent updating system roles' project mapping. Empty [] from multipart
+    // forms is allowed because the RBAC modal always submits the field.
+    if (role.type === "system" && hasProjectMappingUpdate) {
       res.status(400).json({
         success: false,
         error: "Cannot modify project mapping for system roles",
@@ -432,6 +504,16 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
       // Remove duplicates
       sanitizedPermissions = [...new Set(sanitizedPermissions)];
 
+      if (role.code === "SUPER_ADMIN") {
+        const allPermissions = await Permission.find(
+          { isActive: true },
+          "_id",
+        ).lean();
+        sanitizedPermissions = allPermissions.map((permission: any) =>
+          permission._id.toString(),
+        );
+      }
+
       console.log(
         "📋 Permissions sanitized:",
         permissionsToParse.length,
@@ -446,32 +528,20 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
       role.permissions = sanitizedPermissions as any;
     }
 
-    if (isMaster !== undefined) {
-      role.isMaster = isMaster;
+    const parsedIsMaster = parseBooleanFormValue(isMaster);
+    if (parsedIsMaster !== undefined) {
+      role.isMaster = parsedIsMaster;
       console.log("✅ Set isMaster to:", isMaster);
     }
 
-    if (isAgent !== undefined) {
-      role.isAgent = isAgent;
+    const parsedIsAgent = parseBooleanFormValue(isAgent);
+    if (parsedIsAgent !== undefined) {
+      role.isAgent = parsedIsAgent;
       console.log("✅ Set isAgent to:", isAgent);
     }
 
-    // Update project mapping - handle JSON string from FormData
-    let projectsToUpdate: any[] | undefined;
-    if (projects) {
-      if (typeof projects === "string") {
-        try {
-          const parsed = JSON.parse(projects);
-          if (Array.isArray(parsed)) {
-            projectsToUpdate = parsed;
-          }
-        } catch {
-          // Not valid JSON
-        }
-      } else if (Array.isArray(projects)) {
-        projectsToUpdate = projects;
-      }
-    }
+    // Update project mapping. projectsToUpdate is normalized once near the
+    // start of updateRole so empty FormData arrays do not block role edits.
 
     if (projectsToUpdate !== undefined) {
       role.projects = projectsToUpdate;

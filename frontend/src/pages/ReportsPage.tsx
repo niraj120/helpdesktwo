@@ -182,6 +182,12 @@ const CATEGORY_COLORS: Record<string, string> = {
   channel: "#10b981",
   feedback: "#ef4444",
   agent: "#6366f1",
+  service_request: "#4f46e5",
+};
+
+// Friendlier labels for category badges whose raw key is snake_case.
+const CATEGORY_LABELS: Record<string, string> = {
+  service_request: "Service Request",
 };
 
 function categoryBadge(cat: string) {
@@ -199,7 +205,7 @@ function categoryBadge(cat: string) {
         textTransform: "capitalize",
       }}
     >
-      {cat}
+      {CATEGORY_LABELS[cat] ?? cat.replace(/_/g, " ")}
     </span>
   );
 }

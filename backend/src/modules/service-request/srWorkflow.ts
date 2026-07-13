@@ -14,7 +14,11 @@ export const SR_STATUS = {
   CLOSED: 5,
   REOPEN: 6,
   REOPEN_WIP: 7,
+  CANCEL: 8,
 } as const;
+
+/** Statuses from which an SR may be cancelled (any live, non-terminal status). */
+export const SR_CANCELABLE_FROM: number[] = [1, 2, 4, 6, 7];
 
 export type SrStatusCode = (typeof SR_STATUS)[keyof typeof SR_STATUS];
 
@@ -30,24 +34,30 @@ export interface SrTransition {
  * Allowed transitions per current status. Reassign/Delegate are assignment
  * actions (handled separately) and are NOT status transitions.
  */
+const CANCEL: SrTransition = { to: SR_STATUS.CANCEL, requires: "SR_CANCEL" };
+
 const SR_TRANSITIONS: Record<number, SrTransition[]> = {
   [SR_STATUS.OPEN]: [
     { to: SR_STATUS.WIP, committedDateRequired: true },
     { to: SR_STATUS.RESOLVED },
+    CANCEL,
   ],
   [SR_STATUS.WIP]: [
     { to: SR_STATUS.WIP, committedDateRequired: true }, // revise committed date
     { to: SR_STATUS.RESOLVED },
+    CANCEL,
   ],
   // Resolved → Closed is done by closure-access; parent does the FINAL closure.
-  [SR_STATUS.RESOLVED]: [{ to: SR_STATUS.CLOSED, requires: "SR_CLOSE" }],
+  [SR_STATUS.RESOLVED]: [{ to: SR_STATUS.CLOSED, requires: "SR_CLOSE" }, CANCEL],
   [SR_STATUS.CLOSED]: [{ to: SR_STATUS.REOPEN, requires: "SR_REOPEN" }],
   // Re-open is auto-assigned to Principal, who may WIP once or close.
   [SR_STATUS.REOPEN]: [
     { to: SR_STATUS.REOPEN_WIP, committedDateRequired: true },
     { to: SR_STATUS.CLOSED, requires: "SR_CLOSE" },
+    CANCEL,
   ],
-  [SR_STATUS.REOPEN_WIP]: [{ to: SR_STATUS.CLOSED, requires: "SR_CLOSE" }],
+  [SR_STATUS.REOPEN_WIP]: [{ to: SR_STATUS.CLOSED, requires: "SR_CLOSE" }, CANCEL],
+  [SR_STATUS.CANCEL]: [],
 };
 
 export function getTransition(

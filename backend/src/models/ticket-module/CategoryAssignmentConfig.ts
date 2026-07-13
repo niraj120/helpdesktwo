@@ -26,6 +26,55 @@ export interface ICategoryAssignmentConfig extends Document {
   ccUsers?: mongoose.Types.ObjectId[];
   /** SR (PSR/ISR): roles CC'd as watchers on assignment. Phase 1. */
   ccRoles?: mongoose.Types.ObjectId[];
+  /**
+   * Re-open routing for this category. When set, an SR re-opened under this
+   * category assigns per this block; otherwise falls back to project sr.reopen.
+   */
+  reopen?: {
+    assignToUserId?: mongoose.Types.ObjectId;
+    assignToRoleId?: mongoose.Types.ObjectId;
+    ccUsers?: mongoose.Types.ObjectId[];
+    ccRoles?: mongoose.Types.ObjectId[];
+  };
+  /**
+   * Email auto-forward. When an email is converted to an SR under this
+   * category, the original email is forwarded to these addresses.
+   */
+  autoForwardTo?: string[];
+  /**
+   * Auto-close rule. When enabled and the SR's field values satisfy the
+   * conditions at creation, the SR is created Closed with a templated remark.
+   */
+  autoClose?: {
+    enabled?: boolean;
+    match?: "all" | "any";
+    conditions?: {
+      field: string;
+      operator: string;
+      value?: string;
+    }[];
+    remarkTemplate?: string;
+  };
+  /**
+   * Per-center overrides. When a ticket carries a center matching one of these,
+   * the override's non-empty fields replace the base config for that center
+   * (assignment mode/pools, CC, reopen). Keeps one row per category — no unique
+   * index change / migration.
+   */
+  centerOverrides?: {
+    centerId: mongoose.Types.ObjectId;
+    mode?: CategoryAssignmentMode;
+    agentPool?: mongoose.Types.ObjectId[];
+    rolePool?: mongoose.Types.ObjectId[];
+    ccUsers?: mongoose.Types.ObjectId[];
+    ccRoles?: mongoose.Types.ObjectId[];
+    reopen?: {
+      assignToUserId?: mongoose.Types.ObjectId;
+      assignToRoleId?: mongoose.Types.ObjectId;
+      ccUsers?: mongoose.Types.ObjectId[];
+      ccRoles?: mongoose.Types.ObjectId[];
+    };
+  }[];
   isActive: boolean;
   createdBy?: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
@@ -76,6 +125,50 @@ const CategoryAssignmentConfigSchema = new Schema<ICategoryAssignmentConfig>(
       {
         type: Schema.Types.ObjectId,
         ref: "Role",
+      },
+    ],
+    // Category-level re-open routing (falls back to project sr.reopen)
+    reopen: {
+      assignToUserId: { type: Schema.Types.ObjectId, ref: "User" },
+      assignToRoleId: { type: Schema.Types.ObjectId, ref: "Role" },
+      ccUsers: [{ type: Schema.Types.ObjectId, ref: "User" }],
+      ccRoles: [{ type: Schema.Types.ObjectId, ref: "Role" }],
+    },
+    // Email auto-forward targets (on email→SR convert)
+    autoForwardTo: [{ type: String }],
+    // Auto-close rule (condition-driven; evaluated at SR creation)
+    autoClose: {
+      enabled: { type: Boolean, default: false },
+      match: { type: String, enum: ["all", "any"], default: "all" },
+      conditions: [
+        {
+          _id: false,
+          field: { type: String },
+          operator: { type: String },
+          value: { type: String },
+        },
+      ],
+      remarkTemplate: { type: String },
+    },
+    // Per-center overrides — merged over the base config when a ticket's center matches
+    centerOverrides: [
+      {
+        _id: false,
+        centerId: { type: Schema.Types.ObjectId, ref: "Center", required: true },
+        mode: {
+          type: String,
+          enum: ["round-robin", "by-role", "by-user", "manual"],
+        },
+        agentPool: [{ type: Schema.Types.ObjectId, ref: "User" }],
+        rolePool: [{ type: Schema.Types.ObjectId, ref: "Role" }],
+        ccUsers: [{ type: Schema.Types.ObjectId, ref: "User" }],
+        ccRoles: [{ type: Schema.Types.ObjectId, ref: "Role" }],
+        reopen: {
+          assignToUserId: { type: Schema.Types.ObjectId, ref: "User" },
+          assignToRoleId: { type: Schema.Types.ObjectId, ref: "Role" },
+          ccUsers: [{ type: Schema.Types.ObjectId, ref: "User" }],
+          ccRoles: [{ type: Schema.Types.ObjectId, ref: "Role" }],
+        },
       },
     ],
     isActive: {

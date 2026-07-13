@@ -10,11 +10,16 @@ import { Ticket } from "../../models/Ticket";
 import { Project } from "../../models/Project";
 import { Category } from "../../models/Category";
 import { User } from "../../models/User";
-import { isSrEnabled } from "./serviceRequestConfig";
+import { isSrEnabled, resolveSrConfig } from "./serviceRequestConfig";
+import { resolveFormSchema } from "./srForms";
+import type { SrAutoClose } from "./srMasterData";
+import { evalConditions, renderTemplate } from "./srConditionEngine";
+import { SR_STATUS } from "./srWorkflow";
 import { resolveSrRouting } from "./srMasterData";
 import { findDuplicateServiceRequests } from "./srDuplicateDetection";
 import { generateSrTicketNumber } from "./srTicketNumber";
 import { SrError, notifySrWatchers } from "./serviceRequestService";
+import { autoAssignTicket } from "../../utils/ticketAutoAssignment";
 import {
   InteractionType,
   ModeOfContact,
@@ -24,9 +29,125 @@ import {
 
 const CHANNEL_TO_SOURCE: Record<SrChannel, string> = {
   online: "online",
-  walk_in: "offline",
+  walk_in: "walk_in",
   email: "email",
   ivr: "ivr",
+  self_service: "self_service",
+};
+
+const firstText = (...values: any[]): string | undefined => {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) return text;
+  }
+  return undefined;
+};
+
+const joinName = (...values: any[]): string | undefined => {
+  const name = values.map((value) => String(value || "").trim()).filter(Boolean).join(" ");
+  return name || undefined;
+};
+
+const buildRequestedByMetadata = (
+  input: CreateServiceRequestInput,
+): Record<string, any> => {
+  const parent = input.parent || {};
+  const formData = input.formData || {};
+  const metadata = input.metadata || {};
+  const source = CHANNEL_TO_SOURCE[input.channel] || input.channel;
+
+  if (input.interactionType === "ISR") {
+    return {
+      requestedBy: {
+        type: "staff",
+        userId: input.createdBy || input.actorId,
+        source,
+      },
+      requestedByUserId: input.createdBy || input.actorId,
+      requestedByType: "staff",
+      sourceLabel: source,
+    };
+  }
+
+  const requestedByName = firstText(
+    metadata.requestedByName,
+    parent.name,
+    parent.fullName,
+    joinName(parent.firstName, parent.middleName, parent.lastName),
+    formData.parentName,
+    formData.name,
+    formData.parentFirstName || formData.parentLastName
+      ? joinName(formData.parentFirstName, formData.parentLastName)
+      : undefined,
+    metadata.fromName,
+    metadata.callerName,
+  );
+  const requestedByEmail = firstText(
+    metadata.requestedByEmail,
+    parent.email,
+    formData.parentEmail,
+    formData.email,
+    input.requesterEmail,
+    metadata.fromEmail,
+  );
+  const requestedByMobile = firstText(
+    metadata.requestedByMobile,
+    parent.mobile,
+    parent.phone,
+    parent.contact,
+    formData.parentMobile,
+    formData.mobile,
+    formData.phone,
+    metadata.callerMobile,
+  );
+
+  return {
+    requestedBy: {
+      type: "parent",
+      userId: input.studentUserId || input.createdBy,
+      name: requestedByName,
+      email: requestedByEmail,
+      mobile: requestedByMobile,
+      source,
+    },
+    ...(input.studentUserId || input.createdBy
+      ? { requestedByUserId: input.studentUserId || input.createdBy }
+      : {}),
+    requestedByType: "parent",
+    ...(requestedByName ? { requestedByName } : {}),
+    ...(requestedByEmail ? { requestedByEmail } : {}),
+    ...(requestedByMobile ? { requestedByMobile } : {}),
+    sourceLabel: source,
+  };
+};
+
+const normalizeOptionalObjectId = (
+  value: unknown,
+  fieldName: string,
+): string | undefined => {
+  const id = String(value || "").trim();
+  if (!id) return undefined;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new SrError(`Invalid ${fieldName}.`, 400);
+  }
+  return id;
+};
+
+const normalizeCategoryHierarchy = (
+  hierarchy?: Record<string, string>,
+): Record<string, string> | undefined => {
+  if (!hierarchy || typeof hierarchy !== "object") return undefined;
+  const cleaned = Object.fromEntries(
+    Object.entries(hierarchy)
+      .map(([key, value]) => [key, String(value || "").trim()])
+      .filter(([, value]) => value),
+  ) as Record<string, string>;
+  for (const [key, value] of Object.entries(cleaned)) {
+    if (/^level[1-5]$/.test(key) && !mongoose.Types.ObjectId.isValid(value)) {
+      throw new SrError(`Invalid category hierarchy ${key}.`, 400);
+    }
+  }
+  return Object.keys(cleaned).length ? cleaned : undefined;
 };
 
 export interface CreateServiceRequestInput {
@@ -35,6 +156,8 @@ export interface CreateServiceRequestInput {
   requestType?: RequestType;
   /** ISR only: parent PSR ticket id this ISR is linked to. */
   linkedPsrId?: string;
+  /** ISR only: parent ticket id this ISR is linked to (normal ticket or PSR). */
+  linkedParentTicketId?: string;
   channel: SrChannel;
   modeOfContact?: ModeOfContact;
   /** Deepest selected sub-category. */
@@ -44,6 +167,8 @@ export interface CreateServiceRequestInput {
   description?: string;
   /** The requester (student/parent), or the agent when raised on behalf. */
   createdBy?: string;
+  /** Logged-in staff/user who performed the creation or conversion. */
+  actorId?: string;
   /** Walk-in / on-behalf: the student the SR is for. */
   studentUserId?: string;
   studentEnrollment?: string;
@@ -64,6 +189,10 @@ export interface CreateServiceRequestInput {
   requesterEmail?: string;
   formData?: Record<string, any>;
   metadata?: Record<string, any>;
+  sourceEmail?: string;
+  sourceEmailName?: string;
+  sourceEmailMessageId?: string;
+  sourceEmailConfigId?: string;
   skipDuplicateCheck?: boolean;
 }
 
@@ -72,7 +201,11 @@ export interface CreateServiceRequestResult {
   ticketNumber: string;
   interactionType: InteractionType;
   assignedTo: string | null;
+  /** True when a category auto-close rule closed the SR on creation. */
+  autoClosed?: boolean;
   duplicates?: any[];
+  /** Editable per-project message shown when duplicates are found. */
+  duplicateMessage?: string;
 }
 
 export async function createServiceRequest(
@@ -89,59 +222,102 @@ export async function createServiceRequest(
     );
   }
   if (!input.subject) throw new SrError("Subject is required", 400);
+  const categoryId = normalizeOptionalObjectId(input.categoryId, "category");
+  const categoryHierarchy = normalizeCategoryHierarchy(input.categoryHierarchy);
 
-  // Linked-PSR validation: only an ISR may link, and only to a PSR in the same project.
+  // Linked parent validation: only an ISR may link, and only to a normal ticket
+  // or PSR in the same project. linkedPsrId is kept as a backward-compatible
+  // alias for existing PSR flows.
   let linkedPsrId: mongoose.Types.ObjectId | undefined;
-  if (input.linkedPsrId) {
+  const parentLinkId = input.linkedParentTicketId || input.linkedPsrId;
+  if (parentLinkId) {
     if (input.interactionType !== "ISR") {
-      throw new SrError("Only an ISR can be linked to a parent PSR.", 400);
+      throw new SrError("Only an ISR can be linked to a parent ticket.", 400);
     }
-    if (!mongoose.Types.ObjectId.isValid(input.linkedPsrId)) {
-      throw new SrError("Invalid linked PSR id.", 400);
+    if (!mongoose.Types.ObjectId.isValid(parentLinkId)) {
+      throw new SrError("Invalid linked parent ticket id.", 400);
     }
-    const psr = await Ticket.findById(input.linkedPsrId)
+    const parent = await Ticket.findById(parentLinkId)
       .select("interactionType project")
       .lean();
-    if (!psr || (psr as any).interactionType !== "PSR") {
-      throw new SrError("Linked parent PSR not found.", 404);
+    if (!parent || (parent as any).interactionType === "ISR") {
+      throw new SrError("Linked parent ticket not found.", 404);
     }
-    if (String((psr as any).project) !== String(input.projectId)) {
-      throw new SrError("Linked PSR belongs to a different project.", 400);
+    if (String((parent as any).project) !== String(input.projectId)) {
+      throw new SrError("Linked parent ticket belongs to a different project.", 400);
     }
-    linkedPsrId = new mongoose.Types.ObjectId(input.linkedPsrId);
+    linkedPsrId = new mongoose.Types.ObjectId(parentLinkId);
   }
 
   // Advisory duplicate detection (PSR only) — does not block creation.
   let duplicates: any[] | undefined;
   if (
     input.interactionType === "PSR" &&
-    input.categoryId &&
+    categoryId &&
     !input.skipDuplicateCheck
   ) {
     duplicates = await findDuplicateServiceRequests({
       projectId: input.projectId,
-      subCategoryId: input.categoryId,
+      subCategoryId: categoryId,
       studentUserId: input.studentUserId || input.createdBy,
       studentEnrollment: input.studentEnrollment,
     });
   }
 
   // Resolve assignment + CC + priority from the routing master data.
+  const selfAssignStaffExistingParentPsr =
+    input.interactionType === "PSR" &&
+    input.classification === "existing_parent" &&
+    input.channel === "walk_in" &&
+    !!input.actorId &&
+    !input.assignedTo;
   let assignedTo: mongoose.Types.ObjectId | null = input.assignedTo
     ? new mongoose.Types.ObjectId(input.assignedTo)
+    : selfAssignStaffExistingParentPsr
+      ? new mongoose.Types.ObjectId(input.actorId)
     : null;
+  let assignedVia: string | undefined =
+    input.assignedTo || selfAssignStaffExistingParentPsr ? "manual" : undefined;
   let cc: mongoose.Types.ObjectId[] = [];
   let priority = "NORMAL";
+  let autoCloseRule: SrAutoClose | null = null;
 
-  if (input.categoryId) {
-    const routing = await resolveSrRouting(input.projectId, input.categoryId);
-    if (!assignedTo && routing.assignment?.agentPool?.length) {
-      assignedTo = new mongoose.Types.ObjectId(routing.assignment.agentPool[0]);
+  // SR center (offline / walk-in) drives per-center routing overrides when set.
+  const srCenterId =
+    (input.metadata as any)?.centerId &&
+    mongoose.Types.ObjectId.isValid(String((input.metadata as any).centerId))
+      ? String((input.metadata as any).centerId)
+      : null;
+  // Submission source drives per-source SLA/TAT (#7).
+  const submissionSource = input.createdByRE
+    ? "offline"
+    : CHANNEL_TO_SOURCE[input.channel];
+
+  if (categoryId) {
+    if (!selfAssignStaffExistingParentPsr) {
+      const routing = await resolveSrRouting(
+        input.projectId,
+        categoryId,
+        srCenterId,
+        submissionSource,
+      );
+      autoCloseRule = routing.autoClose;
+      if (!assignedTo) {
+        const assignment = await autoAssignTicket(
+          input.projectId,
+          categoryId,
+          srCenterId,
+        );
+        if (assignment?.agentId) {
+          assignedTo = assignment.agentId;
+          assignedVia = assignment.assignedVia;
+        }
+      }
+      cc = (routing.assignment?.ccUsers || []).map(
+        (id) => new mongoose.Types.ObjectId(id),
+      );
     }
-    cc = (routing.assignment?.ccUsers || []).map(
-      (id) => new mongoose.Types.ObjectId(id),
-    );
-    const cat = await Category.findById(input.categoryId).select(
+    const cat = await Category.findById(categoryId).select(
       "defaultPriority",
     );
     if (cat?.defaultPriority) priority = cat.defaultPriority;
@@ -164,6 +340,7 @@ export async function createServiceRequest(
     unresolvedEmails.push(...emails.filter((e) => !byEmail.has(e)));
     if (resolvedIds.length) {
       assignedTo = new mongoose.Types.ObjectId(resolvedIds[0]);
+      assignedVia = "manual";
       const ccExtra = resolvedIds
         .slice(1)
         .map((id) => new mongoose.Types.ObjectId(id));
@@ -171,10 +348,33 @@ export async function createServiceRequest(
     }
   }
 
-  const ticketNumber = await generateSrTicketNumber(input.projectId);
+  const ticketNumber = await generateSrTicketNumber(
+    input.projectId,
+    input.interactionType,
+  );
+  const requestedByMetadata = buildRequestedByMetadata(input);
+  const sourceEmailConfigId = normalizeOptionalObjectId(
+    input.sourceEmailConfigId,
+    "sourceEmailConfigId",
+  );
+
+  // Snapshot the resolved SR form schema so field-level parent visibility
+  // (showToParent / visibleAtStatus) can be enforced later on parent reads.
+  let formSchemaSnapshot: any[] | undefined;
+  try {
+    const schema = await resolveFormSchema(
+      input.projectId,
+      input.interactionType,
+      input.channel,
+    );
+    if (schema?.fields?.length) formSchemaSnapshot = schema.fields;
+  } catch {
+    /* no schema → nothing to snapshot */
+  }
 
   const ticket = await Ticket.create({
     ticketNumber,
+    formSchemaSnapshot,
     subject: input.subject,
     description: input.description || "",
     status: 1, // Open
@@ -185,33 +385,50 @@ export async function createServiceRequest(
       : undefined,
     assignedTo: assignedTo || undefined,
     cc,
-    category: input.categoryId as any,
-    categoryHierarchy: input.categoryHierarchy as any,
+    category: categoryId as any,
+    categoryHierarchy: categoryHierarchy as any,
     interactionType: input.interactionType,
     requestType:
       input.requestType ||
       (input.interactionType === "PSR" ? "SR" : undefined),
     linkedPsrId,
     modeOfContact: input.modeOfContact,
-    submissionSource: (input.createdByRE
-      ? "offline"
-      : CHANNEL_TO_SOURCE[input.channel]) as any,
+    submissionSource: submissionSource as any,
+    sourceEmail: input.sourceEmail || undefined,
+    sourceEmailName: input.sourceEmailName || undefined,
+    sourceEmailMessageId: input.sourceEmailMessageId || undefined,
+    sourceEmailConfigId: sourceEmailConfigId
+      ? new mongoose.Types.ObjectId(sourceEmailConfigId)
+      : undefined,
     assignedVia: assignedTo
-      ? input.assignedTo || input.assignedToEmails?.length
-        ? "manual"
-        : "by-user"
+      ? assignedVia || "manual"
       : undefined,
     metadata: {
       ...(input.metadata || {}),
+      ...requestedByMetadata,
       ...(input.studentEnrollment
         ? { studentEnrollment: input.studentEnrollment }
         : {}),
       ...(input.formData ? { formData: input.formData } : {}),
       ...(input.classification ? { classification: input.classification } : {}),
+      ...(selfAssignStaffExistingParentPsr
+        ? { assignmentRule: "staff_existing_parent_self_assigned" }
+        : {}),
       ...(input.parent ? { parent: input.parent } : {}),
       ...(input.children?.length ? { children: input.children } : {}),
       ...(input.requesterEmail ? { requesterEmail: input.requesterEmail } : {}),
-      ...(input.createdByRE ? { createdByRE: true } : {}),
+      ...(input.actorId
+        ? {
+            raisedByUserId: input.actorId,
+            createdByAgentId: input.actorId,
+          }
+        : {}),
+      ...(input.createdByRE
+        ? {
+            createdByRE: true,
+            ...(input.actorId ? { createdByREUserId: input.actorId } : {}),
+          }
+        : {}),
       ...(input.scheduleDispatchDate
         ? { scheduleDispatchDate: input.scheduleDispatchDate }
         : {}),
@@ -220,13 +437,70 @@ export async function createServiceRequest(
     },
   });
 
-  await notifySrWatchers(ticket, "created", input.createdBy);
+  // ── Auto-close rule (#8) ────────────────────────────────────────────────────
+  // If a category rule matches the SR's field values, create it Closed with a
+  // templated remark (falls back to the project closure-default message).
+  let autoClosed = false;
+  if (autoCloseRule?.enabled) {
+    const values = { ...(input.formData || {}), subject: input.subject };
+    if (evalConditions(autoCloseRule.conditions as any, values, autoCloseRule.match)) {
+      const closureFallback =
+        resolveSrConfig(project).messages?.closureDefault ||
+        "Automatically closed on creation by rule.";
+      const remark =
+        renderTemplate(autoCloseRule.remarkTemplate || "", {
+          ticketNumber,
+          subject: input.subject,
+          values,
+        }).trim() || closureFallback;
+      ticket.status = SR_STATUS.CLOSED;
+      ticket.closedAt = new Date();
+      (ticket as any).metadata = {
+        ...((ticket as any).metadata || {}),
+        autoClose: true,
+      };
+      ticket.markModified("metadata");
+      ticket.comments = ticket.comments || [];
+      ticket.comments.push({
+        text: remark,
+        createdBy: input.createdBy
+          ? new mongoose.Types.ObjectId(input.createdBy)
+          : (ticket.createdBy as any),
+        createdAt: new Date(),
+        isSystemComment: true,
+        displayToParent: true,
+      } as any);
+      ticket.changeHistory = ticket.changeHistory || [];
+      ticket.changeHistory.push({
+        field: "status",
+        oldValue: String(SR_STATUS.OPEN),
+        newValue: String(SR_STATUS.CLOSED),
+        changedBy: input.createdBy
+          ? new mongoose.Types.ObjectId(input.createdBy)
+          : (ticket.createdBy as any),
+        changedAt: new Date(),
+      } as any);
+      await ticket.save();
+      autoClosed = true;
+    }
+  }
+
+  await notifySrWatchers(
+    ticket,
+    autoClosed ? "closed" : "created",
+    input.createdBy,
+  );
 
   return {
     ticketId: String(ticket._id),
     ticketNumber,
     interactionType: input.interactionType,
     assignedTo: assignedTo ? String(assignedTo) : null,
+    autoClosed,
     duplicates,
+    duplicateMessage:
+      duplicates && duplicates.length
+        ? resolveSrConfig(project).messages?.duplicate || undefined
+        : undefined,
   };
 }

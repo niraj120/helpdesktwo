@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "./DashboardLayout";
 import { getText } from "../utils/language";
+import { mdmUserSyncApi } from "../services/mdmUserSync";
 import { usePermissions } from "../hooks/usePermissions";
 import { useProjectContext } from "../contexts/ProjectContext";
 import { API_CONFIG } from "../config/constants";
@@ -63,6 +64,9 @@ interface User {
   createdAt: string;
   payrollType?: "internal" | "external";
   company?: { _id: string; name: string } | null;
+  mdmSourceId?: string;
+  mdmSyncStatus?: "synced" | "missing_in_mdm";
+  mdmLastSyncedAt?: string;
 }
 
 interface HRMSEmployee {
@@ -72,6 +76,8 @@ interface HRMSEmployee {
   email: string;
   mobile: string;
   mdmSourceId?: string;
+  mdmSyncStatus?: "synced" | "missing_in_mdm";
+  mdmLastSyncedAt?: string;
   mdmSourceName?: string;
   department: string;
   designation: string;
@@ -287,6 +293,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
     centers: [] as string[],
     payrollType: "" as "" | "internal" | "external",
     company: "",
+    isIvrAgent: false,
   });
 
   // Filtered data based on primary project selection - memoized to prevent recalculation
@@ -480,6 +487,45 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
   // Export state
   const [exporting, setExporting] = useState(false);
+  const [syncingMdm, setSyncingMdm] = useState(false);
+
+  const handleMdmSync = async () => {
+    if (
+      !window.confirm(
+        getText(
+          "Sync users from MDM now? This updates active/inactive and profile details from MDM.",
+          "",
+          "",
+        ),
+      )
+    )
+      return;
+    setSyncingMdm(true);
+    try {
+      const r = selectedMdmSource
+        ? await mdmUserSyncApi.source(selectedMdmSource)
+        : await mdmUserSyncApi.all();
+      const results = selectedMdmSource ? [r.result] : r.results || [];
+      const s = results.reduce(
+        (a: any, x: any) => ({
+          checked: a.checked + (x?.checked || 0),
+          updated: a.updated + (x?.updated || 0),
+          deactivated: a.deactivated + (x?.deactivated || 0),
+          reactivated: a.reactivated + (x?.reactivated || 0),
+          missing: a.missing + (x?.missing || 0),
+        }),
+        { checked: 0, updated: 0, deactivated: 0, reactivated: 0, missing: 0 },
+      );
+      alert(
+        `MDM sync complete.\nChecked: ${s.checked}\nUpdated: ${s.updated}\nDeactivated: ${s.deactivated}\nReactivated: ${s.reactivated}\nMissing in MDM: ${s.missing}`,
+      );
+      fetchUsers();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || "MDM sync failed");
+    } finally {
+      setSyncingMdm(false);
+    }
+  };
   // Bulk upload modal state
   const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
   const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
@@ -1129,6 +1175,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
       centers: [],
       payrollType: "" as "" | "internal" | "external",
       company: "",
+      isIvrAgent: false,
     });
 
     // Fetch reporting managers for the default project (if any)
@@ -1224,6 +1271,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
         typeof user.company === "object" && user.company
           ? user.company._id
           : (user.company as unknown as string) || "",
+      isIvrAgent: !!(user as any).isIvrAgent,
     });
 
     // Fetch centers for the primary project
@@ -1348,6 +1396,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
         centers: formData.centers,
         payrollType: formData.payrollType || undefined,
         company: formData.company || undefined,
+        isIvrAgent: formData.isIvrAgent,
       };
 
       if (!editingUser && formData.password) {
@@ -2972,6 +3021,36 @@ const UserManagement: React.FC<UserManagementProps> = ({
               {getText("Bulk Upload", "बल्क अपलोड", "बल्क अपलोड")}
             </button>
           )}
+          {hasPermission("USER_IMPORT") && (
+            <button
+              onClick={handleMdmSync}
+              disabled={syncingMdm}
+              title={getText(
+                "Refresh users' active/inactive + details from MDM (selected source, or all scheduled sources)",
+                "",
+                "",
+              )}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "10px 16px",
+                borderRadius: 8,
+                border: "1.5px solid #e2e8f0",
+                background: "#fff",
+                color: "#334155",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: syncingMdm ? "default" : "pointer",
+                opacity: syncingMdm ? 0.6 : 1,
+              }}
+            >
+              🔄{" "}
+              {syncingMdm
+                ? getText("Syncing…", "सिंक हो रहा है…", "सिंक होत आहे…")
+                : getText("Sync from MDM", "MDM से सिंक", "MDM वरून सिंक")}
+            </button>
+          )}
           {hasPermission("USER_VIEW_ALL") && (
             <button
               onClick={() => handleExportUsers("excel")}
@@ -3240,6 +3319,22 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       }}
                     >
                       {user.firstName} {user.lastName}
+                      {user.mdmSourceId && (
+                        <span
+                          title="Managed by MDM (HRMS)"
+                          style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 9999, fontSize: 10, fontWeight: 700, color: "#4f46e5", background: "#eef2ff", verticalAlign: "middle" }}
+                        >
+                          MDM
+                        </span>
+                      )}
+                      {user.mdmSyncStatus === "missing_in_mdm" && (
+                        <span
+                          title="No longer found in MDM"
+                          style={{ marginLeft: 4, padding: "1px 6px", borderRadius: 9999, fontSize: 10, fontWeight: 700, color: "#b45309", background: "#fef3c7", verticalAlign: "middle" }}
+                        >
+                          missing
+                        </span>
+                      )}
                     </div>
                     <div
                       style={{
@@ -5225,6 +5320,49 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     </select>
                   </div>
                 )}
+              </div>
+
+              {/* IVR Agent toggle */}
+              <div
+                style={{
+                  marginTop: "16px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  padding: "12px 16px",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 8,
+                  background: "#f8fafc",
+                }}
+              >
+                <div>
+                  <div
+                    style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}
+                  >
+                    {getText("IVR Agent", "आईवीआर एजेंट", "आयव्हीआर एजंट")}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#475569" }}>
+                    {getText(
+                      "Receives missed IVR calls via round-robin",
+                      "राउंड-रॉबिन द्वारे मिस्ड आईवीआर कॉल प्राप्त करता है",
+                      "राउंड-रॉबिनद्वारे मिस्ड आयव्हीआर कॉल मिळतात",
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formData.isIvrAgent}
+                  onChange={(e) =>
+                    setFormData({ ...formData, isIvrAgent: e.target.checked })
+                  }
+                  style={{
+                    width: 18,
+                    height: 18,
+                    accentColor: "#4f46e5",
+                    cursor: "pointer",
+                  }}
+                />
               </div>
 
               {!editingUser && (

@@ -5,6 +5,7 @@ import { Response } from "express";
 import { AuthRequest } from "../../../middleware/auth";
 import { Lead } from "../../../models/Lead";
 import { applyProjectScope, getProjectScope } from "../../../utils/projectScope";
+import { syncLeadToCrm } from "../services/leadCrmSync";
 
 export const listLeads = async (req: AuthRequest, res: Response) => {
   try {
@@ -17,6 +18,8 @@ export const listLeads = async (req: AuthRequest, res: Response) => {
     );
     if (req.query.status && req.query.status !== "all")
       q.status = String(req.query.status);
+    if (req.query.crmSyncStatus && req.query.crmSyncStatus !== "all")
+      q.crmSyncStatus = String(req.query.crmSyncStatus);
     if (req.query.search) {
       const rx = new RegExp(
         String(req.query.search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
@@ -39,14 +42,73 @@ export const listLeads = async (req: AuthRequest, res: Response) => {
 
 export const createLead = async (req: AuthRequest, res: Response) => {
   try {
-    if (!req.body.projectId || !req.body.name) {
-      res.status(400).json({ success: false, message: "projectId and name are required" });
+    const formData =
+      req.body.formData && typeof req.body.formData === "object"
+        ? req.body.formData
+        : {};
+    const name =
+      req.body.name ||
+      formData.name ||
+      formData.parentName ||
+      [formData.firstName || formData.parentFirstName, formData.lastName || formData.parentLastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+    const contactNumber =
+      req.body.contactNumber || formData.contactNumber || formData.mobile || formData.phone;
+    const email = req.body.email || formData.email || formData.parentEmail;
+    const studentName =
+      req.body.studentName ||
+      formData.studentName ||
+      [formData.studentFirstName, formData.studentLastName].filter(Boolean).join(" ").trim();
+    const grade = req.body.grade || formData.gradeLabel || formData.grade;
+    const notes = req.body.notes || formData.notes || formData.enquiry || formData.query;
+
+    if (!req.body.projectId || !name) {
+      res.status(400).json({ success: false, message: "projectId and lead name are required" });
       return;
     }
-    const lead = await Lead.create({ ...req.body, createdBy: req.user?.userId });
-    res.status(201).json({ success: true, data: lead });
+    const shouldSyncCrm = req.body.syncCrm !== false;
+    const lead = await Lead.create({
+      ...req.body,
+      name,
+      contactNumber,
+      email,
+      studentName,
+      grade,
+      notes,
+      formData,
+      crmSyncStatus: shouldSyncCrm ? "pending" : req.body.crmSyncStatus || "not_required",
+      createdBy: req.user?.userId,
+    });
+
+    if (!shouldSyncCrm) {
+      res.status(201).json({ success: true, data: lead });
+      return;
+    }
+
+    const syncedLead = await syncLeadToCrm(String(lead._id));
+    res.status(201).json({ success: true, data: syncedLead || lead });
   } catch (err) {
     console.error("[lead] create error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const retryLeadCrmSync = async (req: AuthRequest, res: Response) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) {
+      res.status(404).json({ success: false, message: "Lead not found" });
+      return;
+    }
+    lead.crmSyncStatus = "pending";
+    lead.crmSyncReason = undefined;
+    await lead.save();
+    const syncedLead = await syncLeadToCrm(String(lead._id));
+    res.json({ success: true, data: syncedLead || lead });
+  } catch (err) {
+    console.error("[lead] CRM retry error:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import DOMPurify from "dompurify";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import PsrDetailLayout from "../components/sr/PsrDetailLayout";
 import LinkedIsrPanel from "../components/sr/LinkedIsrPanel";
 import PslCallTab from "../components/sr/PslCallTab";
@@ -109,7 +109,7 @@ interface Ticket {
   title: string;
   subject?: string;
   description: string;
-  status: string;
+  status: number;
   priority: string;
   category: string;
   categoryHierarchy?: {
@@ -136,7 +136,7 @@ interface Ticket {
     lastName: string;
     email: string;
   };
-  submissionSource?: "online" | "offline" | "email"; // Task 6.4: Ticket source
+  submissionSource?: "online" | "offline" | "walk_in" | "email" | "ivr" | "whatsapp" | "sms" | "chatbot"; // Task 6.4: Ticket source
   sourceEmail?: string; // Task 6.4: Sender email for email tickets
   sourceEmailMessageId?: string; // Task 7.5: Original email message ID for threading
   metadata?: {
@@ -153,6 +153,18 @@ interface Ticket {
       state?: string;
     };
     customFields?: Record<string, any>;
+    requestedBy?: {
+      type?: string;
+      userId?: string;
+      name?: string;
+      email?: string;
+      mobile?: string;
+      source?: string;
+    };
+    requestedByName?: string;
+    requestedByEmail?: string;
+    requestedByMobile?: string;
+    requestedByType?: string;
   };
   formSchemaSnapshot?: Array<{
     fieldName: string;
@@ -498,6 +510,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 }) => {
   const { id: ticketId, customUrlPath } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isServiceRequestRoute = location.pathname.includes("/service-requests/");
+  const detailPathFor = (id: string) => {
+    if (isServiceRequestRoute) {
+      return customUrlPath
+        ? `/${customUrlPath}/portal/service-requests/${id}`
+        : `/service-requests/${id}`;
+    }
+    return customUrlPath ? `/${customUrlPath}/portal/tickets/${id}` : `/tickets/${id}`;
+  };
 
   // Prev/Next navigation within the list the user came from. ViewTickets stores
   // the current ordered ticket IDs in sessionStorage; we use them to jump
@@ -678,9 +700,13 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     !!ticket &&
     ((ticket as any).interactionType === "PSR" ||
       (ticket as any).interactionType === "ISR");
+  const ticketInteractionType = (() => {
+    const rawType = String((ticket as any)?.interactionType || "").toUpperCase();
+    return rawType === "PSR" || rawType === "ISR" ? rawType : "Normal";
+  })();
 
   useEffect(() => {
-    if (!isSrDetailTicket || !ticketProjectId) {
+    if (!ticketProjectId) {
       setSrConfig(null);
       return;
     }
@@ -697,7 +723,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     return () => {
       mounted = false;
     };
-  }, [isSrDetailTicket, ticketProjectId]);
+  }, [ticketProjectId]);
 
   const srTab = (key: string) =>
     srConfig?.psrDetail?.tabs?.find((tab: any) => tab.key === key);
@@ -711,6 +737,20 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   };
   const srTabLabel = (key: string, fallback: string) =>
     isSrDetailTicket ? srTab(key)?.label || fallback : fallback;
+  const isPsrTicket = (ticket as any)?.interactionType === "PSR";
+  const isIsrTicket = (ticket as any)?.interactionType === "ISR";
+  const normalTicketLinkedIsrEnabled =
+    !!ticket &&
+    !isPsrTicket &&
+    !isIsrTicket &&
+    !!srConfig?.enabled &&
+    !!srConfig?.isr?.enabled &&
+    !!srConfig?.isr?.linkFromNormalTickets?.enabled;
+  const linkedIsrTabEnabled =
+    !!ticket &&
+    !isIsrTicket &&
+    (isPsrTicket || normalTicketLinkedIsrEnabled) &&
+    srTabVisible("linkedisr");
 
   // Fetch hierarchy config to determine if multi-level categories are enabled
   const { config: hierarchyConfig } = useHierarchyConfig(ticketProjectId);
@@ -743,8 +783,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   const [mergedPanelExpanded, setMergedPanelExpanded] = useState(false);
 
   // Task 6.4: Source badge helper function
-  const getSourceBadge = (source?: "online" | "offline" | "email") => {
-    const badges = {
+  const getSourceBadge = (source?: Ticket["submissionSource"]) => {
+    const badges: Record<
+      NonNullable<Ticket["submissionSource"]>,
+      { icon: string; label: string; color: string; bgColor: string; tooltip: string }
+    > = {
       online: {
         icon: "🌐",
         label: "Online",
@@ -761,10 +804,45 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
       },
       email: {
         icon: "📧",
-        label: "Email",
+        label: "Mail",
         color: "#10B981",
         bgColor: "#D1FAE5",
         tooltip: "Created from email",
+      },
+      walk_in: {
+        icon: "WI",
+        label: "Walk-in",
+        color: "#7C3AED",
+        bgColor: "#EDE9FE",
+        tooltip: "Created by staff from New Request",
+      },
+      ivr: {
+        icon: "IV",
+        label: "IVR",
+        color: "#0F766E",
+        bgColor: "#CCFBF1",
+        tooltip: "Created from IVR call",
+      },
+      whatsapp: {
+        icon: "WA",
+        label: "WhatsApp",
+        color: "#15803D",
+        bgColor: "#DCFCE7",
+        tooltip: "Created from WhatsApp",
+      },
+      sms: {
+        icon: "SM",
+        label: "SMS",
+        color: "#B45309",
+        bgColor: "#FEF3C7",
+        tooltip: "Created from SMS",
+      },
+      chatbot: {
+        icon: "CB",
+        label: "Chatbot",
+        color: "#4F46E5",
+        bgColor: "#E0E7FF",
+        tooltip: "Created from chatbot",
       },
     };
     return badges[source || "online"] || badges.online;
@@ -1075,32 +1153,40 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
       if (!ticketId) {
         console.error("No ticket ID provided");
         alert("Invalid ticket ID");
-        navigate(`/${customUrlPath}/portal/tickets`);
+        navigate(
+          isServiceRequestRoute
+            ? `/${customUrlPath}/portal/service-requests`
+            : `/${customUrlPath}/portal/tickets`,
+        );
         return;
       }
 
-      console.log("Fetching ticket:", ticketId);
-      const response = await axios.get(
-        `${API_CONFIG.API_URL}/tickets/${ticketId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
+      console.log(
+        isServiceRequestRoute ? "Fetching service request:" : "Fetching ticket:",
+        ticketId,
       );
+      const responseData = isServiceRequestRoute
+        ? await serviceRequestApi.get(ticketId)
+        : (
+            await axios.get(`${API_CONFIG.API_URL}/tickets/${ticketId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+          ).data;
 
-      console.log("Ticket response:", response.data);
+      console.log("Ticket response:", responseData);
 
-      if (response.data.success && response.data.data) {
+      if (responseData.success && responseData.data) {
         console.log(
           "📋 Setting ticket with status:",
-          response.data.data.status,
+          responseData.data.status,
         );
-        setTicket(response.data.data);
-      } else if (response.data && !response.data.success) {
-        console.error("API returned error:", response.data.message);
-        alert(`Error: ${response.data.message || "Failed to load ticket"}`);
+        setTicket(responseData.data);
+      } else if (responseData && !responseData.success) {
+        console.error("API returned error:", responseData.message);
+        alert(`Error: ${responseData.message || "Failed to load ticket"}`);
       } else {
         // Handle case where data is directly in response
-        setTicket(response.data);
+        setTicket(responseData);
       }
     } catch (error: any) {
       console.error("Error fetching ticket:", error);
@@ -1113,9 +1199,19 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
       if (error.response?.status === 401) {
         alert("Session expired. Please log in again.");
         navigate(`/${customUrlPath}/portal/login`);
+      } else if (error.response?.status === 403) {
+        alert(
+          isServiceRequestRoute
+            ? "You do not have permission to view this service request."
+            : "You do not have permission to view this ticket.",
+        );
       } else if (error.response?.status === 404) {
-        alert("Ticket not found");
-        navigate(`/${customUrlPath}/portal/tickets`);
+        alert(isServiceRequestRoute ? "Service request not found" : "Ticket not found");
+        navigate(
+          isServiceRequestRoute
+            ? `/${customUrlPath}/portal/service-requests`
+            : `/${customUrlPath}/portal/tickets`,
+        );
       } else if (error.request) {
         alert(
           "Cannot connect to server. Please check if the backend is running.",
@@ -1933,7 +2029,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     <button
                       onClick={() =>
                         prevTicketId &&
-                        navigate(`/tickets/${prevTicketId}`, { replace: true })
+                        navigate(detailPathFor(prevTicketId), { replace: true })
                       }
                       disabled={!prevTicketId}
                       className="px-2 py-1 text-xs font-medium rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -1944,7 +2040,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     <button
                       onClick={() =>
                         nextTicketId &&
-                        navigate(`/tickets/${nextTicketId}`, { replace: true })
+                        navigate(detailPathFor(nextTicketId), { replace: true })
                       }
                       disabled={!nextTicketId}
                       className="px-2 py-1 text-xs font-medium rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -1965,6 +2061,19 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     <h1 className="text-xl font-bold text-gray-900 whitespace-nowrap">
                       #{ticket.ticketNumber}
                     </h1>
+                    <span
+                      className="px-2.5 py-0.5 rounded-full text-xs font-semibold border"
+                      style={{
+                        color:
+                          ticketInteractionType === "Normal" ? "#334155" : "#4338ca",
+                        background:
+                          ticketInteractionType === "Normal" ? "#f8fafc" : "#eef2ff",
+                        borderColor:
+                          ticketInteractionType === "Normal" ? "#cbd5e1" : "#c7d2fe",
+                      }}
+                    >
+                      {ticketInteractionType}
+                    </span>
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${getStatusColor(ticket.status)}`}
                     >
@@ -2485,9 +2594,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       <ChatBubbleLeftRightIcon className="h-5 w-5 inline-block mr-2" />
                       {srTabLabel("replies", "Replies")}
                     </button>
-                    {isSrDetailTicket &&
-                      (ticket as any).interactionType === "PSR" &&
-                      srTabVisible("linkedisr") && (
+                    {linkedIsrTabEnabled && (
                         <button
                           onClick={() => setActiveTab("linkedisr")}
                           className={`py-4 px-1 border-b-2 font-medium text-sm ${
@@ -3088,9 +3195,17 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
                   {activeTab === "linkedisr" && ticket && (
                     <LinkedIsrPanel
-                      psrId={ticket._id}
+                      parentTicketId={ticket._id}
                       projectId={String(ticketProjectId || "")}
                       variant="tab"
+                      allowCreate={
+                        isPsrTicket ||
+                        !!srConfig?.isr?.linkFromNormalTickets?.createEnabled
+                      }
+                      allowLink={
+                        isPsrTicket ||
+                        !!srConfig?.isr?.linkFromNormalTickets?.linkExistingEnabled
+                      }
                     />
                   )}
 
@@ -4884,6 +4999,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             }}
                             mode="display"
                             showValidation={false}
+                            ticketType={
+                              (ticket as any)?.interactionType === "PSR" ||
+                              (ticket as any)?.interactionType === "ISR"
+                                ? (ticket as any).interactionType
+                                : "normal"
+                            }
                           />
                         )}
                       </div>
@@ -5101,6 +5222,21 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       Requester
                     </label>
                     <div className="space-y-1">
+                      {(ticket.metadata?.requestedByName || ticket.metadata?.requestedBy?.name) && (
+                        <p className="text-sm text-gray-900">
+                          {ticket.metadata?.requestedByName || ticket.metadata?.requestedBy?.name}
+                        </p>
+                      )}
+                      {(ticket.metadata?.requestedByEmail || ticket.metadata?.requestedBy?.email) && (
+                        <p className="text-sm text-gray-600">
+                          {ticket.metadata?.requestedByEmail || ticket.metadata?.requestedBy?.email}
+                        </p>
+                      )}
+                      {(ticket.metadata?.requestedByMobile || ticket.metadata?.requestedBy?.mobile) && (
+                        <p className="text-sm text-gray-600">
+                          {ticket.metadata?.requestedByMobile || ticket.metadata?.requestedBy?.mobile}
+                        </p>
+                      )}
                       {ticket.metadata?.studentName && (
                         <p className="text-sm text-gray-900">
                           {ticket.metadata.studentName}

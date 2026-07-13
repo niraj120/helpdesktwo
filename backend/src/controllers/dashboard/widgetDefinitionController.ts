@@ -11,9 +11,17 @@ import { WidgetDefinition } from "../../models/dashboard/WidgetDefinition";
 import { WIDGET_CATALOG } from "./widgetCatalog";
 
 async function ensureWidgetsSeedeed(): Promise<void> {
-  const count = await WidgetDefinition.countDocuments();
-  if (count > 0) return;
-  await WidgetDefinition.insertMany(WIDGET_CATALOG);
+  // Upsert by widgetKey so newly added catalog widgets (e.g. SR widgets) appear
+  // on existing installs without a manual reseed — mirrors the report data-point
+  // self-seed. Existing rows are refreshed; user data is untouched.
+  const ops = (WIDGET_CATALOG as any[]).map((w) => ({
+    updateOne: {
+      filter: { widgetKey: w.widgetKey },
+      update: { $set: w },
+      upsert: true,
+    },
+  }));
+  if (ops.length) await WidgetDefinition.bulkWrite(ops);
 }
 
 export async function listWidgetDefinitions(

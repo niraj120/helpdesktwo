@@ -32,6 +32,11 @@ const userName = (u: any) =>
         u.email ||
         "-";
 
+const firstNonEmpty = (...values: any[]) =>
+  values
+    .map((value) => String(value || "").trim())
+    .find(Boolean) || "";
+
 const Pill: React.FC<{ ok: boolean; yes: string; no: string }> = ({
   ok,
   yes,
@@ -68,9 +73,25 @@ const PslCallTab: React.FC<Props> = ({ ticket, onChanged }) => {
   const [msg, setMsg] = useState<SrMessage | null>(null);
 
   const md = ticket?.metadata || {};
-  const contactName = md.studentName || userName(ticket?.createdBy) || "Requester";
-  const contactPhone = md.studentPhone || md.parentPhone || "";
-  const contactEmail = md.studentEmail || "";
+  const parent = md.parent || {};
+  const contactName =
+    firstNonEmpty(
+      parent.name,
+      md.parentName,
+      md.parent?.fullName,
+      md.parent?.firstName || md.parent?.lastName
+        ? `${md.parent?.firstName || ""} ${md.parent?.lastName || ""}`
+        : "",
+      userName(ticket?.createdBy),
+    ) || "Parent";
+  const contactPhone = firstNonEmpty(
+    parent.mobile,
+    parent.phone,
+    parent.contact,
+    md.parentMobile,
+    md.parentPhone,
+  );
+  const contactEmail = firstNonEmpty(parent.email, md.parentEmail);
 
   const last = ticket?.pslCall;
 

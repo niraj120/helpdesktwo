@@ -635,6 +635,28 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
   // =====================================================
   {
     module: "Service Request",
+    name: "View All Service Requests",
+    code: "SR_VIEW_ALL",
+    description: "Can view all PSR/ISR tickets within assigned project scope",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "View Own Service Requests",
+    code: "SR_VIEW_OWN",
+    description: "Can view PSR/ISR tickets created by self",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "View Assigned Service Requests",
+    code: "SR_VIEW_ASSIGNED",
+    description:
+      "Can view PSR/ISR tickets assigned to self for working/resolution",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
     name: "Create Parent Service Request",
     code: "SR_PSR_CREATE",
     description: "Can raise a Parent Service Request (PSR)",
@@ -659,6 +681,13 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     name: "Receive Internal Service Request",
     code: "SR_ISR_RECEIVE",
     description: "Eligible to be assigned ISRs (forms the ISR assignment pool)",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Link ISR to Ticket / PSR",
+    code: "SR_ISR_LINK",
+    description: "Can link an existing ISR to a normal ticket or PSR",
     category: "service-request",
   },
   {
@@ -688,6 +717,28 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     name: "Re-open Service Request",
     code: "SR_REOPEN",
     description: "Can re-open a closed SR on behalf of the parent",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Cancel Service Request",
+    code: "SR_CANCEL",
+    description:
+      "Can cancel an SR with a reason and optionally link a replacement SR",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Delete Service Request",
+    code: "SR_DELETE",
+    description: "Can delete PSR/ISR records from the Service Requests module",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Merge Service Requests",
+    code: "SR_MERGE",
+    description: "Can merge duplicate PSR/ISR records from the Service Requests module",
     category: "service-request",
   },
   {
@@ -738,6 +789,14 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
   },
   {
     module: "Service Request",
+    name: "View All Email Triage Inbox",
+    code: "EMAIL_TRIAGE_ALL",
+    description:
+      "Can view and convert triaged emails across all mapped mailboxes in permitted projects",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
     name: "Convert Email (Triage)",
     code: "EMAIL_TRIAGE_CONVERT",
     description: "Can convert a triaged email into a PSR/ISR/lead",
@@ -748,6 +807,28 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     name: "Respond to Email (Triage)",
     code: "EMAIL_TRIAGE_RESPOND",
     description: "Can reply to an email from the triage inbox",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Access IVR Triage",
+    code: "IVR_TRIAGE_ACCESS",
+    description: "Can view IVR calls and voice-note triage queue",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Convert IVR to PSR",
+    code: "IVR_TRIAGE_CONVERT",
+    description: "Can classify IVR calls and convert them into PSR tickets",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Manage IVR Agents",
+    code: "IVR_AGENT_MANAGE",
+    description:
+      "Can manage IVR agents: digit mapping, round-robin config, and leaves",
     category: "service-request",
   },
   // =====================================================
@@ -1949,22 +2030,20 @@ export async function seedRolesAndPermissions() {
         const RolePermissionModel = mongoose.model("RolePermission");
         const superAdmin = await Role.findOne({ code: "SUPER_ADMIN" });
         if (superAdmin) {
-          const allPerms = await Permission.find({}, "_id").lean();
+          const allPerms = await Permission.find({ isActive: true }, "_id").lean();
+          const allPermIds = allPerms.map((p: any) => p._id);
           const have = new Set(
             (superAdmin.permissions || []).map((p: any) => p.toString()),
           );
-          const missing = allPerms
-            .map((p: any) => p._id)
-            .filter((id: any) => !have.has(id.toString()));
+          const missing = allPermIds.filter(
+            (id: any) => !have.has(id.toString()),
+          );
 
-          if (missing.length > 0) {
-            // 1. Role.permissions array (read by JWT generation)
-            superAdmin.permissions.push(...(missing as any[]));
-            await superAdmin.save();
-
-            // 2. RolePermission junction table (kept in sync with the array)
+          // Keep the RolePermission junction table aligned even if a past run
+          // updated Role.permissions but failed before writing junction rows.
+          if (allPermIds.length > 0) {
             await RolePermissionModel.bulkWrite(
-              missing.map((id: any) => ({
+              allPermIds.map((id: any) => ({
                 updateOne: {
                   filter: { roleId: superAdmin._id, permissionId: id },
                   update: {
@@ -1979,6 +2058,12 @@ export async function seedRolesAndPermissions() {
                 },
               })),
             );
+          }
+
+          if (missing.length > 0) {
+            // 1. Role.permissions array (read by JWT generation)
+            superAdmin.permissions.push(...(missing as any[]));
+            await superAdmin.save();
 
             // 3. Invalidate Super Admin sessions so the new permissions take effect
             //    on the next request (token carries a tokenVersion).

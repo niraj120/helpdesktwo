@@ -24,6 +24,10 @@ export interface EscalationLevel {
   levelType?: "reassign" | "notify";
   /** US-ESC-006: specific users to notify (used when levelType='notify') */
   notifyUserIds?: string[];
+  /** Per-level CC users — notified on this level's escalation regardless of levelType. */
+  ccUserIds?: string[];
+  /** Per-level CC roles — all active project members of these roles are notified. */
+  ccRoleIds?: string[];
   /** US-ESC-007: trigger on fixed duration or % of overall ticket SLA consumed */
   slaThresholdType?: "fixed" | "percent";
   /** US-ESC-007: percentage threshold (1-100), used when slaThresholdType='percent' */
@@ -215,6 +219,10 @@ export interface EscalationLevelFormData {
   levelType?: "reassign" | "notify";
   /** US-ESC-006: specific users to notify (used when levelType='notify') */
   notifyUserIds?: string[];
+  /** Per-level CC users — notified on this level's escalation regardless of levelType. */
+  ccUserIds?: string[];
+  /** Per-level CC roles — all active project members of these roles are notified. */
+  ccRoleIds?: string[];
   /** US-ESC-007: trigger on fixed duration or % of overall ticket SLA consumed */
   slaThresholdType?: "fixed" | "percent";
   /** US-ESC-007: percentage threshold (1-100), used when slaThresholdType='percent' */

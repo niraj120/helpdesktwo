@@ -32,7 +32,7 @@ interface Ticket {
   subject: string;
   title: string;
   description: string;
-  status: string;
+  status: number;
   priority?: string;
   category?: {
     name: string;
@@ -43,7 +43,7 @@ interface Ticket {
     lastName: string;
     email: string;
   };
-  submissionSource?: "online" | "offline" | "email"; // Source filter (Task 6.1)
+  submissionSource?: "online" | "offline" | "walk_in" | "email" | "ivr" | "whatsapp" | "sms" | "chatbot"; // Source filter (Task 6.1)
   sourceEmail?: string; // Task 6.3: Sender email for email tickets
   metadata?: {
     projectId?:
@@ -856,13 +856,32 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     },
   });
 
-  const getStatusName = (status: string | number, ticket?: any) => {
+  const normalizeStatusKey = (status: unknown) =>
+    String(status ?? "")
+      .trim()
+      .toLowerCase();
+
+  const getStatusName = (status: unknown, ticket?: any) => {
     // Prefer the enriched statusName from the API response (project-specific)
     if (ticket?.statusName) return ticket.statusName;
-    const statusCode = typeof status === "number" ? status : Number(status);
+    const statusKey = normalizeStatusKey(status);
+    const statusCode = Number(statusKey);
     // Second: look up from project-configured statuses (fetched from API for single-project mode)
     const projectStatus = statuses.find((s) => s.code === statusCode);
     if (projectStatus) return projectStatus.name;
+    const stringStatusNames: Record<string, string> = {
+      open: "Open",
+      "in-progress": "In Progress",
+      in_progress: "In Progress",
+      pending: "Pending",
+      "on-hold": "On Hold",
+      on_hold: "On Hold",
+      resolved: "Resolved",
+      closed: "Closed",
+      reopen: "Re-open",
+      "re-open": "Re-open",
+    };
+    if (stringStatusNames[statusKey]) return stringStatusNames[statusKey];
     // Fallback for when statuses haven't loaded yet
     const statusNames: Record<number, string> = {
       1: "Open",
@@ -870,21 +889,39 @@ const MyTickets: React.FC<MyTicketsProps> = ({
       3: "On Hold",
       4: "Resolved",
       5: "Closed",
+      6: "Re-open",
+      7: "Re-opened WIP",
     };
-    return statusNames[statusCode] || `Status ${statusCode}`;
+    return statusNames[statusCode] || (statusKey ? `Status ${status}` : "-");
   };
 
-  const getStatusColor = (status: string | number, ticket?: any) => {
+  const getStatusColor = (status: unknown, ticket?: any) => {
     // Prefer the enriched statusColor from the API response (project-specific)
     if (ticket?.statusColor) return ticket.statusColor;
+    const statusKey = normalizeStatusKey(status);
+    const stringColors: Record<string, string> = {
+      open: "#3B82F6",
+      "in-progress": "#F59E0B",
+      in_progress: "#F59E0B",
+      pending: "#F59E0B",
+      "on-hold": "#EF4444",
+      on_hold: "#EF4444",
+      resolved: "#10B981",
+      closed: "#6B7280",
+      reopen: "#DC2626",
+      "re-open": "#DC2626",
+    };
+    if (stringColors[statusKey]) return stringColors[statusKey];
     // Handle numeric status codes: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
-    const statusCode = typeof status === "number" ? status : Number(status);
+    const statusCode = Number(statusKey);
     const colors: Record<number, string> = {
       1: "#3B82F6", // open
       2: "#F59E0B", // in-progress
       3: "#EF4444", // on-hold
       4: "#10B981", // resolved
       5: "#6B7280", // closed
+      6: "#DC2626", // re-open
+      7: "#F97316", // re-opened WIP
     };
     return colors[statusCode] || "#6B7280";
   };
@@ -901,8 +938,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({
   };
 
   // Task 6.2: Source indicator styling
-  const getSourceBadge = (source?: "online" | "offline" | "email") => {
-    const badges = {
+  const getSourceBadge = (source?: Ticket["submissionSource"]) => {
+    const badges: Record<
+      NonNullable<Ticket["submissionSource"]>,
+      { icon: string; label: string; color: string; bgColor: string; tooltip: string }
+    > = {
       online: {
         icon: "🌐",
         label: "Online",
@@ -919,10 +959,45 @@ const MyTickets: React.FC<MyTicketsProps> = ({
       },
       email: {
         icon: "📧",
-        label: "Email",
+        label: "Mail",
         color: "#10B981",
         bgColor: "#D1FAE5",
         tooltip: "Created from email",
+      },
+      walk_in: {
+        icon: "WI",
+        label: "Walk-in",
+        color: "#7C3AED",
+        bgColor: "#EDE9FE",
+        tooltip: "Created by staff from New Request",
+      },
+      ivr: {
+        icon: "IV",
+        label: "IVR",
+        color: "#0F766E",
+        bgColor: "#CCFBF1",
+        tooltip: "Created from IVR call",
+      },
+      whatsapp: {
+        icon: "WA",
+        label: "WhatsApp",
+        color: "#15803D",
+        bgColor: "#DCFCE7",
+        tooltip: "Created from WhatsApp",
+      },
+      sms: {
+        icon: "SM",
+        label: "SMS",
+        color: "#B45309",
+        bgColor: "#FEF3C7",
+        tooltip: "Created from SMS",
+      },
+      chatbot: {
+        icon: "CB",
+        label: "Chatbot",
+        color: "#4F46E5",
+        bgColor: "#E0E7FF",
+        tooltip: "Created from chatbot",
       },
     };
     return badges[source || "online"] || badges.online;
@@ -1282,7 +1357,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         );
       }
       case "status": {
-        const statusVal = (ticket.status || "").toLowerCase();
+        const statusVal = normalizeStatusKey(ticket.status);
         let badgeClass = "bg-slate-50 text-slate-700 border-slate-100";
         if (statusVal === "open" || statusVal === "1") {
           badgeClass = "bg-blue-50 text-blue-700 border-blue-100";

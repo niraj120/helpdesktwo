@@ -3,6 +3,33 @@ import mongoose from "mongoose";
 import CategorySLA from "../../models/ticket-module/CategorySLA";
 import { Category } from "../../models/Category";
 
+const VALID_UNITS = ["minutes", "hours", "days"];
+const normTime = (t: any) =>
+  t && Number(t.value) > 0 && VALID_UNITS.includes(t.unit)
+    ? { value: Number(t.value), unit: t.unit }
+    : undefined;
+
+/**
+ * Keep only well-formed per-source SLA entries. Each source may carry an
+ * optional responseTime and/or resolutionTime; empty sources are dropped.
+ * Returns undefined when nothing valid is present (so the field stays unset).
+ */
+const sanitizeSlaBySource = (raw: any) => {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Record<string, any> = {};
+  for (const [source, val] of Object.entries(raw)) {
+    const response = normTime((val as any)?.responseTime);
+    const resolution = normTime((val as any)?.resolutionTime);
+    if (response || resolution) {
+      out[source] = {
+        ...(response ? { responseTime: response } : {}),
+        ...(resolution ? { resolutionTime: resolution } : {}),
+      };
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+};
+
 /**
  * GET /api/categories/:categoryId/sla
  * Returns the CategorySLA override for a category, or { data: null } if none exists.
@@ -47,7 +74,7 @@ export const upsertCategorySLA = async (
         .json({ success: false, error: "Invalid category ID" });
     }
 
-    const { responseTime, resolutionTime, isActive } = req.body;
+    const { responseTime, resolutionTime, isActive, slaBySource } = req.body;
 
     if (
       !responseTime?.value ||
@@ -94,6 +121,8 @@ export const upsertCategorySLA = async (
             value: Number(resolutionTime.value),
             unit: resolutionTime.unit,
           },
+          // Per-source SLA overrides (#7) — sanitized to only valid time shapes.
+          slaBySource: sanitizeSlaBySource(slaBySource),
           isActive: isActive !== undefined ? Boolean(isActive) : true,
           updatedBy: userId ? new mongoose.Types.ObjectId(userId) : undefined,
         },

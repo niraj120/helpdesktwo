@@ -19,8 +19,15 @@ export async function getSrConfigForProject(projectId: string) {
 
 export interface SrConfigPatch {
   enabled?: boolean;
-  psr?: { enabled?: boolean };
-  isr?: { enabled?: boolean };
+  psr?: { enabled?: boolean; intake?: any; workflow?: any };
+  isr?: {
+    enabled?: boolean;
+    linkFromNormalTickets?: {
+      enabled?: boolean;
+      createEnabled?: boolean;
+      linkExistingEnabled?: boolean;
+    };
+  };
   wip?: {
     maxRevisions?: number;
     maxDaysPerRevision?: number;
@@ -28,8 +35,21 @@ export interface SrConfigPatch {
     escalateOnExpiry?: boolean;
   };
   reopen?: { assignToUserId?: string; assignToRoleId?: string };
+  messages?: {
+    duplicate?: string;
+    closureDefault?: string;
+    responseDefault?: string;
+  };
+  feedback?: {
+    notifyManagerOnNegative?: boolean;
+    ratingThreshold?: number;
+    notifyUserId?: string;
+    notifyRoleId?: string;
+  };
   email?: { enabled?: boolean; tatHours?: number; level2Hours?: number };
+  emailJunk?: { senders?: string[] };
   ivr?: { enabled?: boolean };
+  crm?: any;
   classifyChannels?: any[];
   psrDetail?: any;
   blocks?: {
@@ -37,6 +57,7 @@ export interface SrConfigPatch {
     prioritySchedule?: { enabled?: boolean };
     offlineReEntry?: { enabled?: boolean };
   };
+  customChannelFields?: Record<string, any[]>;
 }
 
 export async function updateSrConfigForProject(
@@ -55,12 +76,30 @@ export async function updateSrConfigForProject(
   if (patch.isr) sr.isr = { ...(sr.isr || {}), ...patch.isr };
   if (patch.wip) sr.wip = { ...(sr.wip || {}), ...patch.wip };
   if (patch.reopen) sr.reopen = { ...(sr.reopen || {}), ...patch.reopen };
+  if (patch.messages)
+    sr.messages = { ...(sr.messages || {}), ...patch.messages };
+  if (patch.feedback)
+    sr.feedback = { ...(sr.feedback || {}), ...patch.feedback };
   if (patch.email) sr.email = { ...(sr.email || {}), ...patch.email };
+  if (patch.emailJunk) {
+    const senders = Array.isArray(patch.emailJunk.senders)
+      ? Array.from(
+          new Set(
+            patch.emailJunk.senders
+              .map((s) => String(s).trim().toLowerCase())
+              .filter(Boolean),
+          ),
+        )
+      : [];
+    sr.emailJunk = { senders };
+  }
   if (patch.ivr) sr.ivr = { ...(sr.ivr || {}), ...patch.ivr };
+  if (patch.crm) sr.crm = { ...(sr.crm || {}), ...patch.crm };
   if (Array.isArray(patch.classifyChannels))
     sr.classifyChannels = patch.classifyChannels;
   if (patch.psrDetail) sr.psrDetail = patch.psrDetail;
   if (patch.blocks) sr.blocks = { ...(sr.blocks || {}), ...patch.blocks };
+  if (patch.customChannelFields !== undefined) sr.customChannelFields = patch.customChannelFields;
 
   // Seed the default classify channels the first time SR is enabled, so they
   // become concrete (editable + always available) instead of read-time-only.

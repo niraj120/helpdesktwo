@@ -5,6 +5,7 @@ import MDMSource, {
   IMDMAuth,
   MDMDataType,
 } from "../models/MDMSource";
+import PsrMaster, { IPsrMaster } from "../models/psr/PsrMaster";
 
 /**
  * MDM service — calls external company master-data APIs and normalizes the
@@ -17,6 +18,7 @@ export interface MDMCallResult {
   status?: number;
   count?: number;
   sampleData?: any;
+  responseBody?: any;
   error?: string;
 }
 
@@ -53,14 +55,63 @@ const buildRequestConfig = (auth: IMDMAuth) => {
 };
 
 /** Extract an array of records from common API envelope shapes. */
-const extractArray = (body: any): any[] => {
+export const extractArray = (body: any): any[] => {
   if (Array.isArray(body)) return body;
   if (!body || typeof body !== "object") return [];
-  for (const key of ["data", "results", "items", "records", "employees", "rows"]) {
+  if (body.data && typeof body.data === "object") {
+    const nested = extractArray(body.data);
+    if (nested.length) return nested;
+  }
+  for (const key of [
+    "data",
+    "results",
+    "items",
+    "records",
+    "employees",
+    "schools",
+    "school",
+    "locations",
+    "grades",
+    "academicYears",
+    "academic_years",
+    "parents",
+    "students",
+    "children",
+    "rows",
+  ]) {
     if (Array.isArray(body[key])) return body[key];
   }
   // Single object → wrap
   return [body];
+};
+
+/**
+ * Extract a value from a nested object using a dot-notation path.
+ * E.g. extractFromPath(body, "data.results") → body.data.results
+ * Returns undefined if any segment along the path is missing.
+ */
+export const extractFromPath = (body: any, path: string): any => {
+  if (!path || !path.trim()) return undefined;
+  const parts = path.split(".");
+  let cur = body;
+  for (const part of parts) {
+    if (cur === null || cur === undefined) return undefined;
+    cur = cur[part];
+  }
+  return cur;
+};
+
+/**
+ * Extract the records array from an API response using an optional configured
+ * dot-notation path. Falls back to heuristic extractArray() when no path is
+ * configured or the path does not resolve to an array.
+ */
+export const extractArrayWithPath = (body: any, responsePath?: string): any[] => {
+  if (responsePath && responsePath.trim()) {
+    const resolved = extractFromPath(body, responsePath.trim());
+    if (Array.isArray(resolved)) return resolved;
+  }
+  return extractArray(body);
 };
 
 const pickNumber = (body: any, paths: string[][]): number | undefined => {
@@ -95,22 +146,69 @@ const extractTotalCount = (body: any, fallback: number): number => {
 };
 
 /** Fire a single MDM API request. Never throws — returns a structured result. */
+const renderMdmTemplateValue = (
+  value: any,
+  params: Record<string, any> = {},
+): any => {
+  if (Array.isArray(value)) {
+    return value.map((item) => renderMdmTemplateValue(item, params));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        renderMdmTemplateValue(item, params),
+      ]),
+    );
+  }
+  if (typeof value !== "string") return value;
+  return value.replace(/{{\s*(?:param|params)\.([^}]+)\s*}}/g, (_m, key) =>
+    String(params[String(key).trim()] ?? ""),
+  );
+};
+
+const buildMdmRequestBody = (
+  api: IMDMApi,
+  params?: Record<string, any>,
+): { ok: true; body: any } | { ok: false; error: string } => {
+  if (!api.requestBody?.trim()) return { ok: true, body: params };
+  try {
+    return {
+      ok: true,
+      body: renderMdmTemplateValue(JSON.parse(api.requestBody), params || {}),
+    };
+  } catch {
+    return { ok: false, error: "Request body JSON is invalid." };
+  }
+};
+
 export const callMdmApi = async (
   api: IMDMApi,
   auth: IMDMAuth,
   params?: Record<string, any>,
+  options: { sampleLimit?: number } = {},
 ): Promise<MDMCallResult> => {
   const url = `${(api.baseUrl || "").replace(/\/+$/, "")}${api.path || ""}`;
   const { headers, basicAuth } = buildRequestConfig(auth);
+  const bodyResult = buildMdmRequestBody(api, params);
+  if (!bodyResult.ok) {
+    return {
+      success: false,
+      error: bodyResult.error,
+    };
+  }
 
   try {
     const response = await axios.request({
       url,
       method: api.method || "GET",
-      headers,
+      headers: {
+        ...headers,
+        ...(api.method === "POST" ? { "Content-Type": "application/json" } : {}),
+      },
       auth: basicAuth,
       params: api.method === "GET" ? params : undefined,
-      data: api.method === "POST" ? params : undefined,
+      data: api.method === "POST" ? bodyResult.body : undefined,
       timeout: 15000,
       validateStatus: () => true,
     });
@@ -119,6 +217,7 @@ export const callMdmApi = async (
       return {
         success: false,
         status: response.status,
+        responseBody: response.data,
         error: `HTTP ${response.status}: ${
           typeof response.data === "string"
             ? response.data.slice(0, 200)
@@ -128,11 +227,16 @@ export const callMdmApi = async (
     }
 
     const arr = extractArray(response.data);
+    const sampleLimit = Math.max(
+      1,
+      Math.min(Number(options.sampleLimit) || 3, 250),
+    );
     return {
       success: true,
       status: response.status,
       count: arr.length,
-      sampleData: arr.slice(0, 3),
+      sampleData: arr.slice(0, sampleLimit),
+      responseBody: response.data,
     };
   } catch (error: any) {
     return {
@@ -163,6 +267,40 @@ export const pickApiForDataType = (
   }
   if (matches.length === 0) return undefined;
   return matches.find((a) => a.isDefaultForType) || matches[0];
+};
+
+export const pickApiForDataTypeLoose = (
+  source: IMDMSource,
+  dataType: MDMDataType,
+  projectId?: string,
+): IMDMApi | undefined =>
+  pickApiForDataType(source, dataType, projectId) ||
+  pickApiForDataType(source, dataType);
+
+const isApiEligibleForProject = (api: IMDMApi, projectId?: string) =>
+  !projectId ||
+  !api.projectIds ||
+  api.projectIds.length === 0 ||
+  api.projectIds.some((p) => p.toString() === projectId);
+
+/**
+ * Explicit source selection is a stronger signal than dataType. Some legacy MDM
+ * configs were saved as `custom`; when the project points PSR lookup to that
+ * source, use its project-eligible default/first API instead of falling back to
+ * the internal directory.
+ */
+const pickExplicitSourceApi = (
+  source: IMDMSource,
+  dataType: MDMDataType,
+  projectId?: string,
+): IMDMApi | undefined => {
+  const typed = pickApiForDataTypeLoose(source, dataType, projectId);
+  if (typed) return typed;
+
+  const eligible = (source.apis || []).filter((api) =>
+    isApiEligibleForProject(api, projectId),
+  );
+  return eligible.find((api) => api.isDefaultForType) || eligible[0];
 };
 
 export interface NormalizedEmployee {
@@ -432,6 +570,7 @@ export interface NormalizedChild {
   grade?: string;
   enrollmentId?: string;
   parentCode?: string;
+  raw?: Record<string, any>;
 }
 
 export interface NormalizedParent {
@@ -442,36 +581,116 @@ export interface NormalizedParent {
   email?: string;
   school?: string;
   parentCode?: string;
+  raw?: Record<string, any>;
   children: NormalizedChild[];
 }
 
 export const normalizeChild = (raw: any): NormalizedChild => {
   if (!raw || typeof raw !== "object") return {};
+  const flat = flattenRecord(raw);
+  const firstName = fuzzyPick(flat, [
+    "firstName",
+    "first_name",
+    "studentFirstName",
+    "student_first_name",
+    "FirstName",
+  ]);
+  const lastName = fuzzyPick(flat, [
+    "lastName",
+    "last_name",
+    "studentLastName",
+    "student_last_name",
+    "LastName",
+  ]);
+  const fullName = fuzzyPick(flat, [
+    "name",
+    "childName",
+    "studentName",
+    "student_name",
+    "fullName",
+    "full_name",
+    "Name",
+    "StudentName",
+  ]);
   return {
-    name: pick(raw, ["name", "childName", "studentName", "fullName", "Name"]),
-    grade: pick(raw, ["grade", "class", "standard", "Grade", "className"]),
-    enrollmentId: pick(raw, [
+    raw: flat,
+    name:
+      fullName ||
+      `${firstName || ""} ${lastName || ""}`.trim() ||
+      undefined,
+    grade: fuzzyPick(flat, [
+      "grade",
+      "gradeName",
+      "grade_name",
+      "class",
+      "standard",
+      "Grade",
+      "className",
+      "class_name",
+      "ClassName",
+      "standardName",
+      "standard_name",
+    ]),
+    enrollmentId: fuzzyPick(flat, [
+      "id",
+      "globalId",
+      "global_id",
       "enrollmentId",
       "enrolment",
       "enrollment",
       "admissionNo",
       "uniqueId",
       "studentId",
+      "studentCode",
+      "StudentCode",
+      "admissionNumber",
+      "admission_number",
+      "AdmissionNo",
     ]),
-    parentCode: pick(raw, ["parentCode", "parentId", "guardianCode", "parent_code"]),
+    parentCode: fuzzyPick(flat, [
+      "parentCode",
+      "parentId",
+      "guardianCode",
+      "guardianId",
+      "globalId",
+      "global_id",
+      "globalNo",
+      "global_no",
+      "parent_code",
+      "parent_id",
+      "guardian_code",
+      "guardian_id",
+      "parentMobile",
+      "guardianMobile",
+      "mobile",
+      "phone",
+      "mobileNumber",
+      "Mobile",
+      "MobileNo",
+      "mobileNo",
+      "phoneNumber",
+      "contact",
+      "fatherMobile",
+      "motherMobile",
+    ]),
   };
 };
 
 export const normalizeParent = (raw: any): NormalizedParent => {
   if (!raw || typeof raw !== "object") return { children: [] };
-  let firstName = pick(raw, ["firstName", "first_name", "fname", "FirstName"]);
-  let lastName = pick(raw, ["lastName", "last_name", "lname", "LastName"]);
-  const fullName = pick(raw, [
+  const flat = flattenRecord(raw);
+  let firstName = fuzzyPick(flat, ["firstName", "first_name", "fname", "FirstName"]);
+  let lastName = fuzzyPick(flat, ["lastName", "last_name", "lname", "LastName"]);
+  const fullName = fuzzyPick(flat, [
     "name",
     "fullName",
     "full_name",
     "parentName",
+    "parent_name",
     "guardianName",
+    "guardian_name",
+    "ParentName",
+    "GuardianName",
   ]);
   if (!firstName && fullName) {
     const parts = fullName.trim().split(/\s+/);
@@ -481,13 +700,67 @@ export const normalizeParent = (raw: any): NormalizedParent => {
   const childrenRaw =
     raw.children || raw.wards || raw.students || raw.kids || [];
   return {
+    raw: flat,
     name: fullName || `${firstName || ""} ${lastName || ""}`.trim() || undefined,
     firstName,
     lastName,
-    mobile: pick(raw, ["mobile", "phone", "mobileNumber", "contact", "Mobile"]),
-    email: pick(raw, ["email", "emailId", "email_id", "Email"]),
-    school: pick(raw, ["school", "schoolName", "school_name", "School", "branch"]),
-    parentCode: pick(raw, ["parentCode", "parentId", "guardianCode", "code"]),
+    mobile: fuzzyPick(flat, [
+      "mobile",
+      "phone",
+      "mobileNumber",
+      "mobile_number",
+      "mobile_no",
+      "mobileNo",
+      "phoneNumber",
+      "contact",
+      "contactNo",
+      "parentMobile",
+      "guardianMobile",
+      "fatherMobile",
+      "motherMobile",
+      "Mobile",
+      "MobileNo",
+      "Mobile_No",
+      "ContactNo",
+      "PhoneNumber",
+    ]),
+    email: fuzzyPick(flat, ["email", "emailId", "email_id", "Email", "EmailId"]),
+    school: fuzzyPick(flat, [
+      "school",
+      "schoolName",
+      "school_name",
+      "School",
+      "SchoolName",
+      "branch",
+      "branchName",
+      "campus",
+    ]),
+    parentCode: fuzzyPick(flat, [
+      "parentCode",
+      "parentId",
+      "guardianCode",
+      "guardianId",
+      "globalId",
+      "global_id",
+      "globalNo",
+      "global_no",
+      "id",
+      "parent_code",
+      "parent_id",
+      "guardian_code",
+      "guardian_id",
+      "code",
+      "mobile",
+      "phone",
+      "mobileNumber",
+      "mobile_number",
+      "mobile_no",
+      "mobileNo",
+      "parentMobile",
+      "guardianMobile",
+      "Mobile",
+      "MobileNo",
+    ]),
     children: Array.isArray(childrenRaw) ? childrenRaw.map(normalizeChild) : [],
   };
 };
@@ -496,15 +769,23 @@ export const normalizeParent = (raw: any): NormalizedParent => {
 const fetchRawArray = async (
   source: IMDMSource,
   api: IMDMApi,
+  params?: Record<string, any>,
 ): Promise<any[]> => {
   const auth = source.getDecryptedAuth();
   const url = `${(api.baseUrl || "").replace(/\/+$/, "")}${api.path || ""}`;
   const { headers, basicAuth } = buildRequestConfig(auth);
+  const bodyResult = buildMdmRequestBody(api, params);
+  if (!bodyResult.ok) throw new Error(bodyResult.error);
   const response = await axios.request({
     url,
     method: api.method || "GET",
-    headers,
+    headers: {
+      ...headers,
+      ...((api.method || "GET") === "POST" ? { "Content-Type": "application/json" } : {}),
+    },
     auth: basicAuth,
+    params: (api.method || "GET") === "GET" ? params : undefined,
+    data: (api.method || "GET") === "POST" ? bodyResult.body : undefined,
     timeout: 15000,
     validateStatus: () => true,
   });
@@ -514,17 +795,564 @@ const fetchRawArray = async (
   return extractArray(response.data);
 };
 
+export interface MDMOptionLookupParams {
+  sourceId: string;
+  projectId?: string;
+  dataType?: MDMDataType;
+  labelField?: string;
+  valueField?: string;
+  search?: string;
+  searchParam?: string;
+  dependsOnValue?: string;
+  dependsOnParam?: string;
+  dependsOnRemoteField?: string;
+  limit?: number;
+}
+
+const pathValue = (obj: any, path?: string): any => {
+  if (!path?.trim()) return obj;
+  return path
+    .trim()
+    .split(".")
+    .reduce((acc: any, part) => (acc == null ? undefined : acc[part]), obj);
+};
+
+const extractPsrMasterRows = (body: any, responsePath?: string): any[] => {
+  const scoped = responsePath?.trim() ? pathValue(body, responsePath) : body;
+  const rows = extractArray(scoped);
+  if (rows.length) return rows;
+  return extractArray(body);
+};
+
+const resolvePsrSecret = (secretRef?: string) => {
+  if (!secretRef) return "";
+  if (secretRef.startsWith("env:")) return process.env[secretRef.slice(4)] || "";
+  return secretRef;
+};
+
+const buildPsrMasterHeaders = (master: IPsrMaster) => {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    ...(master.headers || {}),
+  };
+  if (master.auth?.type === "bearer" && master.auth.secretRef) {
+    headers.Authorization = `Bearer ${resolvePsrSecret(master.auth.secretRef)}`;
+  }
+  if (master.auth?.type === "apikey" && master.auth.secretRef) {
+    headers[master.auth.headerName || "X-API-Key"] = resolvePsrSecret(master.auth.secretRef);
+  }
+  return headers;
+};
+
+const fetchPsrMasterRows = async (
+  master: IPsrMaster,
+  params: Record<string, any>,
+): Promise<Record<string, any>[]> => {
+  const response = await axios.request({
+    url: master.url,
+    method: master.method || "GET",
+    headers: {
+      ...buildPsrMasterHeaders(master),
+      ...(master.method === "POST" ? { "Content-Type": "application/json" } : {}),
+    },
+    params: master.method === "GET" ? params : undefined,
+    data: master.method === "POST" ? params : undefined,
+    auth:
+      master.auth?.type === "basic"
+        ? {
+            username: master.auth.username || "",
+            password: resolvePsrSecret(master.auth.secretRef),
+          }
+        : undefined,
+    timeout: 15000,
+    validateStatus: () => true,
+  });
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`MDM master "${master.name}" returned HTTP ${response.status}`);
+  }
+
+  return extractPsrMasterRows(response.data, master.responsePath).map(flattenRecord);
+};
+
+const normalizeMdmOptions = ({
+  rows,
+  labelField,
+  valueField,
+  search,
+  searchParam,
+  dependsOnValue,
+  dependsOnRemoteField,
+  limit = 100,
+}: {
+  rows: Record<string, any>[];
+  labelField?: string;
+  valueField?: string;
+  search?: string;
+  searchParam?: string;
+  dependsOnValue?: string;
+  dependsOnRemoteField?: string;
+  limit?: number;
+}) => {
+  const searchTerm = (search || "").trim().toLowerCase();
+  const dependencyTerm = (dependsOnValue || "").trim().toLowerCase();
+
+  const filtered = rows.filter((flat) => {
+    if (dependsOnRemoteField?.trim() && dependencyTerm) {
+      const remote = configuredScalar(flat, dependsOnRemoteField);
+      if (String(remote ?? "").trim().toLowerCase() !== dependencyTerm) return false;
+    }
+    if (!searchTerm || searchParam?.trim()) return true;
+    return Object.values(flat).some(
+      (value) =>
+        typeof value !== "object" &&
+        String(value ?? "").toLowerCase().includes(searchTerm),
+    );
+  });
+
+  const seen = new Set<string>();
+  return filtered
+    .map((flat) => {
+      const label = labelField?.trim()
+        ? configuredScalar(flat, labelField)
+        : firstScalar(flat, ["name", "label", "title", "displayName", "schoolName"]);
+      const value = valueField?.trim()
+        ? configuredScalar(flat, valueField)
+        : firstScalar(flat, ["id", "_id", "code", "value", "global_id", "global_no", "name"]);
+      return {
+        label: label || value,
+        value: value || label,
+        raw: flat,
+      };
+    })
+    .filter((option) => {
+      if (!option.label || !option.value) return false;
+      const key = `${option.value}::${option.label}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, Math.max(1, Math.min(Number(limit) || 100, 500)));
+};
+
+const firstScalar = (flat: Record<string, any>, candidates: string[]) => {
+  for (const key of candidates) {
+    const value = flat[key];
+    if (value !== undefined && value !== null && value !== "" && typeof value !== "object") {
+      return String(value);
+    }
+  }
+  for (const value of Object.values(flat)) {
+    if (value !== undefined && value !== null && value !== "" && typeof value !== "object") {
+      return String(value);
+    }
+  }
+  return "";
+};
+
+export const configuredScalar = (
+  flat: Record<string, any>,
+  configuredField?: string,
+): string => {
+  const field = configuredField?.trim();
+  if (!field) return "";
+
+  const candidates = [
+    field,
+    field.includes(".") ? field.split(".").pop() || field : field,
+  ];
+
+  for (const key of candidates) {
+    const value = flat[key];
+    if (value !== undefined && value !== null && value !== "" && typeof value !== "object") {
+      return String(value);
+    }
+  }
+
+  const normalizedCandidates = candidates.map(normKey);
+  for (const [key, value] of Object.entries(flat)) {
+    if (value === undefined || value === null || value === "" || typeof value === "object") {
+      continue;
+    }
+    if (normalizedCandidates.includes(normKey(key))) return String(value);
+  }
+
+  return "";
+};
+
+export const fetchMdmRawArray = fetchRawArray;
+
+/**
+ * Fetch a full dataset from an API with support for:
+ *  - Configured response path (dot-notation to the records array)
+ *  - Page-based or offset-based pagination (auto-loops until exhausted)
+ *
+ * Falls back to a single-request fetch when no pagination is configured.
+ */
+export const fetchMdmRawArrayWithConfig = async (
+  source: IMDMSource,
+  api: IMDMApi,
+  datasetConfig?: {
+    responsePath?: string;
+    pagination?: {
+      type: string;
+      pageParam: string;
+      limitParam: string;
+      pageSize: number;
+      nextCursorPath?: string;
+      cursorParam?: string;
+    };
+  },
+  params?: Record<string, any>,
+): Promise<any[]> => {
+  const auth = source.getDecryptedAuth();
+  const baseUrl = `${(api.baseUrl || "").replace(/\/+$/, "")}${api.path || ""}`;
+  const { headers, basicAuth } = buildRequestConfig(auth);
+  const responsePath = datasetConfig?.responsePath || "";
+  const pagination = datasetConfig?.pagination;
+
+  const singleFetch = async (extraParams?: Record<string, any>): Promise<{ body: any; data: any[] }> => {
+    const mergedParams = { ...(params || {}), ...(extraParams || {}) };
+    const bodyResult = buildMdmRequestBody(api, mergedParams);
+    if (!bodyResult.ok) throw new Error(bodyResult.error);
+    const response = await axios.request({
+      url: baseUrl,
+      method: api.method || "GET",
+      headers: {
+        ...headers,
+        ...((api.method || "GET") === "POST" ? { "Content-Type": "application/json" } : {}),
+      },
+      auth: basicAuth,
+      params: (api.method || "GET") === "GET" ? mergedParams : undefined,
+      data: (api.method || "GET") === "POST" ? bodyResult.body : undefined,
+      timeout: 20000,
+      validateStatus: () => true,
+    });
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`MDM source "${source.name}" returned HTTP ${response.status}`);
+    }
+    return {
+      body: response.data,
+      data: extractArrayWithPath(response.data, responsePath),
+    };
+  };
+
+  // No pagination or type=none: single fetch
+  if (!pagination || pagination.type === "none" || !pagination.type) {
+    return (await singleFetch()).data;
+  }
+
+  // Page-based pagination: increment page param until empty page or no new records
+  if (pagination.type === "page" || pagination.type === "offset") {
+    const allRecords: any[] = [];
+    let page = 1;
+    const maxPages = 500; // safety cap
+    while (page <= maxPages) {
+      const extraParams: Record<string, any> = {
+        [pagination.limitParam]: pagination.pageSize,
+        [pagination.pageParam]: pagination.type === "offset" ? (page - 1) * pagination.pageSize : page,
+      };
+      const { data } = await singleFetch(extraParams);
+      if (!data.length) break;
+      allRecords.push(...data);
+      // If we got fewer than a full page we've reached the end
+      if (data.length < pagination.pageSize) break;
+      page++;
+    }
+    return allRecords;
+  }
+
+  // Cursor-based pagination
+  if (pagination.type === "cursor" && pagination.cursorParam) {
+    const allRecords: any[] = [];
+    let cursor: string | undefined;
+    const maxPages = 500;
+    let page = 0;
+    while (page < maxPages) {
+      const extraParams: Record<string, any> = {
+        [pagination.limitParam]: pagination.pageSize,
+        ...(cursor ? { [pagination.cursorParam]: cursor } : {}),
+      };
+      const { body, data } = await singleFetch(extraParams);
+      if (!data.length) break;
+      allRecords.push(...data);
+      // Extract next cursor from response
+      const nextCursor = pagination.nextCursorPath
+        ? extractFromPath(body, pagination.nextCursorPath)
+        : undefined;
+      if (!nextCursor) break;
+      cursor = String(nextCursor);
+      page++;
+    }
+    return allRecords;
+  }
+
+  // Fallback: single fetch
+  return (await singleFetch()).data;
+};
+export const pickExplicitApiForSource = pickExplicitSourceApi;
+
+const sameScalar = (left: any, right: any) =>
+  String(left ?? "").trim() === String(right ?? "").trim();
+
+const filterRowsByConfiguredScalar = (
+  rows: Record<string, any>[],
+  configuredField: string | undefined,
+  expectedValue: string,
+): Record<string, any>[] => {
+  const field = configuredField?.trim();
+  if (!field) return rows;
+  const matched = rows.filter((row) =>
+    sameScalar(configuredScalar(row, field), expectedValue),
+  );
+
+  // Many MDM APIs already apply the request parameter in their own body/query
+  // template but do not echo that same filter field in the response. In that
+  // case, keep the filtered API result instead of losing the relationship.
+  return matched.length ? matched : rows;
+};
+
+const scalarValues = (flat?: Record<string, any>) =>
+  Object.values(flat || {})
+    .filter(
+      (value) =>
+        value !== undefined &&
+        value !== null &&
+        value !== "" &&
+        typeof value !== "object",
+    )
+    .map((value) => String(value).toLowerCase());
+
+const parentMatchesQuery = (parent: NormalizedParent, query: string) => {
+  const term = query.toLowerCase().trim();
+  if (!term) return true;
+  const normalizedValues = [
+    parent.name,
+    parent.firstName,
+    parent.lastName,
+    parent.mobile,
+    parent.email,
+    parent.school,
+    parent.parentCode,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+  return [...normalizedValues, ...scalarValues(parent.raw)].some((value) =>
+    value.includes(term),
+  );
+};
+
+const stripInternalRaw = (parent: NormalizedParent): NormalizedParent => {
+  const { raw: _raw, children, ...rest } = parent;
+  return {
+    ...rest,
+    children: (children || []).map((child) => {
+      const { raw: _childRaw, ...childRest } = child;
+      return childRest;
+    }),
+  };
+};
+
+export const fetchMdmOptions = async ({
+  sourceId,
+  projectId,
+  dataType = "custom",
+  labelField,
+  valueField,
+  search,
+  searchParam,
+  dependsOnValue,
+  dependsOnParam,
+  dependsOnRemoteField,
+  limit = 100,
+}: MDMOptionLookupParams): Promise<{
+  source: Pick<IMDMSource, "_id" | "name">;
+  data: Array<{ label: string; value: string; raw: Record<string, any> }>;
+}> => {
+  const source = await MDMSource.findById(sourceId);
+  if (!source) {
+    const master = await PsrMaster.findById(sourceId);
+    if (!master) throw new Error("MDM source not found");
+
+    const params: Record<string, any> = {};
+    if (search?.trim()) {
+      params[searchParam?.trim() || "q"] = search.trim();
+    }
+    if (dependsOnValue?.trim() && dependsOnParam?.trim()) {
+      params[dependsOnParam.trim()] = dependsOnValue.trim();
+    }
+
+    const rows = await fetchPsrMasterRows(master, params);
+    return {
+      source: { _id: master._id as any, name: master.name },
+      data: normalizeMdmOptions({
+        rows,
+        labelField,
+        valueField,
+        search,
+        searchParam,
+        dependsOnValue,
+        dependsOnRemoteField,
+        limit,
+      }),
+    };
+  }
+  if (!source.enabled) throw new Error(`MDM source "${source.name}" is disabled`);
+
+  const api = pickExplicitSourceApi(source, dataType, projectId);
+  if (!api) throw new Error(`No eligible MDM API found for "${dataType}"`);
+
+  const params: Record<string, any> = {};
+  if (search?.trim()) {
+    params[searchParam?.trim() || "q"] = search.trim();
+  }
+  if (dependsOnValue?.trim() && dependsOnParam?.trim()) {
+    params[dependsOnParam.trim()] = dependsOnValue.trim();
+  }
+
+  const rows = (await fetchRawArray(source, api, params)).map(flattenRecord);
+  return {
+    source,
+    data: normalizeMdmOptions({
+      rows,
+      labelField,
+      valueField,
+      search,
+      searchParam,
+      dependsOnValue,
+      dependsOnRemoteField,
+      limit,
+    }),
+  };
+};
+
 export const resolveParentSource = async (
   mdmSourceId?: string,
+  projectId?: string,
+  dataType: MDMDataType = "parents",
 ): Promise<IMDMSource | null> => {
   if (mdmSourceId) {
     const byId = await MDMSource.findById(mdmSourceId);
-    if (byId) return byId;
+    if (byId && byId.enabled && pickExplicitSourceApi(byId, dataType, projectId)) {
+      return byId;
+    }
+    return null;
   }
-  return MDMSource.findOne({
+
+  const sources = await MDMSource.find({
     enabled: true,
-    "apis.dataType": "parents",
-  });
+    "apis.dataType": dataType,
+  }).sort({ updatedAt: -1, createdAt: -1 });
+
+  return (
+    sources.find((source) =>
+      pickApiForDataTypeLoose(source, dataType, projectId),
+    ) ||
+    null
+  );
+};
+
+const resolveRelationshipSource = async (
+  fallbackSource: IMDMSource,
+  mdmSourceId?: string,
+): Promise<IMDMSource> => {
+  if (!mdmSourceId) return fallbackSource;
+  const source = await MDMSource.findById(mdmSourceId);
+  if (!source || !source.enabled) {
+    throw new Error("Configured parent/student relationship MDM source is not available");
+  }
+  return source;
+};
+
+const attachChildrenViaRelationshipApi = async (
+  parents: NormalizedParent[],
+  parentSource: IMDMSource,
+  projectId: string | undefined,
+  cfg: any,
+) => {
+  const mappingSource = await resolveRelationshipSource(
+    parentSource,
+    cfg.mappingMdmSourceId,
+  );
+  const mappingDataType = (cfg.mappingDataType || "custom") as MDMDataType;
+  const mappingApi = pickExplicitSourceApi(
+    mappingSource,
+    mappingDataType,
+    projectId,
+  );
+  if (!mappingApi) {
+    throw new Error(`No eligible relationship MDM API found for "${mappingDataType}"`);
+  }
+
+  const studentSource = await resolveRelationshipSource(
+    parentSource,
+    cfg.studentMdmSourceId,
+  );
+  const studentDataType = (cfg.studentDataType || "students") as MDMDataType;
+  const studentApi = pickExplicitSourceApi(
+    studentSource,
+    studentDataType,
+    projectId,
+  );
+  if (!studentApi) {
+    throw new Error(`No eligible student MDM API found for "${studentDataType}"`);
+  }
+
+  const parentIdField = cfg.parentIdField || "parent_id";
+  const mappingParentIdField = cfg.mappingParentIdField || parentIdField;
+  const studentIdField = cfg.studentIdField || "student_id";
+  const parentIdParam = cfg.parentIdParam || "parent_id";
+  const studentIdParam = cfg.studentIdParam || "student_id";
+  const studentResponseIdField = cfg.studentResponseIdField || cfg.studentIdField || "student_id";
+
+  for (const parent of parents) {
+    const parentId = cfg.parentIdField?.trim()
+      ? configuredScalar(parent.raw || {}, parentIdField)
+      : parent.parentCode;
+    if (!parentId) continue;
+
+    const mappingRows = (await fetchRawArray(mappingSource, mappingApi, {
+      [parentIdParam]: parentId,
+    })).map(flattenRecord);
+    const relevantMappingRows = filterRowsByConfiguredScalar(
+      mappingRows,
+      mappingParentIdField,
+      parentId,
+    );
+    const studentIds = Array.from(
+      new Set(
+        relevantMappingRows
+          .map((row) => configuredScalar(row, studentIdField))
+          .filter(Boolean),
+      ),
+    ).slice(0, 50);
+
+    const children: NormalizedChild[] = [];
+    const seenChildren = new Set<string>();
+    for (const studentId of studentIds) {
+      const studentRows = (await fetchRawArray(studentSource, studentApi, {
+        [studentIdParam]: studentId,
+      })).map(flattenRecord);
+      const relevantStudentRows = filterRowsByConfiguredScalar(
+        studentRows,
+        studentResponseIdField,
+        studentId,
+      );
+      for (const flat of relevantStudentRows) {
+        if (seenChildren.has(String(studentId))) continue;
+        const child = {
+          ...normalizeChild(flat),
+          parentCode: parentId,
+        };
+        if (!child.name && !child.grade && !child.enrollmentId) continue;
+        children.push(child);
+        seenChildren.add(String(studentId));
+      }
+    }
+
+    if (children.length) parent.children = children;
+  }
 };
 
 /**
@@ -536,23 +1364,53 @@ export const searchParentsFromMDM = async (
   query: string,
   projectId?: string,
   mdmSourceId?: string,
+  relationshipConfig?: any,
 ): Promise<{ source: IMDMSource; parents: NormalizedParent[] } | null> => {
-  const source = await resolveParentSource(mdmSourceId);
+  const parentDataType = (relationshipConfig?.parentDataType || "parents") as MDMDataType;
+  const source = await resolveParentSource(mdmSourceId, projectId, parentDataType);
   if (!source) return null;
-  const parentApi = pickApiForDataType(source, "parents", projectId);
+  const parentApi = mdmSourceId
+    ? pickExplicitSourceApi(source, parentDataType, projectId)
+    : pickApiForDataTypeLoose(source, parentDataType, projectId);
   if (!parentApi) return null;
 
-  const parents = (await fetchRawArray(source, parentApi)).map(normalizeParent);
+  const searchParams = query
+    ? { q: query, query, search: query, mobile: query, phone: query }
+    : undefined;
+  const term = (query || "").trim();
+  const parents = (await fetchRawArray(source, parentApi, searchParams))
+    .map(normalizeParent)
+    .filter((parent) => parentMatchesQuery(parent, term))
+    .slice(0, 25);
 
   // If children are not embedded, try a separate children endpoint and join.
   const needChildren = parents.every((p) => p.children.length === 0);
   if (needChildren) {
-    const childApi = pickApiForDataType(source, "children", projectId);
+    if (relationshipConfig?.enabled) {
+      try {
+        await attachChildrenViaRelationshipApi(
+          parents,
+          source,
+          projectId,
+          relationshipConfig,
+        );
+      } catch (e: any) {
+        console.error("MDM parent/student relationship fetch failed:", e.message);
+      }
+    }
+  }
+
+  // Legacy/simple join: if children are not embedded and no relationship bridge
+  // populated them, try a direct children/students endpoint sharing parentCode.
+  if (parents.every((p) => p.children.length === 0)) {
+    const childApi =
+      pickApiForDataTypeLoose(source, "children", projectId) ||
+      pickApiForDataTypeLoose(source, "students", projectId);
     if (childApi) {
       try {
-        const children = (await fetchRawArray(source, childApi)).map(
-          normalizeChild,
-        );
+        const children = (
+          await fetchRawArray(source, childApi, searchParams)
+        ).map(normalizeChild);
         const byParent = new Map<string, NormalizedChild[]>();
         for (const c of children) {
           if (!c.parentCode) continue;
@@ -571,14 +1429,5 @@ export const searchParentsFromMDM = async (
     }
   }
 
-  const term = (query || "").toLowerCase().trim();
-  const filtered = term
-    ? parents.filter((p) =>
-        [p.name, p.mobile, p.email, p.school]
-          .filter(Boolean)
-          .some((v) => String(v).toLowerCase().includes(term)),
-      )
-    : parents;
-
-  return { source, parents: filtered };
+  return { source, parents: parents.map(stripInternalRaw) };
 };

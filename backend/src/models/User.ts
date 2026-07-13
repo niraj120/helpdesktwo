@@ -13,6 +13,7 @@ export interface IUser extends Document {
   parentMobile?: string; // Parent mobile number for parent login (for students)
   role: mongoose.Types.ObjectId; // Reference to Role model
   isActive: boolean;
+  isIvrAgent?: boolean; // Marks user as an IVR agent (eligible for missed-call round-robin)
   lastLogin?: Date;
   eulaAccepted?: boolean; // EULA acceptance status
   eulaAcceptedAt?: Date; // When EULA was accepted
@@ -34,6 +35,8 @@ export interface IUser extends Document {
   joiningDate?: Date;
   reportingManager?: mongoose.Types.ObjectId; // Reference to another User
   mdmSourceId?: mongoose.Types.ObjectId; // Provenance: which MDM source this user's data came from (HRMS import)
+  mdmSyncStatus?: "synced" | "missing_in_mdm"; // Last MDM sync outcome for this user
+  mdmLastSyncedAt?: Date; // When this user was last refreshed from MDM
 
   // Project/Portal assignment
   projects?: mongoose.Types.ObjectId[]; // Multiple projects can be assigned
@@ -147,6 +150,10 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: true,
     },
+    isIvrAgent: {
+      type: Boolean,
+      default: false,
+    },
     lastLogin: {
       type: Date,
     },
@@ -216,6 +223,11 @@ const userSchema = new Schema<IUser>(
       ref: "MDMSource",
       default: null,
     },
+    mdmSyncStatus: {
+      type: String,
+      enum: ["synced", "missing_in_mdm"],
+    },
+    mdmLastSyncedAt: { type: Date },
     projects: [
       {
         type: Schema.Types.ObjectId,

@@ -22,8 +22,8 @@ export interface ICategory extends Document {
   sr?: {
     /** Policy/help text shown to the parent before raising an SR (deflection). */
     proactiveHelpText?: string;
-    /** Which SR types this category applies to; empty/undefined = both. */
-    appliesTo?: ("PSR" | "ISR")[];
+    /** Which ticket types this category applies to; empty/undefined = all. */
+    appliesTo?: ("normal" | "PSR" | "ISR")[];
   };
   createdBy?: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
@@ -77,7 +77,7 @@ const CategorySchema = new Schema<ICategory>(
       type: Number,
       default: 1,
       min: 1,
-      max: 5,
+      max: 10,
       index: true,
     },
     parentId: {
@@ -106,7 +106,7 @@ const CategorySchema = new Schema<ICategory>(
     },
     sr: {
       proactiveHelpText: { type: String, trim: true },
-      appliesTo: [{ type: String, enum: ["PSR", "ISR"] }],
+      appliesTo: [{ type: String, enum: ["normal", "PSR", "ISR"] }],
     },
     createdBy: {
       type: Schema.Types.ObjectId,

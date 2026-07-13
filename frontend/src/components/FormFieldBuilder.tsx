@@ -11,7 +11,7 @@
  * - Preview clearly indicates it is a preview
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import {
   MdAdd,
@@ -29,6 +29,12 @@ import {
   RequiredMode,
 } from "../utils/conditionEngine";
 import FormRenderer from "./FormRenderer";
+import {
+  listMDMSources,
+  testMDMSource,
+  MDMDataType,
+  MDMSource,
+} from "../services/mdmService";
 import HierarchyCategorySelector, {
   CategoryHierarchyValue,
 } from "./HierarchyCategorySelector";
@@ -81,6 +87,8 @@ function createField(order: number): FormFieldSchema {
     requiredMode: "optional",
     placeholder: "",
     options: [],
+    optionsSource: "manual",
+    mdm: { dataType: "custom", limit: 100 },
     order,
     allowedFileTypes: [],
     maxFileSizeMB: 50,
@@ -339,6 +347,97 @@ const FieldConfigPanel: React.FC<FieldConfigPanelProps> = ({
   const [tab, setTab] = useState<"basic" | "conditions" | "required-if">(
     "basic",
   );
+  const [mdmSources, setMdmSources] = useState<MDMSource[]>([]);
+  const [mdmColumns, setMdmColumns] = useState<string[]>([]);
+  const [mdmColumnsLoading, setMdmColumnsLoading] = useState(false);
+  const [mdmColumnsError, setMdmColumnsError] = useState("");
+
+  useEffect(() => {
+    if (!NEEDS_OPTIONS.has(field.fieldType) || field.optionsSource !== "mdm") {
+      return;
+    }
+    let cancelled = false;
+    listMDMSources().then((res) => {
+      if (!cancelled && res.success) setMdmSources(res.data || []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [field.fieldType, field.optionsSource]);
+
+  const flattenColumnNames = (value: any, prefix = ""): string[] => {
+    if (!value || typeof value !== "object") return [];
+    return Object.entries(value).flatMap(([key, item]) => {
+      const path = prefix ? `${prefix}.${key}` : key;
+      if (Array.isArray(item)) {
+        const nested = item
+          .filter((entry) => entry && typeof entry === "object")
+          .slice(0, 3)
+          .flatMap((entry) => flattenColumnNames(entry, path));
+        return nested.length ? [path, ...nested] : [path];
+      }
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        return [path, ...flattenColumnNames(item, path)];
+      }
+      return [path];
+    });
+  };
+
+  const loadMdmColumns = async () => {
+    if (!field.mdm?.sourceId) {
+      setMdmColumns([]);
+      setMdmColumnsError("Select an MDM source first.");
+      return;
+    }
+    const source = mdmSources.find((item) => item._id === field.mdm?.sourceId);
+    if (!source) {
+      setMdmColumns([]);
+      setMdmColumnsError("Selected MDM source is not loaded.");
+      return;
+    }
+    const dataType = field.mdm?.dataType || "custom";
+    const sourceApis = source.apis.map((api, index) => ({ api, index }));
+    const eligibleApis = sourceApis.filter(({ api }) => api.dataType === dataType);
+    const selected =
+      eligibleApis.find(({ api }) => api.isDefaultForType) ||
+      eligibleApis[0] ||
+      sourceApis.find(({ api }) => api.isDefaultForType) ||
+      sourceApis[0];
+    if (!selected) {
+      setMdmColumns([]);
+      setMdmColumnsError("No API row configured in the selected MDM source.");
+      return;
+    }
+    setMdmColumnsLoading(true);
+    setMdmColumnsError("");
+    try {
+      const res = await testMDMSource(source._id, { apiIndex: selected.index });
+      const data: any = res.data;
+      const samples: any[] = Array.isArray(data?.sampleData) ? data.sampleData : [];
+      const columns: string[] = Array.from(
+        new Set<string>(
+          samples.flatMap((sample: any) => flattenColumnNames(sample)),
+        ),
+      ).sort();
+      setMdmColumns(columns);
+      if (!columns.length) {
+        setMdmColumnsError(
+          data?.error ||
+            "No columns found in the sample response. Check request body and API response shape.",
+        );
+      }
+    } catch (e: any) {
+      setMdmColumns([]);
+      setMdmColumnsError(e?.message || "Failed to load MDM columns.");
+    } finally {
+      setMdmColumnsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setMdmColumns([]);
+    setMdmColumnsError("");
+  }, [field.mdm?.sourceId, field.mdm?.dataType]);
 
   const inputSty: React.CSSProperties = {
     width: "100%",
@@ -501,6 +600,9 @@ const FieldConfigPanel: React.FC<FieldConfigPanelProps> = ({
                     options: NEEDS_OPTIONS.has(e.target.value)
                       ? field.options || []
                       : [],
+                    optionsSource: NEEDS_OPTIONS.has(e.target.value)
+                      ? field.optionsSource || "manual"
+                      : "manual",
                   })
                 }
                 style={inputSty}
@@ -607,30 +709,290 @@ const FieldConfigPanel: React.FC<FieldConfigPanelProps> = ({
                   marginBottom: "4px",
                 }}
               >
-                Options{" "}
-                <span style={{ color: "#9ca3af", fontWeight: "400" }}>
-                  (one per line)
-                </span>
+                Options source
               </label>
-              <textarea
-                value={(field.options || []).join("\n")}
-                onChange={(e) => {
-                  const val = e.target.value;
+              <select
+                value={field.optionsSource || "manual"}
+                onChange={(e) =>
                   onUpdate({
-                    options: val
-                      .split("\n")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  });
-                }}
-                rows={4}
-                placeholder={"Option 1\nOption 2\nOption 3"}
-                style={{
-                  ...inputSty,
-                  resize: "vertical",
-                  fontFamily: "inherit",
-                }}
-              />
+                    optionsSource: e.target.value as "manual" | "mdm",
+                    mdm:
+                      e.target.value === "mdm"
+                        ? { ...(field.mdm || {}), dataType: field.mdm?.dataType || "custom", limit: field.mdm?.limit || 100 }
+                        : field.mdm,
+                  })
+                }
+                style={{ ...inputSty, marginBottom: 8 }}
+              >
+                <option value="manual">Manual list</option>
+                <option value="mdm">MDM/API source</option>
+              </select>
+
+              {(field.optionsSource || "manual") === "manual" ? (
+                <>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "12px",
+                      fontWeight: "500",
+                      color: "#4b5563",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    Manual options{" "}
+                    <span style={{ color: "#9ca3af", fontWeight: "400" }}>
+                      (one per line)
+                    </span>
+                  </label>
+                  <textarea
+                    value={(field.options || []).join("\n")}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      onUpdate({
+                        options: val
+                          .split("\n")
+                          .map((s) => s.trim())
+                          .filter(Boolean),
+                      });
+                    }}
+                    rows={4}
+                    placeholder={"Option 1\nOption 2\nOption 3"}
+                    style={{
+                      ...inputSty,
+                      resize: "vertical",
+                      fontFamily: "inherit",
+                    }}
+                  />
+                </>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: 8,
+                    padding: 10,
+                    border: "1px solid #dbeafe",
+                    borderRadius: 8,
+                    background: "#eff6ff",
+                  }}
+                >
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#4b5563", marginBottom: 4 }}>
+                      MDM source
+                    </label>
+                    <select
+                      value={field.mdm?.sourceId || ""}
+                      onChange={(e) =>
+                        onUpdate({
+                          mdm: { ...(field.mdm || {}), sourceId: e.target.value },
+                        })
+                      }
+                      style={inputSty}
+                    >
+                      <option value="">Select MDM source</option>
+                      {mdmSources.map((source) => (
+                        <option key={source._id} value={source._id}>
+                          {source.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#4b5563", marginBottom: 4 }}>
+                      API data type
+                    </label>
+                    <select
+                      value={field.mdm?.dataType || "custom"}
+                      onChange={(e) =>
+                        onUpdate({
+                          mdm: {
+                            ...(field.mdm || {}),
+                            dataType: e.target.value as MDMDataType,
+                          },
+                        })
+                      }
+                      style={inputSty}
+                    >
+                      {(["custom", "schools", "parents", "students", "children", "employees", "principals"] as MDMDataType[]).map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={loadMdmColumns}
+                        disabled={mdmColumnsLoading || !field.mdm?.sourceId}
+                        style={{
+                          padding: "6px 10px",
+                          border: "1px solid #bfdbfe",
+                          borderRadius: 6,
+                          background: "#fff",
+                          color: "#2563eb",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor:
+                            mdmColumnsLoading || !field.mdm?.sourceId
+                              ? "not-allowed"
+                              : "pointer",
+                          opacity:
+                            mdmColumnsLoading || !field.mdm?.sourceId ? 0.6 : 1,
+                        }}
+                      >
+                        {mdmColumnsLoading ? "Loading columns..." : "Load columns from MDM"}
+                      </button>
+                      <span style={{ fontSize: 11, color: "#64748b" }}>
+                        Loads sample response columns for label, value, and dependency mapping.
+                      </span>
+                    </div>
+                    {mdmColumnsError && (
+                      <div style={{ marginTop: 6, fontSize: 11, color: "#b91c1c" }}>
+                        {mdmColumnsError}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#4b5563", marginBottom: 4 }}>
+                      Label field
+                    </label>
+                    <input
+                      list={`mdm-label-columns-${field.id || field.fieldName}`}
+                      value={field.mdm?.labelField || ""}
+                      onChange={(e) =>
+                        onUpdate({
+                          mdm: { ...(field.mdm || {}), labelField: e.target.value },
+                        })
+                      }
+                      placeholder="name"
+                      style={inputSty}
+                    />
+                    <datalist id={`mdm-label-columns-${field.id || field.fieldName}`}>
+                      {mdmColumns.map((column) => (
+                        <option key={column} value={column} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#4b5563", marginBottom: 4 }}>
+                      Value field
+                    </label>
+                    <input
+                      list={`mdm-value-columns-${field.id || field.fieldName}`}
+                      value={field.mdm?.valueField || ""}
+                      onChange={(e) =>
+                        onUpdate({
+                          mdm: { ...(field.mdm || {}), valueField: e.target.value },
+                        })
+                      }
+                      placeholder="id"
+                      style={inputSty}
+                    />
+                    <datalist id={`mdm-value-columns-${field.id || field.fieldName}`}>
+                      {mdmColumns.map((column) => (
+                        <option key={column} value={column} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#4b5563", marginBottom: 4 }}>
+                      Depends on form field
+                    </label>
+                    <select
+                      value={field.mdm?.dependsOnField || ""}
+                      onChange={(e) =>
+                        onUpdate({
+                          mdm: {
+                            ...(field.mdm || {}),
+                            dependsOnField: e.target.value || undefined,
+                          },
+                        })
+                      }
+                      style={inputSty}
+                    >
+                      <option value="">No dependency</option>
+                      {triggerFieldNames.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#4b5563", marginBottom: 4 }}>
+                      Dependency API param
+                    </label>
+                    <input
+                      value={field.mdm?.dependsOnParam || ""}
+                      onChange={(e) =>
+                        onUpdate({
+                          mdm: { ...(field.mdm || {}), dependsOnParam: e.target.value },
+                        })
+                      }
+                      placeholder="schoolId"
+                      style={inputSty}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#4b5563", marginBottom: 4 }}>
+                      Dependency response field
+                    </label>
+                    <input
+                      list={`mdm-dependency-columns-${field.id || field.fieldName}`}
+                      value={field.mdm?.dependsOnRemoteField || ""}
+                      onChange={(e) =>
+                        onUpdate({
+                          mdm: {
+                            ...(field.mdm || {}),
+                            dependsOnRemoteField: e.target.value,
+                          },
+                        })
+                      }
+                      placeholder="schoolId"
+                      style={inputSty}
+                    />
+                    <datalist id={`mdm-dependency-columns-${field.id || field.fieldName}`}>
+                      {mdmColumns.map((column) => (
+                        <option key={column} value={column} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#4b5563", marginBottom: 4 }}>
+                      Search param / limit
+                    </label>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 6 }}>
+                      <input
+                        value={field.mdm?.searchParam || ""}
+                        onChange={(e) =>
+                          onUpdate({
+                            mdm: { ...(field.mdm || {}), searchParam: e.target.value },
+                          })
+                        }
+                        placeholder="q"
+                        style={inputSty}
+                      />
+                      <input
+                        type="number"
+                        value={field.mdm?.limit || 100}
+                        min={1}
+                        max={500}
+                        onChange={(e) =>
+                          onUpdate({
+                            mdm: {
+                              ...(field.mdm || {}),
+                              limit: Number(e.target.value) || 100,
+                            },
+                          })
+                        }
+                        style={inputSty}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -977,6 +1339,106 @@ const FieldConfigPanel: React.FC<FieldConfigPanelProps> = ({
               </div>
             </label>
           )}
+
+          {/* Show value to parent / student */}
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "10px 12px",
+              background: field.showToParent === false ? "#fef2f2" : "#f0fdf4",
+              border: `1px solid ${field.showToParent === false ? "#fca5a5" : "#86efac"}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "13px",
+              userSelect: "none",
+            }}
+            title="When off, this field's value is hidden from the parent / student view of the request."
+          >
+            <input
+              type="checkbox"
+              checked={field.showToParent !== false}
+              onChange={(e) => onUpdate({ showToParent: e.target.checked })}
+              style={{ width: 15, height: 15, cursor: "pointer" }}
+            />
+            <div>
+              <div
+                style={{
+                  fontWeight: "600",
+                  color: field.showToParent === false ? "#b91c1c" : "#15803d",
+                }}
+              >
+                👁 Show value to parent / student
+              </div>
+              <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "1px" }}>
+                Off = internal only; the value is stripped from the parent-facing detail.
+              </div>
+            </div>
+          </label>
+
+          {/* Visible at status */}
+          <div
+            style={{
+              padding: "10px 12px",
+              background: "#f9fafb",
+              border: "1px solid #e5e7eb",
+              borderRadius: "6px",
+              fontSize: "13px",
+            }}
+          >
+            <div style={{ fontWeight: 600, color: "#374151", marginBottom: 2 }}>
+              📅 Visible at status
+            </div>
+            <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: 8 }}>
+              Show this field only at the selected statuses. None selected = all statuses.
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              {[
+                { code: 1, label: "Open" },
+                { code: 2, label: "WIP" },
+                { code: 4, label: "Resolved" },
+                { code: 5, label: "Closed" },
+                { code: 6, label: "Re-open" },
+                { code: 7, label: "Re-Opened WIP" },
+              ].map((s) => {
+                const selected = (field.visibleAtStatus || []).includes(s.code);
+                return (
+                  <label
+                    key={s.code}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      padding: "4px 8px",
+                      borderRadius: "5px",
+                      border: `1px solid ${selected ? "#93c5fd" : "#e5e7eb"}`,
+                      background: selected ? "#eff6ff" : "#fff",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      color: selected ? "#1d4ed8" : "#4b5563",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={(e) => {
+                        const cur = field.visibleAtStatus || [];
+                        const next = e.target.checked
+                          ? [...cur, s.code]
+                          : cur.filter((c) => c !== s.code);
+                        onUpdate({
+                          visibleAtStatus: next.length ? next : undefined,
+                        });
+                      }}
+                      style={{ width: 14, height: 14, cursor: "pointer" }}
+                    />
+                    {s.label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1638,6 +2100,7 @@ export const FormFieldBuilder: React.FC<FormFieldBuilderProps> = ({
                 }
                 previewMode={false}
                 showAllFields={true}
+                projectId={projectId}
               />
 
               {fields.length === 0 && (

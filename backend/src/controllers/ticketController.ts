@@ -420,6 +420,11 @@ export const submitTicket = async (req: Request, res: Response) => {
     // CategoryAssignmentConfigs are matched first (resolveConfigForCategory walks
     // up to parents automatically if no config exists at the leaf).
     const deepestCategoryRaw =
+      rawCategoryHierarchyFromBody?.level10 ||
+      rawCategoryHierarchyFromBody?.level9 ||
+      rawCategoryHierarchyFromBody?.level8 ||
+      rawCategoryHierarchyFromBody?.level7 ||
+      rawCategoryHierarchyFromBody?.level6 ||
       rawCategoryHierarchyFromBody?.level5 ||
       rawCategoryHierarchyFromBody?.level4 ||
       rawCategoryHierarchyFromBody?.level3 ||
@@ -789,6 +794,17 @@ export const submitTicket = async (req: Request, res: Response) => {
             mongoose.Types.ObjectId.isValid(rawCategoryHierarchyFromBody.level5)
               ? new mongoose.Types.ObjectId(rawCategoryHierarchyFromBody.level5)
               : undefined,
+          ...Object.fromEntries(
+            [6, 7, 8, 9, 10].map((n) => {
+              const v = rawCategoryHierarchyFromBody[`level${n}`];
+              return [
+                `level${n}`,
+                v && mongoose.Types.ObjectId.isValid(v)
+                  ? new mongoose.Types.ObjectId(v)
+                  : undefined,
+              ];
+            }),
+          ),
           displayPath: rawCategoryHierarchyFromBody.displayPath,
         }
       : categoryObjectId
@@ -1679,7 +1695,7 @@ export const getMyTickets = async (req: Request, res: Response) => {
         tickets.flatMap((t: any) => {
           const h = t.categoryHierarchy;
           if (!h) return [];
-          return [h.level1, h.level2, h.level3, h.level4, h.level5]
+          return [h.level1, h.level2, h.level3, h.level4, h.level5, h.level6, h.level7, h.level8, h.level9, h.level10]
             .filter(Boolean)
             .map((id: any) => id.toString());
         }),
@@ -1775,6 +1791,14 @@ export const getMyTickets = async (req: Request, res: Response) => {
           level5: h.level5
             ? hierarchyCategoryMapMyTickets.get(h.level5.toString())
             : undefined,
+          ...Object.fromEntries(
+            [6, 7, 8, 9, 10].map((n) => [
+              `level${n}`,
+              (h as any)[`level${n}`]
+                ? hierarchyCategoryMapMyTickets.get((h as any)[`level${n}`].toString())
+                : undefined,
+            ]),
+          ),
         };
       }
       return ticketObj;
@@ -2490,7 +2514,7 @@ export const getAllTickets = async (req: Request, res: Response) => {
         tickets.flatMap((t: any) => {
           const h = t.categoryHierarchy;
           if (!h) return [];
-          return [h.level1, h.level2, h.level3, h.level4, h.level5]
+          return [h.level1, h.level2, h.level3, h.level4, h.level5, h.level6, h.level7, h.level8, h.level9, h.level10]
             .filter(Boolean)
             .map((id: any) => id.toString());
         }),
@@ -2589,6 +2613,14 @@ export const getAllTickets = async (req: Request, res: Response) => {
           level5: h.level5
             ? hierarchyCategoryMap.get(h.level5.toString())
             : undefined,
+          ...Object.fromEntries(
+            [6, 7, 8, 9, 10].map((n) => [
+              `level${n}`,
+              (h as any)[`level${n}`]
+                ? hierarchyCategoryMap.get((h as any)[`level${n}`].toString())
+                : undefined,
+            ]),
+          ),
         };
       }
 
@@ -3038,6 +3070,38 @@ export const getTicketById = async (req: Request, res: Response) => {
     const ticketData = ticket.toObject();
     if (isStudent) {
       ticketData.internalNotes = []; // Hide internal notes from students
+
+      // Field-level parent visibility: strip custom-field values the schema marks
+      // as not-shown-to-parent, or not visible at the ticket's current status.
+      // Driven by the per-ticket formSchemaSnapshot so it degrades gracefully
+      // (no snapshot → nothing stripped).
+      const snapshot: any[] = Array.isArray(ticketData.formSchemaSnapshot)
+        ? ticketData.formSchemaSnapshot
+        : [];
+      if (snapshot.length) {
+        const status = Number(ticketData.status);
+        const hidden = new Set<string>();
+        for (const f of snapshot) {
+          if (!f?.fieldName) continue;
+          const visStatuses = Array.isArray(f.visibleAtStatus)
+            ? f.visibleAtStatus.map(Number)
+            : [];
+          const notForParent = f.showToParent === false;
+          const notAtStatus =
+            visStatuses.length > 0 && !visStatuses.includes(status);
+          if (notForParent || notAtStatus) hidden.add(String(f.fieldName));
+        }
+        if (hidden.size && ticketData.metadata) {
+          for (const bag of ["customFields", "formData"] as const) {
+            const obj = (ticketData.metadata as any)[bag];
+            if (obj && typeof obj === "object") {
+              for (const key of Object.keys(obj)) {
+                if (hidden.has(key)) delete obj[key];
+              }
+            }
+          }
+        }
+      }
     }
 
     // Clear the "new / unread" flag when an agent or admin opens the ticket
@@ -4259,6 +4323,11 @@ export const updateTicketCategoryHierarchy = async (
       level3: categoryHierarchy.level3,
       level4: categoryHierarchy.level4,
       level5: categoryHierarchy.level5,
+      level6: categoryHierarchy.level6,
+      level7: categoryHierarchy.level7,
+      level8: categoryHierarchy.level8,
+      level9: categoryHierarchy.level9,
+      level10: categoryHierarchy.level10,
       displayPath: categoryHierarchy.displayPath,
     };
 
@@ -7009,6 +7078,11 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       level3?: string;
       level4?: string;
       level5?: string;
+      level6?: string;
+      level7?: string;
+      level8?: string;
+      level9?: string;
+      level10?: string;
       displayPath?: string;
     } = {};
 
@@ -7031,6 +7105,11 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
 
       // Determine final category ID: use deepest level from hierarchy OR fallback to category field
       finalCategoryId =
+        parsedHierarchy.level10 ||
+        parsedHierarchy.level9 ||
+        parsedHierarchy.level8 ||
+        parsedHierarchy.level7 ||
+        parsedHierarchy.level6 ||
         parsedHierarchy.level5 ||
         parsedHierarchy.level4 ||
         parsedHierarchy.level3 ||
@@ -7049,6 +7128,11 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       // Also collect category names to build displayPath
       // Check levels in order: level1 -> level2 -> level3 -> level4 for names, but deepest priority wins
       const hierarchyLevelsForPriority = [
+        parsedHierarchy.level10,
+        parsedHierarchy.level9,
+        parsedHierarchy.level8,
+        parsedHierarchy.level7,
+        parsedHierarchy.level6,
         parsedHierarchy.level5,
         parsedHierarchy.level4,
         parsedHierarchy.level3,
@@ -7062,6 +7146,11 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
         parsedHierarchy.level3,
         parsedHierarchy.level4,
         parsedHierarchy.level5,
+        parsedHierarchy.level6,
+        parsedHierarchy.level7,
+        parsedHierarchy.level8,
+        parsedHierarchy.level9,
+        parsedHierarchy.level10,
       ].filter(Boolean);
 
       console.log(

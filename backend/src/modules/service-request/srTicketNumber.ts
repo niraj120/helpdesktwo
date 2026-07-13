@@ -9,12 +9,15 @@ import { Project } from "../../models/Project";
 
 export async function generateSrTicketNumber(
   projectId: mongoose.Types.ObjectId | string,
+  interactionType: "PSR" | "ISR" = "PSR",
 ): Promise<string> {
   const project = await Project.findById(projectId).select(
-    "configuration.ticketNumberSettings",
+    "configuration.ticketNumberSettings configuration.sr.numbering",
   );
-  const cfg = project?.configuration?.ticketNumberSettings;
-  const prefix = cfg?.prefix || "PSR";
+  const srNumbering = (project as any)?.configuration?.sr?.numbering;
+  const cfg =
+    srNumbering?.[interactionType] || project?.configuration?.ticketNumberSettings;
+  const prefix = cfg?.prefix || interactionType;
   const format = cfg?.format || "{PREFIX}-{YYYY}{MM}{DD}-{NNNN}";
   const startingNumber = cfg?.startingNumber || 1;
 

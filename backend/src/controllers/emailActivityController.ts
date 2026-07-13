@@ -1,10 +1,13 @@
+import mongoose from 'mongoose';
 import { Request, Response } from 'express';
 import { Ticket } from '../models/Ticket';
 import EmailProcessingQueue from '../models/EmailProcessingQueue';
+import ProjectEmailConfig from '../models/ProjectEmailConfig';
 import SystemSettings from '../models/SystemSettings';
 import { emailPollingService } from '../services/emailPollingService';
 import * as cron from 'node-cron';
 import { CRON_PRESETS, describeCronExpression } from '../utils/cronHelpers';
+import { getProjectScope } from '../utils/projectScope';
 
 /**
  * Get recent ticket activity for real-time updates
@@ -13,7 +16,7 @@ import { CRON_PRESETS, describeCronExpression } from '../utils/cronHelpers';
 export const getRecentActivity = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    const { since } = req.query; // Timestamp of last check
+    const { since, projectId } = req.query; // Timestamp of last check
     
     if (!userId) {
       return res.status(401).json({
@@ -29,10 +32,61 @@ export const getRecentActivity = async (req: Request, res: Response) => {
 
     console.log(`📊 Checking recent activity since: ${sinceDate.toISOString()}`);
 
+    const scope = getProjectScope(req as any);
+    const requestedProjectId =
+      typeof projectId === 'string' && mongoose.Types.ObjectId.isValid(projectId)
+        ? projectId
+        : undefined;
+    const allowedProjectIds = scope.all
+      ? requestedProjectId
+        ? [requestedProjectId]
+        : []
+      : requestedProjectId
+        ? scope.projectIds.includes(requestedProjectId)
+          ? [requestedProjectId]
+          : []
+        : scope.projectIds;
+
+    if (!scope.all && allowedProjectIds.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          newTickets: [],
+          stats: {
+            newTicketsCount: 0,
+            pendingEmails: 0,
+            processingEmails: 0,
+            failedEmails: 0
+          },
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
+    const projectObjectIds = allowedProjectIds.map(
+      (id) => new mongoose.Types.ObjectId(id)
+    );
+    const ticketProjectFilter =
+      projectObjectIds.length > 0 ? { project: { $in: projectObjectIds } } : {};
+    const emailConfigFilter =
+      projectObjectIds.length > 0
+        ? { projectId: { $in: projectObjectIds } }
+        : {};
+    const emailConfigIds = await ProjectEmailConfig.find(emailConfigFilter)
+      .select('_id')
+      .lean();
+    const queueProjectFilter =
+      emailConfigIds.length > 0
+        ? { projectEmailConfigId: { $in: emailConfigIds.map((c: any) => c._id) } }
+        : projectObjectIds.length > 0
+          ? { projectEmailConfigId: { $in: [] } }
+          : {};
+
     // Optimized: Parallel queries instead of sequential
     const [newTickets, emailStats] = await Promise.all([
       // Get new tickets created since last check
       Ticket.find({
+        ...ticketProjectFilter,
         createdAt: { $gte: sinceDate },
         submissionSource: 'email' // Only email-created tickets for this notification
       })
@@ -46,15 +100,15 @@ export const getRecentActivity = async (req: Request, res: Response) => {
         {
           $facet: {
             pending: [
-              { $match: { status: 'pending', createdAt: { $gte: sinceDate } } },
+              { $match: { ...queueProjectFilter, status: 'pending', createdAt: { $gte: sinceDate } } },
               { $count: 'count' }
             ],
             failed: [
-              { $match: { status: 'failed', createdAt: { $gte: sinceDate } } },
+              { $match: { ...queueProjectFilter, status: 'failed', createdAt: { $gte: sinceDate } } },
               { $count: 'count' }
             ],
             processing: [
-              { $match: { status: 'processing' } },
+              { $match: { ...queueProjectFilter, status: 'processing' } },
               { $count: 'count' }
             ]
           }

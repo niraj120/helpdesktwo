@@ -378,6 +378,8 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       oauth2,
       webhook_provider,
       webhook_payload_map,
+      mapped_user_id,
+      auto_create_ticket = true,
     } = req.body;
 
     // Auto-detect provider from email if not specified
@@ -473,6 +475,15 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: "Invalid project ID",
+      });
+    }
+    if (
+      mapped_user_id &&
+      !mongoose.Types.ObjectId.isValid(String(mapped_user_id))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid mapped user ID",
       });
     }
 
@@ -610,6 +621,9 @@ export const addEmailConfig = async (req: Request, res: Response) => {
     const emailConfig = new ProjectEmailConfig({
       projectId,
       emailAddress: email_address.toLowerCase(),
+      mappedUserId: mapped_user_id || undefined,
+      autoCreateTicket:
+        auto_create_ticket === true || auto_create_ticket === "true",
       provider: detectedProvider,
       authMethod: authType,
       inboundMethod: inboundType,
@@ -687,6 +701,8 @@ export const addEmailConfig = async (req: Request, res: Response) => {
         smtpHost: emailConfig.smtpHost,
         smtpPort: emailConfig.smtpPort,
         isEnabled: emailConfig.isEnabled,
+        mappedUserId: (emailConfig as any).mappedUserId || null,
+        autoCreateTicket: (emailConfig as any).autoCreateTicket !== false,
         inboundMethod: emailConfig.inboundMethod,
         webhookProvider: (emailConfig as any).webhookProvider || "",
         webhookPayloadMap: (emailConfig as any).webhookPayloadMap || null,
@@ -748,6 +764,7 @@ export const getEmailConfigs = async (req: Request, res: Response) => {
     // Get configs with pagination
     const configs = await ProjectEmailConfig.find(query)
       .select("-imapPassword -smtpPassword") // Exclude passwords
+      .populate("mappedUserId", "firstName lastName fullName email")
       .sort({ createdAt: -1 }) // Newest first
       .skip(skip)
       .limit(limitNum)
@@ -759,6 +776,17 @@ export const getEmailConfigs = async (req: Request, res: Response) => {
       projectId: config.projectId,
       emailAddress: config.emailAddress,
       isEnabled: config.isEnabled,
+      mappedUserId: config.mappedUserId?._id || config.mappedUserId || null,
+      mappedUser: config.mappedUserId
+        ? {
+            _id: config.mappedUserId._id || config.mappedUserId,
+            firstName: config.mappedUserId.firstName,
+            lastName: config.mappedUserId.lastName,
+            fullName: config.mappedUserId.fullName,
+            email: config.mappedUserId.email,
+          }
+        : null,
+      autoCreateTicket: config.autoCreateTicket !== false,
       imapHost: config.imapHost,
       imapPort: config.imapPort,
       imapUsername: config.imapUsername,
@@ -850,6 +878,15 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
         message: "Invalid project ID or config ID",
       });
     }
+    if (
+      req.body.mapped_user_id &&
+      !mongoose.Types.ObjectId.isValid(String(req.body.mapped_user_id))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid mapped user ID",
+      });
+    }
 
     // Find config
     const config = await ProjectEmailConfig.findOne({
@@ -885,6 +922,12 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
     // Update fields if provided
     if (email_address !== undefined)
       config.emailAddress = email_address.toLowerCase();
+    if (req.body.mapped_user_id !== undefined)
+      (config as any).mappedUserId = req.body.mapped_user_id || undefined;
+    if (req.body.auto_create_ticket !== undefined)
+      (config as any).autoCreateTicket =
+        req.body.auto_create_ticket === true ||
+        req.body.auto_create_ticket === "true";
     if (req.body.provider !== undefined)
       (config as any).provider = req.body.provider;
     if (req.body.inbound_method !== undefined)
@@ -903,8 +946,9 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
       (config as any).authMethod = "oauth2";
     }
     if (req.body.webhook_provider !== undefined)
-      if (req.body.webhook_payload_map !== undefined)
-        (config as any).webhookPayloadMap = req.body.webhook_payload_map;
+      (config as any).webhookProvider = req.body.webhook_provider;
+    if (req.body.webhook_payload_map !== undefined)
+      (config as any).webhookPayloadMap = req.body.webhook_payload_map;
     if (req.body.is_forwarded_mailbox !== undefined)
       (config as any).isForwardedMailbox =
         req.body.is_forwarded_mailbox === true ||
@@ -976,6 +1020,8 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
         smtpHost: config.smtpHost,
         smtpPort: config.smtpPort,
         smtpUsername: config.smtpUsername,
+        mappedUserId: (config as any).mappedUserId || null,
+        autoCreateTicket: (config as any).autoCreateTicket !== false,
         isEnabled: config.isEnabled,
         updatedAt: config.updatedAt,
       },

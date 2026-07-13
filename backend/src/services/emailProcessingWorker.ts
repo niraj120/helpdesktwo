@@ -4,6 +4,8 @@ import EmailParser, { ParsedEmailData } from '../utils/emailParser';
 import { findEmailThread } from '../utils/emailThreadDetection';
 import { createTicketFromEmail, addEmailReplyToTicket } from '../utils/ticketFromEmail';
 import { Ticket } from '../models/Ticket';
+import ProjectEmailConfig from '../models/ProjectEmailConfig';
+import { ingestEmail } from '../modules/service-request/emailTriage';
 
 // Worker configuration - with sensible defaults
 const WORKER_INTERVAL = process.env.EMAIL_WORKER_INTERVAL || '*/1 * * * *'; // Every 1 minute (default)
@@ -167,6 +169,39 @@ class EmailProcessingWorker {
       console.log(`      From: ${parsedEmail.from.address}`);
       console.log(`      Subject: ${parsedEmail.subject}`);
       console.log(`      Attachments: ${parsedEmail.attachments.length}`);
+      const emailConfig = await ProjectEmailConfig.findById(
+        queueEntry.projectEmailConfigId,
+      ).select("projectId mappedUserId autoCreateTicket emailAddress");
+
+      if (emailConfig && emailConfig.autoCreateTicket === false) {
+        console.log(`   Auto-create disabled, sending email to SR triage inbox...`);
+        const intake = await ingestEmail({
+          projectId: String(emailConfig.projectId),
+          projectEmailConfigId: String(emailConfig._id),
+          fromName: parsedEmail.from.name,
+          fromEmail: parsedEmail.from.address,
+          toEmail:
+            parsedEmail.to?.map((item: any) => item.address).join(", ") ||
+            emailConfig.emailAddress,
+          subject: parsedEmail.subject || "(No Subject)",
+          body: parsedEmail.body || "",
+          htmlBody: parsedEmail.htmlBody,
+          messageId: parsedEmail.messageId,
+          inReplyTo: parsedEmail.inReplyTo,
+          references: parsedEmail.references,
+          receivedAt: parsedEmail.date || new Date(),
+          assignedTo: emailConfig.mappedUserId
+            ? String(emailConfig.mappedUserId)
+            : undefined,
+        });
+        console.log(`   Email intake created: ${intake.uniqueId}`);
+        queueEntry.emailIntakeId = intake._id;
+        queueEntry.status = 'completed';
+        queueEntry.processedAt = new Date();
+        queueEntry.errorMessage = undefined;
+        await queueEntry.save();
+        return;
+      }
 
       // Check for email thread (Task 4.4)
       console.log(`   🔍 Checking for existing thread...`);

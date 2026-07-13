@@ -1,10 +1,22 @@
 import mongoose, { Document, Schema } from "mongoose";
 
+type SlaTime = { value: number; unit: "minutes" | "hours" | "days" };
+
 export interface ICategorySLA extends Document {
   categoryId: mongoose.Types.ObjectId;
   projectId: mongoose.Types.ObjectId;
-  responseTime: { value: number; unit: "minutes" | "hours" | "days" };
-  resolutionTime: { value: number; unit: "minutes" | "hours" | "days" };
+  responseTime: SlaTime;
+  resolutionTime: SlaTime;
+  /**
+   * Optional per-source SLA overrides keyed by submissionSource
+   * (e.g. "online"/"portal", "email", "ivr", "walk_in"). A source with a
+   * value overrides the base SLA for tickets from that channel; missing
+   * sources fall back to the base responseTime/resolutionTime.
+   */
+  slaBySource?: Record<
+    string,
+    { responseTime?: SlaTime; resolutionTime?: SlaTime }
+  >;
   isActive: boolean;
   createdBy?: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
@@ -44,6 +56,11 @@ const CategorySLASchema = new Schema<ICategorySLA>(
     resolutionTime: {
       type: timeSchema,
       required: true,
+    },
+    // Per-source SLA overrides (portal/email/ivr/walk_in → {responseTime, resolutionTime})
+    slaBySource: {
+      type: Schema.Types.Mixed,
+      default: undefined,
     },
     isActive: {
       type: Boolean,

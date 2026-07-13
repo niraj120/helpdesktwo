@@ -74,6 +74,37 @@ export const convert = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const bulkReassign = async (req: AuthRequest, res: Response) => {
+  try {
+    const r = await ivr.bulkReassignCalls(
+      Array.isArray(req.body?.callIds) ? req.body.callIds.map(String) : [],
+      String(req.body?.toUserId || ""),
+      actorId(req),
+    );
+    res.json({ success: true, data: r });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+export const markJunk = async (req: AuthRequest, res: Response) => {
+  try {
+    const c = await ivr.markCallJunk(req.params.id, req.body);
+    res.json({ success: true, data: c });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+export const markConverted = async (req: AuthRequest, res: Response) => {
+  try {
+    const c = await ivr.markCallConverted(req.params.id, req.body);
+    res.json({ success: true, data: c });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
 export const resolveOnCall = async (req: AuthRequest, res: Response) => {
   try {
     const c = await ivr.resolveCallOnCall(req.params.id, req.body);

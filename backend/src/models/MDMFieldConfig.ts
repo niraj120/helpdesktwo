@@ -15,16 +15,7 @@ export interface IMDMFieldConfig extends Document {
   dataType: string; // "employees" | "principals" | ...
   name: string; // preset name (multiple presets per source/dataType)
   selectedFields: string[];
-  fieldMapping: {
-    firstName?: string;
-    lastName?: string;
-    fullName?: string;
-    email?: string;
-    mobile?: string;
-    employeeCode?: string;
-    department?: string;
-    designation?: string;
-  };
+  fieldMapping: Record<string, string>;
   updatedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -41,16 +32,7 @@ const MDMFieldConfigSchema = new Schema<IMDMFieldConfig>(
     dataType: { type: String, default: "employees", index: true },
     name: { type: String, default: "Default", trim: true },
     selectedFields: { type: [String], default: [] },
-    fieldMapping: {
-      firstName: { type: String },
-      lastName: { type: String },
-      fullName: { type: String },
-      email: { type: String },
-      mobile: { type: String },
-      employeeCode: { type: String },
-      department: { type: String },
-      designation: { type: String },
-    },
+    fieldMapping: { type: Schema.Types.Mixed, default: {} },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true },

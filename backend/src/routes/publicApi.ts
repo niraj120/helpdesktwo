@@ -2,6 +2,7 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import { validatePublicApiKey } from "../middleware/validatePublicApiKey";
+import { resolveSelfServiceAuth } from "../middleware/selfServiceAuth";
 import {
   lookupUser,
   createPublicTicket,
@@ -14,6 +15,15 @@ import {
   createPublicUser,
   createPublicCenter,
 } from "../controllers/publicApiController";
+import {
+  getSelfServiceFormSchema,
+  createSelfServiceSr,
+  listMySelfServiceSr,
+  listParentStudents,
+  getMySrDetail,
+  replyToMySr,
+  createParentSession,
+} from "../controllers/publicServiceRequestController";
 
 // Multer instance (memory storage) used only for the LMS form endpoint
 const lmsUpload = multer({
@@ -89,6 +99,60 @@ router.post(
   validatePublicApiKey,
   lmsUpload.single("attachment"),
   createLmsFormTicket,
+);
+
+// ── Parent self-service Service Requests ────────────────────────────────────
+// POST /v1/service-requests/session — mint a short-lived parent session token.
+// Server-to-server ONLY (pub_ key); the browser then uses the token, not the key.
+router.post(
+  "/service-requests/session",
+  makeRateLimit(60),
+  validatePublicApiKey,
+  createParentSession,
+);
+// The rest accept EITHER a pub_ key (server) OR a parent session token (browser).
+// GET /v1/service-requests/form-schema — the self-service PSR form (60 req/min)
+router.get(
+  "/service-requests/form-schema",
+  makeRateLimit(60),
+  resolveSelfServiceAuth,
+  getSelfServiceFormSchema,
+);
+// GET /v1/service-requests/students — parent's children by mobile (60 req/min)
+router.get(
+  "/service-requests/students",
+  makeRateLimit(60),
+  resolveSelfServiceAuth,
+  listParentStudents,
+);
+// POST /v1/service-requests — raise a PSR (30 req/min)
+router.post(
+  "/service-requests",
+  makeRateLimit(30),
+  resolveSelfServiceAuth,
+  createSelfServiceSr,
+);
+// GET /v1/service-requests/mine — the parent's own PSRs (60 req/min)
+router.get(
+  "/service-requests/mine",
+  makeRateLimit(60),
+  resolveSelfServiceAuth,
+  listMySelfServiceSr,
+);
+// POST /v1/service-requests/:ticketNumber/reply — parent reply (30 req/min)
+router.post(
+  "/service-requests/:ticketNumber/reply",
+  makeRateLimit(30),
+  resolveSelfServiceAuth,
+  replyToMySr,
+);
+// GET /v1/service-requests/:ticketNumber — one request + thread (60 req/min)
+// Registered AFTER the literal routes so it doesn't shadow them.
+router.get(
+  "/service-requests/:ticketNumber",
+  makeRateLimit(60),
+  resolveSelfServiceAuth,
+  getMySrDetail,
 );
 
 // POST /v1/centers/nearest — 60 req/min

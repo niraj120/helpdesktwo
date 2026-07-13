@@ -3,13 +3,28 @@
  * Thin layer over the lifecycle service; permission gating lives on the routes.
  */
 import { Response } from "express";
+import mongoose from "mongoose";
+import axios from "axios";
 import { AuthRequest } from "../../../middleware/auth";
 import { User } from "../../../models/User";
-import { getProjectScope } from "../../../utils/projectScope";
+import { Ticket } from "../../../models/Ticket";
+import {
+  SrNotificationTemplate,
+  SR_NOTIFICATION_EVENTS,
+} from "../../../models/SrNotificationTemplate";
+import { recomputeSrTat } from "../srTatRecompute";
+import { getProjectScope, canAccessProject } from "../../../utils/projectScope";
+import { bulkDeleteTickets } from "../../../controllers/ticketController";
+import { mergeTickets } from "../../../controllers/ticketMergeController";
 import * as srSvc from "../serviceRequestService";
 import { SrError } from "../serviceRequestService";
 import { createServiceRequest } from "../createServiceRequest";
-import { searchParentsFromMDM } from "../../../services/mdmService";
+import {
+  fetchMdmOptions,
+  resolveParentSource,
+  searchParentsFromMDM,
+} from "../../../services/mdmService";
+import { searchCachedParentDirectory } from "../../../services/mdmCacheService";
 import {
   listFormSchemas,
   upsertFormSchema,
@@ -19,6 +34,7 @@ import {
   getSrConfigForProject,
   updateSrConfigForProject,
 } from "../srConfigAdmin";
+import { buildLeadCrmPayload } from "../services/leadCrmSync";
 
 function actorId(req: AuthRequest): string {
   const id = req.user?.userId;
@@ -33,6 +49,98 @@ function fail(res: Response, err: any) {
     .status(status)
     .json({ success: false, message: err?.message || "Server error" });
 }
+
+function hasPerm(req: AuthRequest, code: string): boolean {
+  const role = req.user?.role;
+  if (
+    role?.code === "SUPER_ADMIN" ||
+    role?.name === "Super Admin" ||
+    role === "Super Admin"
+  ) {
+    return true;
+  }
+  const perms = role?.permissions || [];
+  return perms.some((p: any) => {
+    const permCode = typeof p === "string" ? p : p?.code;
+    const permName = typeof p === "string" ? p : p?.name;
+    return permCode === code || permName === code;
+  });
+}
+
+function srAccess(req: AuthRequest) {
+  return {
+    all: hasPerm(req, "SR_VIEW_ALL"),
+    own:
+      hasPerm(req, "SR_VIEW_OWN") ||
+      hasPerm(req, "SR_PSR_CREATE") ||
+      hasPerm(req, "SR_ISR_CREATE"),
+    assigned:
+      hasPerm(req, "SR_VIEW_ASSIGNED") ||
+      hasPerm(req, "SR_PSR_RECEIVE") ||
+      hasPerm(req, "SR_ISR_RECEIVE"),
+  };
+}
+
+async function ensureSrTicketAccess(req: AuthRequest, ids: string[]) {
+  const uniqueIds = Array.from(new Set(ids.map((id) => String(id || "").trim()).filter(Boolean)));
+  if (!uniqueIds.length) throw new SrError("At least one service request is required", 400);
+  if (uniqueIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+    throw new SrError("One or more service request IDs are invalid", 400);
+  }
+
+  const tickets = await Ticket.find({ _id: { $in: uniqueIds } })
+    .select("_id ticketNumber interactionType project metadata")
+    .lean();
+
+  if (tickets.length !== uniqueIds.length) {
+    throw new SrError("One or more service requests were not found", 404);
+  }
+
+  const nonSr = tickets.filter(
+    (ticket: any) => !["PSR", "ISR"].includes(String(ticket.interactionType || "")),
+  );
+  if (nonSr.length) {
+    throw new SrError(
+      `Only PSR/ISR records can be managed here. Invalid record(s): ${nonSr
+        .map((ticket: any) => ticket.ticketNumber || ticket._id)
+        .join(", ")}`,
+      400,
+    );
+  }
+
+  const scope = getProjectScope(req);
+  const outsideScope = tickets.filter((ticket: any) => {
+    const projectId = ticket.project || ticket.metadata?.projectId;
+    return projectId && !canAccessProject(scope, projectId);
+  });
+  if (outsideScope.length) {
+    throw new SrError("Forbidden: one or more service requests are outside your project scope", 403);
+  }
+
+  return uniqueIds;
+}
+
+export const bulkDelete = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const ticketIds = Array.isArray(req.body.ticketIds) ? req.body.ticketIds : req.body.ids;
+    const ids = await ensureSrTicketAccess(req, ticketIds || []);
+    req.body.ticketIds = ids;
+    await bulkDeleteTickets(req as any, res);
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+export const merge = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const secondaryIds = Array.isArray(req.body.ticketIds) ? req.body.ticketIds : [];
+    const ids = await ensureSrTicketAccess(req, [req.params.id, ...secondaryIds]);
+    req.body.ticketIds = ids.filter((id) => id !== String(req.params.id));
+    await mergeTickets(req as any, res);
+  } catch (err) {
+    fail(res, err);
+  }
+};
 
 export const changeStatus = async (req: AuthRequest, res: Response) => {
   try {
@@ -99,7 +207,12 @@ export const parentClose = async (req: AuthRequest, res: Response) => {
   try {
     const ticket = await srSvc.parentCloseSr(
       req.params.id,
-      { satisfied: !!req.body.satisfied, comments: req.body.comments },
+      {
+        satisfied: !!req.body.satisfied,
+        comments: req.body.comments,
+        rating:
+          req.body.rating != null ? Number(req.body.rating) : undefined,
+      },
       actorId(req),
     );
     res.json({ success: true, data: ticket });
@@ -115,6 +228,100 @@ export const reopen = async (req: AuthRequest, res: Response) => {
       { reason: req.body.reason },
       actorId(req),
     );
+    res.json({ success: true, data: ticket });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+// ── Recompute open SR TATs (#13) ─────────────────────────────────────────────
+export const recomputeTat = async (req: AuthRequest, res: Response) => {
+  try {
+    const projectId = String(
+      req.query.projectId || req.body?.projectId || req.user?.projectId || "",
+    );
+    const result = await recomputeSrTat(projectId);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+// ── SR notification templates (#9) ───────────────────────────────────────────
+export const listNotificationTemplates = async (
+  req: AuthRequest,
+  res: Response,
+) => {
+  try {
+    const projectId = String(req.query.projectId || req.user?.projectId || "");
+    if (!projectId) throw new SrError("projectId is required", 400);
+    const stored = await SrNotificationTemplate.find({ projectId }).lean();
+    const byEvent = new Map(stored.map((t: any) => [t.event, t]));
+    // Return one row per known event (stored or empty default) so the UI can
+    // render the full list without guessing.
+    const data = SR_NOTIFICATION_EVENTS.map((event) => {
+      const t: any = byEvent.get(event);
+      return {
+        event,
+        enabled: t?.enabled ?? false,
+        subject: t?.subject ?? "",
+        body: t?.body ?? "",
+        toParent: t?.toParent ?? false,
+        ccUsers: (t?.ccUsers || []).map(String),
+        ccRoles: (t?.ccRoles || []).map(String),
+      };
+    });
+    res.json({ success: true, data });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+export const upsertNotificationTemplate = async (
+  req: AuthRequest,
+  res: Response,
+) => {
+  try {
+    const projectId = String(req.body.projectId || req.user?.projectId || "");
+    const event = String(req.body.event || "");
+    if (!projectId) throw new SrError("projectId is required", 400);
+    if (!SR_NOTIFICATION_EVENTS.includes(event as any)) {
+      throw new SrError("Invalid notification event", 400);
+    }
+    const toOids = (arr: any) =>
+      Array.isArray(arr)
+        ? arr
+            .filter((id: any) => mongoose.Types.ObjectId.isValid(String(id)))
+            .map((id: any) => new mongoose.Types.ObjectId(String(id)))
+        : [];
+    const doc = await SrNotificationTemplate.findOneAndUpdate(
+      { projectId: new mongoose.Types.ObjectId(projectId), event },
+      {
+        $set: {
+          enabled: !!req.body.enabled,
+          subject: String(req.body.subject || ""),
+          body: String(req.body.body || ""),
+          toParent: !!req.body.toParent,
+          ccUsers: toOids(req.body.ccUsers),
+          ccRoles: toOids(req.body.ccRoles),
+          updatedBy: req.user?.userId,
+        },
+        $setOnInsert: { createdBy: req.user?.userId },
+      },
+      { upsert: true, new: true, runValidators: true },
+    );
+    res.json({ success: true, data: doc });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+export const cancel = async (req: AuthRequest, res: Response) => {
+  try {
+    const ticket = await srSvc.cancelSr(req.params.id, actorId(req), {
+      reason: req.body.reason,
+      replacementSrId: req.body.replacementSrId,
+    });
     res.json({ success: true, data: ticket });
   } catch (err) {
     fail(res, err);
@@ -140,8 +347,9 @@ export const pslCall = async (req: AuthRequest, res: Response) => {
 
 export const checkDuplicates = async (req: AuthRequest, res: Response) => {
   try {
+    const projectId = String(req.query.projectId || "");
     const dupes = await srSvc.checkSrDuplicates({
-      projectId: String(req.query.projectId || ""),
+      projectId,
       subCategoryId: String(req.query.subCategoryId || ""),
       studentUserId: req.query.studentUserId
         ? String(req.query.studentUserId)
@@ -150,7 +358,13 @@ export const checkDuplicates = async (req: AuthRequest, res: Response) => {
         ? String(req.query.studentEnrollment)
         : undefined,
     });
-    res.json({ success: true, data: dupes });
+    // Surface the per-project, editable duplicate message when a match exists.
+    let message: string | undefined;
+    if (dupes.length && projectId) {
+      const cfg = await getSrConfigForProject(projectId);
+      message = cfg.messages?.duplicate || undefined;
+    }
+    res.json({ success: true, data: dupes, message });
   } catch (err) {
     fail(res, err);
   }
@@ -163,9 +377,13 @@ const str = (v: any): string | undefined =>
 
 export const list = async (req: AuthRequest, res: Response) => {
   try {
+    const loggedInProjectId = req.user?.projectId
+      ? String(req.user.projectId)
+      : undefined;
     const data = await srSvc.listServiceRequests({
-      projectId: str(req.query.projectId),
+      projectId: str(req.query.projectId) || loggedInProjectId,
       interactionType: str(req.query.interactionType),
+      viewScope: str(req.query.viewScope) as any,
       status: str(req.query.status),
       assignedTo: str(req.query.assignedTo),
       search: str(req.query.search),
@@ -186,6 +404,9 @@ export const list = async (req: AuthRequest, res: Response) => {
       page: req.query.page ? Number(req.query.page) : undefined,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
       scope: getProjectScope(req),
+      viewerId: req.user?.userId,
+      viewerEmail: req.user?.email,
+      access: srAccess(req),
     });
     res.json({ success: true, ...data });
   } catch (err) {
@@ -198,6 +419,11 @@ export const getOne = async (req: AuthRequest, res: Response) => {
     const data = await srSvc.getServiceRequest(
       req.params.id,
       getProjectScope(req),
+      {
+        userId: req.user?.userId,
+        email: req.user?.email,
+        access: srAccess(req),
+      },
     );
     res.json({ success: true, data });
   } catch (err) {
@@ -219,14 +445,17 @@ export const linkedIsrs = async (req: AuthRequest, res: Response) => {
 
 export const linkPsr = async (req: AuthRequest, res: Response) => {
   try {
-    const psrId = String(req.body?.psrId || "");
-    if (!psrId) {
-      res.status(400).json({ success: false, message: "psrId is required" });
+    const parentTicketId = String(req.body?.parentTicketId || req.body?.psrId || "");
+    if (!parentTicketId) {
+      res.status(400).json({
+        success: false,
+        message: "parentTicketId is required",
+      });
       return;
     }
     const data = await srSvc.linkIsrToPsr(
       req.params.id,
-      psrId,
+      parentTicketId,
       getProjectScope(req),
     );
     res.json({ success: true, data });
@@ -236,14 +465,6 @@ export const linkPsr = async (req: AuthRequest, res: Response) => {
 };
 
 // ── Phase 3: create (online / walk-in), student lookup, form schemas ─────────
-
-const hasPerm = (req: AuthRequest, code: string): boolean => {
-  const role: any = req.user?.role;
-  if (!role) return false;
-  if (role.code === "SUPER_ADMIN" || role.code === "ADMIN") return true;
-  const perms = role.permissions || [];
-  return perms.some((p: any) => (typeof p === "string" ? p : p?.code) === code);
-};
 
 export const create = async (req: AuthRequest, res: Response) => {
   try {
@@ -261,6 +482,7 @@ export const create = async (req: AuthRequest, res: Response) => {
     const result = await createServiceRequest({
       ...body,
       createdBy: body.createdBy || actorId(req),
+      actorId: actorId(req),
     });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -314,28 +536,150 @@ export const parentLookup = async (req: AuthRequest, res: Response) => {
     const mdmSourceId = req.query.mdmSourceId
       ? String(req.query.mdmSourceId)
       : undefined;
+    const srConfig = projectId ? await getSrConfigForProject(projectId) : null;
+    const lookupConfig = srConfig?.psr?.intake?.lookup || {
+      source: "auto",
+      searchMode: "parent",
+      allowDatabaseFallback: true,
+    };
+    const lookupSource = lookupConfig.source || "auto";
+    const explicitParentMdmSourceId =
+      mdmSourceId || lookupConfig.parentMdmSourceId || undefined;
     if (q.length < 2) {
       res.json({ success: true, data: [], source: null });
       return;
     }
 
-    // 1) MDM
+    // 0) PSR Builder table (local MongoDB mirror — fastest, no live API call)
+    if (lookupSource === "psr_builder") {
+      const tableId = (lookupConfig as any).psrBuilderTableId;
+      if (!tableId) {
+        res.json({ success: true, data: [], source: { name: "PSR Builder (no table configured)" }, lookupSource: "psr_builder" });
+        return;
+      }
+      try {
+        // Dynamic import to avoid circular deps
+        const { searchTable: psrSearch } = await import("../../../controllers/psr/psrBuilderController");
+        // Build a mock req/res to reuse the controller
+        const db = (await import("mongoose")).default.connection;
+        const PsrTable = (await import("../../../models/psr/PsrTable")).default;
+        const table = await PsrTable.findById(tableId).lean();
+        if (!table) {
+          res.json({ success: true, data: [], source: { name: "PSR Builder (table not found)" }, lookupSource: "psr_builder" });
+          return;
+        }
+        const col = db.collection((table as any).targetCollection);
+        const searchFields = (table as any).columns?.filter((c: any) => c.searchable).map((c: any) => c.as) || [];
+        let mongoQuery: Record<string, unknown> = {};
+        if (q && searchFields.length) {
+          const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+          mongoQuery = { $or: searchFields.map((f: string) => ({ [f]: { $regex: re } })) };
+        }
+        const rows = await col.find(mongoQuery, { projection: { _id: 0, _key: 0 } }).limit(25).toArray();
+        // Map to ParentOpt format — find name/mobile/email from column names
+        const findCol = (row: any, ...patterns: string[]) => {
+          for (const p of patterns) {
+            const key = Object.keys(row).find(k => k.toLowerCase().includes(p.toLowerCase()));
+            if (key && row[key]) return String(row[key]);
+          }
+          return "";
+        };
+        const data = rows.map((row: any) => ({
+          name: (findCol(row, "first name", "first_name") + " " + findCol(row, "last name", "last_name")).trim() || findCol(row, "name") || "—",
+          mobile: findCol(row, "mobile", "phone", "contact"),
+          email: findCol(row, "email"),
+          school: findCol(row, "school", "centre"),
+          parentCode: findCol(row, "guardian id", "guardian_id", "parent id", "parent_id"),
+          children: [],
+          _raw: row, // include full row for flexible display
+        })).filter((r: any) => r.name !== "—" || r.mobile || r.email);
+        res.json({ success: true, data, source: { name: (table as any).name || "PSR Builder" }, lookupSource: "psr_builder" });
+        return;
+      } catch (err: any) {
+        console.error("[parentLookup] PSR Builder search failed:", err.message);
+        // fall through to MDM
+      }
+    }
+    if (lookupSource === "cache" || lookupSource === "hybrid_cache") {
+      const cacheSourceId =
+        lookupConfig.cacheMdmSourceId ||
+        explicitParentMdmSourceId ||
+        undefined;
+      if (cacheSourceId) {
+        const cached = await searchCachedParentDirectory({
+          sourceId: cacheSourceId,
+          projectId,
+          joinKey: lookupConfig.cacheJoinKey || undefined,
+          query: q,
+          limit: 25,
+        });
+        if (cached && (cached.parents.length || lookupSource === "cache")) {
+          res.json({
+            success: true,
+            source: { id: String(cached.source._id), name: cached.source.name },
+            lookupSource: "cache",
+            data: cached.parents.slice(0, 25),
+          });
+          return;
+        }
+      } else if (lookupSource === "cache") {
+        res.json({
+          success: true,
+          source: { id: null, name: "No cached MDM source configured" },
+          lookupSource: "cache",
+          data: [],
+        });
+        return;
+      }
+    }
+
+    // 2) MDM
+    if (lookupSource !== "database" && lookupSource !== "cache") {
     try {
-      const mdm = await searchParentsFromMDM(q, projectId, mdmSourceId);
+      const mdm = await searchParentsFromMDM(
+        q,
+        projectId,
+        explicitParentMdmSourceId,
+        lookupConfig.relationship,
+      );
       if (mdm) {
         res.json({
           success: true,
           source: { id: String(mdm.source._id), name: mdm.source.name },
+          lookupSource: "mdm",
           data: mdm.parents.slice(0, 25),
         });
         return;
       }
     } catch (e: any) {
       // explicit source error → surface; otherwise fall through to internal
-      if (mdmSourceId) {
-        res.status(502).json({ success: false, message: e.message });
+      const hasProjectParentMdm = await resolveParentSource(
+        explicitParentMdmSourceId,
+        projectId,
+        (lookupConfig.relationship?.parentDataType || "parents") as any,
+      );
+      if (hasProjectParentMdm) {
+        res.status(502).json({
+          success: false,
+          message: e.message || "Parent MDM lookup failed",
+        });
         return;
       }
+    }
+    }
+
+    if (
+      lookupSource === "cache" ||
+      lookupSource === "mdm" ||
+      (lookupSource === "auto" && lookupConfig.allowDatabaseFallback === false)
+    ) {
+      res.json({
+        success: true,
+        source: { id: null, name: "No configured lookup source returned data" },
+        lookupSource,
+        data: [],
+      });
+      return;
     }
 
     // 2) Internal fallback — group internal users by parentMobile. A user whose
@@ -372,6 +716,7 @@ export const parentLookup = async (req: AuthRequest, res: Response) => {
       res.json({
         success: true,
         source: { id: null, name: "Internal directory (fallback)" },
+        lookupSource: "database",
         data: [],
       });
       return;
@@ -430,6 +775,7 @@ export const parentLookup = async (req: AuthRequest, res: Response) => {
     res.json({
       success: true,
       source: { id: null, name: "Internal directory (fallback)" },
+      lookupSource: "database",
       data: data.slice(0, 25),
     });
   } catch (err) {
@@ -441,6 +787,41 @@ export const listForms = async (req: AuthRequest, res: Response) => {
   try {
     const projectId = String(req.query.projectId || "");
     res.json({ success: true, data: await listFormSchemas(projectId) });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+export const formMdmOptions = async (req: AuthRequest, res: Response) => {
+  try {
+    const sourceId = String(req.query.sourceId || req.query.mdmSourceId || "");
+    if (!sourceId) throw new SrError("sourceId is required", 400);
+
+    const result = await fetchMdmOptions({
+      sourceId,
+      projectId: req.query.projectId ? String(req.query.projectId) : undefined,
+      dataType: (req.query.dataType ? String(req.query.dataType) : "custom") as any,
+      labelField: req.query.labelField ? String(req.query.labelField) : undefined,
+      valueField: req.query.valueField ? String(req.query.valueField) : undefined,
+      search: req.query.search ? String(req.query.search) : undefined,
+      searchParam: req.query.searchParam ? String(req.query.searchParam) : undefined,
+      dependsOnValue: req.query.dependsOnValue
+        ? String(req.query.dependsOnValue)
+        : undefined,
+      dependsOnParam: req.query.dependsOnParam
+        ? String(req.query.dependsOnParam)
+        : undefined,
+      dependsOnRemoteField: req.query.dependsOnRemoteField
+        ? String(req.query.dependsOnRemoteField)
+        : undefined,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    });
+
+    res.json({
+      success: true,
+      source: { id: String(result.source._id), name: result.source.name },
+      data: result.data,
+    });
   } catch (err) {
     fail(res, err);
   }
@@ -490,5 +871,91 @@ export const updateConfig = async (req: AuthRequest, res: Response) => {
     res.json({ success: true, data });
   } catch (err) {
     fail(res, err);
+  }
+};
+
+export const testLeadCrmConfig = async (req: AuthRequest, res: Response) => {
+  try {
+    const cfg = req.body?.leadSync || req.body?.crm?.leadSync || {};
+    const endpoint = String(cfg.endpoint || cfg.apiUrl || cfg.webhookUrl || "");
+    if (!endpoint) throw new SrError("CRM endpoint is required", 400);
+    if (cfg.bodyTemplate && typeof cfg.bodyTemplate === "string") {
+      try {
+        JSON.parse(cfg.bodyTemplate);
+      } catch {
+        throw new SrError("Request body JSON is invalid", 400);
+      }
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...(cfg.headers && typeof cfg.headers === "object" ? cfg.headers : {}),
+    };
+    if (cfg.authHeaderName && cfg.authHeaderValue) {
+      headers[String(cfg.authHeaderName)] = String(cfg.authHeaderValue);
+    }
+
+    const sampleLead = req.body?.payload || {
+      _id: "test-lead",
+      projectId: req.body?.projectId,
+      name: "Vivek Mishra",
+      firstName: "Vivek",
+      lastName: "Mishra",
+      email: "vivek9936234412@gmail.com",
+      contactNumber: "9936234412",
+      mobile: "9936234412",
+      studentName: "test",
+      studentFirstName: "test",
+      studentLastName: "test",
+      grade: "Jr.KG",
+      gradeId: 15,
+      schoolLocationId: 23,
+      schoolLocation: "VIBGYOR Kids and High - Lucknow",
+      academicYearId: 4,
+      academicYear: "2026 - 27",
+      enquiryNo: "TEST-CRM",
+      source: "settings_test",
+      status: "new",
+      notes: "CRM API test from SR settings",
+      createdAt: new Date().toISOString(),
+    };
+    const timeoutMs = Math.max(
+      5000,
+      Math.min(Number(cfg.timeoutMs || 30000), 120000),
+    );
+    const payload = buildLeadCrmPayload(sampleLead, { name: "CRM Test" }, cfg);
+
+    const startedAt = Date.now();
+    const response = await axios.request({
+      method: String(cfg.method || "POST").toUpperCase() as any,
+      url: endpoint,
+      data: payload,
+      headers,
+      timeout: timeoutMs,
+      validateStatus: () => true,
+    });
+
+    const ok = response.status >= 200 && response.status < 300;
+    res.status(ok ? 200 : 502).json({
+      success: ok,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      message: ok
+        ? "CRM API test succeeded."
+        : `CRM API returned HTTP ${response.status}`,
+      response:
+        response.data && typeof response.data === "object"
+          ? response.data
+          : { body: response.data },
+    });
+  } catch (err: any) {
+    const isTimeout = err?.code === "ECONNABORTED";
+    res.status(502).json({
+      success: false,
+      message: isTimeout
+        ? "CRM API test timed out before the CRM responded. Increase timeout or ask CRM team to check endpoint latency."
+        : err?.message || "CRM API test failed",
+      code: err?.code,
+    });
   }
 };

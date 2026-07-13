@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import DashboardLayout from "./DashboardLayout";
+import MDMConfigModal from "./MDMConfigModal";
 import {
   MdAdd,
   MdEdit,
@@ -13,7 +14,6 @@ import {
 import { usePermissions } from "../hooks/usePermissions";
 import { PERMISSIONS } from "../constants/permissions";
 import { API_CONFIG } from "../config/constants";
-import MDMConfigModal from "./MDMConfigModal";
 
 interface MasterItem {
   _id: string;
@@ -112,6 +112,7 @@ const MasterDataManagement = () => {
   const { hasPermission } = usePermissions();
   const [activeTab, setActiveTab] = useState("countries");
   const [items, setItems] = useState<MasterItem[]>([]);
+  const [showMdmModal, setShowMdmModal] = useState(false);
 
   // Refs to prevent duplicate API calls from React.StrictMode
   const hasFetchedCountries = useRef(false);
@@ -124,7 +125,6 @@ const MasterDataManagement = () => {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showMdmModal, setShowMdmModal] = useState(false);
   const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
   const [bulkUploadProjectId, setBulkUploadProjectId] = useState("");
   const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
@@ -2008,7 +2008,7 @@ const MasterDataManagement = () => {
                 {category.label}
               </button>
             ))}
-            {hasPermission(PERMISSIONS.MDM_VIEW) && (
+            {false && hasPermission(PERMISSIONS.MDM_VIEW) && (
               <button
                 onClick={() => setShowMdmModal(true)}
                 style={{

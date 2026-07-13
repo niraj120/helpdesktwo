@@ -13,8 +13,17 @@ export type ModeOfContact =
   | "ivr"
   | "digital";
 
-/** Intake channels that funnel into the orchestrator. */
-export type SrChannel = "online" | "walk_in" | "email" | "ivr";
+/**
+ * Intake channels that funnel into the orchestrator.
+ * `self_service` = parent-raised via the mobile app (SSO) public API — distinct
+ * from the PSL/staff `online`/`walk_in` forms.
+ */
+export type SrChannel =
+  | "online"
+  | "walk_in"
+  | "email"
+  | "ivr"
+  | "self_service";
 
 export interface SrWipConfig {
   /** Max number of revised committed-closure dates an assignee may set. */
@@ -44,6 +53,282 @@ export interface SrEmailConfig {
   tatHours: number;
   /** Hours before L2 escalation (Vector: 12). */
   level2Hours: number;
+}
+
+/** Permanent junk senders — inbound mail from these is auto-junked on ingest. */
+export interface SrEmailJunkConfig {
+  senders: string[];
+}
+
+/**
+ * Editable, per-project message templates (Vector: global `hd_messages`).
+ * All optional — blank falls back to a built-in default so nothing crashes.
+ * Placeholders like {{ticketNumber}} are substituted where the message is used.
+ */
+export interface SrMessagesConfig {
+  /** Shown when duplicate SR detection matches (duplicateDetection). */
+  duplicate?: string;
+  /** Seeded default remark when an SR is moved to Closed. */
+  closureDefault?: string;
+  /** Seeded default remark when an SR is Resolved / first responded. */
+  responseDefault?: string;
+}
+
+/**
+ * Not-happy escalation config. When a parent closes an SR unsatisfied (or below
+ * the rating threshold) and it is not re-opened, notify a manager so it can be
+ * followed up. Target is configurable (user or role); no hardcoded roles.
+ */
+export interface SrFeedbackConfig {
+  notifyManagerOnNegative: boolean;
+  /** Ratings at or below this value count as negative (1–5). */
+  ratingThreshold: number;
+  /** Explicit user notified on negative feedback (takes precedence). */
+  notifyUserId?: string;
+  /** Role whose first active project member is notified. */
+  notifyRoleId?: string;
+}
+
+export interface SrTicketNumberConfig {
+  prefix: string;
+  format: string;
+  resetPeriod: "daily" | "monthly" | "yearly" | "never";
+  startingNumber: number;
+}
+
+export type PsrFormSource = "ticket_config" | "sr_form";
+export type PsrEmailMode = "auto_create" | "triage";
+
+export interface PsrFormIntakeConfig {
+  enabled: boolean;
+  formSource: PsrFormSource;
+  formSchemaId?: string;
+}
+
+export interface PsrWalkInIntakeConfig extends PsrFormIntakeConfig {
+  reuseOfflineModule: boolean;
+}
+
+export interface PsrEmailSourceMapping {
+  id: string;
+  emailAddress: string;
+  projectEmailConfigId?: string;
+  assignToUserId?: string;
+  assignToRoleId?: string;
+  enabled: boolean;
+}
+
+export interface PsrEmailIntakeConfig {
+  enabled: boolean;
+  mode: PsrEmailMode;
+  sources: PsrEmailSourceMapping[];
+}
+
+export interface PsrIvrIntakeConfig {
+  enabled: boolean;
+  provider: "smartflo";
+  mode: PsrEmailMode;
+  apiBaseUrl?: string;
+  webhookPath?: string;
+}
+
+export type PsrLookupSource =
+  | "mdm"
+  | "database"
+  | "auto"
+  | "cache"
+  | "hybrid_cache"
+  | "psr_builder"; // PSR Builder table (local MongoDB mirror)
+export type PsrLookupSearchMode = "parent" | "student" | "both";
+
+export interface PsrLookupConfig {
+  /** Where PSR parent/student identity should be searched from for this project. */
+  source: PsrLookupSource;
+  /** Which identity search modes are available to staff while creating PSR. */
+  searchMode: PsrLookupSearchMode;
+  /** Optional explicit MDM source for parent lookup; empty = first eligible source. */
+  parentMdmSourceId?: string;
+  /** Optional explicit MDM source for student lookup; empty = first eligible source. */
+  studentMdmSourceId?: string;
+  /** External MDM source whose cached join should be used for parent lookup. */
+  cacheMdmSourceId?: string;
+  /** Optional cached join key; empty = first enabled parent-with-children join. */
+  cacheJoinKey?: string;
+  /** Only used when source is auto: allow MongoDB fallback when MDM has no source/result. */
+  allowDatabaseFallback: boolean;
+  /** PSR Builder table id — used when source === "psr_builder" */
+  psrBuilderTableId?: string;
+  /** Optional bridge API for MDMs where parent and student APIs do not share a direct id. */
+  relationship?: {
+    enabled?: boolean;
+    parentDataType?: "parents" | "custom" | "students" | "children";
+    mappingMdmSourceId?: string;
+    mappingDataType?: "custom" | "children" | "students";
+    /** Field in the parent API response whose value should be sent to the mapping API. */
+    parentIdField?: string;
+    /** Field in the mapping API response used to confirm the parent id, if present. */
+    mappingParentIdField?: string;
+    /** Field in the mapping API response that contains the student id. */
+    studentIdField?: string;
+    /** Request parameter name used when calling the mapping API with the parent id. */
+    parentIdParam?: string;
+    studentMdmSourceId?: string;
+    studentDataType?: "students" | "children" | "custom";
+    /** Field in the student API response used to confirm the student id, if present. */
+    studentResponseIdField?: string;
+    /** Request parameter name used when calling the student API with each mapped student id. */
+    studentIdParam?: string;
+  };
+}
+
+export interface PsrIntakeConfig {
+  lookup: PsrLookupConfig;
+  mobileForm: PsrFormIntakeConfig;
+  walkIn: PsrWalkInIntakeConfig;
+  email: PsrEmailIntakeConfig;
+  ivr: PsrIvrIntakeConfig;
+}
+
+export interface PsrDuplicateDetectionConfig {
+  enabled: boolean;
+  matchStudentId: boolean;
+  matchSubCategory: boolean;
+  matchStatus: boolean;
+  activeStatuses: number[];
+  action: "warn" | "block";
+}
+
+export interface PsrRequestTypeConfig {
+  ocrEnabled: boolean;
+  srEnabled: boolean;
+  defaultType: RequestType;
+  autoCloseOcr: boolean;
+}
+
+export interface PsrLifecycleConfig {
+  assignResearchTask: boolean;
+  assignResolutionTask: boolean;
+  allowCombinedResearchResolution: boolean;
+  assignBySubCategory: boolean;
+  allowReassignment: boolean;
+  allowCancellation: boolean;
+  cancellationReasons: string[];
+  createChildCaseOnCancellation: boolean;
+  closureTaskEnabled: boolean;
+  closureAssignToUserId?: string;
+  closureAssignToRoleId?: string;
+  parentClosureEnabled: boolean;
+  feedbackEnabled: boolean;
+  reopenOnUnhappyFeedback: boolean;
+  reopenLimit: number;
+  reassignKeepsOriginalTat: boolean;
+  delegateRestrictedToCcMatrix: boolean;
+  splitMultipleIssuesIntoSeparatePsr: boolean;
+}
+
+export interface PsrNotificationConfig {
+  parentOnCreation: boolean;
+  departmentOnTaskAssignment: boolean;
+  departmentOnReassignment: boolean;
+  parentOnResolved: boolean;
+  parentOnCancellation: boolean;
+  reCellOnChildCase: boolean;
+  principalOnClosureTask: boolean;
+  parentOnClosure: boolean;
+  channels: Array<"email" | "sms" | "in_app" | "push">;
+}
+
+export interface PsrAssignmentConfig {
+  defaultAssignToRoleId?: string;
+  defaultAssignToUserId?: string;
+  defaultCcRoleIds: string[];
+  pslRoleId?: string;
+  principalRoleId?: string;
+  appointmentAssignToPsl: boolean;
+  appointmentCategoryKeywords: string[];
+  ssdVertexCategoryKeywords: string[];
+}
+
+export interface PsrParentCommunicationConfig {
+  twoWayCommunicationEnabled: boolean;
+  parentCanAddComments: boolean;
+  askAdditionalInfoEnabled: boolean;
+  displayRemarksPermission: "closure_access" | "psl_only" | "custom";
+  proactiveInfoBeforeSubmit: boolean;
+  feedbackPopupEnabled: boolean;
+  feedbackPrompt: string;
+  pslSatisfactionCallEnabled: boolean;
+  pslCallRequiredWhenUnhappyNoReopen: boolean;
+}
+
+export interface PsrLinkedIsrConfig {
+  enabled: boolean;
+  generateFromPsrPage: boolean;
+  clickableCrossLinks: boolean;
+  requireIsrNumberPaste: boolean;
+}
+
+export interface PsrEmailIntegrationConfig {
+  enabled: boolean;
+  uniqueIdPrefix: string;
+  actionTatHours: number;
+  level2EscalationHours: number;
+  workingStart: string;
+  workingEnd: string;
+  excludeSundays: boolean;
+  allowMultipleActionsPerEmail: boolean;
+  requireWipForFurtherActions: boolean;
+  replyMode: "outlook_manual" | "in_app";
+  defaultPsrModeOfContact: "email";
+  senderTypes: string[];
+  trackConversionHistory: boolean;
+  dashboardMetrics: Array<
+    | "total"
+    | "within_tat"
+    | "outside_tat"
+    | "due_for_escalation"
+    | "wip_within_tat"
+    | "wip_due_for_escalation"
+    | "closed"
+    | "conversion_rate"
+    | "response_time"
+  >;
+}
+
+export interface PsrReportingConfig {
+  filters: Array<
+    | "date_range"
+    | "month"
+    | "department"
+    | "cluster"
+    | "school"
+    | "category"
+    | "sub_category"
+  >;
+  dashboardCards: Array<
+    | "outside_tat"
+    | "due_for_escalation"
+    | "within_tat"
+    | "wip_future"
+    | "reopened_wip"
+    | "resolved_not_psl_closed"
+    | "resolved_not_parent_closed"
+    | "reopened_by_parent"
+    | "total"
+    | "closed"
+  >;
+}
+
+export interface PsrWorkflowConfig {
+  duplicateDetection: PsrDuplicateDetectionConfig;
+  requestTypes: PsrRequestTypeConfig;
+  lifecycle: PsrLifecycleConfig;
+  notifications: PsrNotificationConfig;
+  assignment: PsrAssignmentConfig;
+  parentCommunication: PsrParentCommunicationConfig;
+  linkedIsr: PsrLinkedIsrConfig;
+  emailIntegration: PsrEmailIntegrationConfig;
+  reporting: PsrReportingConfig;
 }
 
 /**
@@ -83,6 +368,9 @@ export interface SrClassifyChannel {
 /** Toggle for an optional, permission-gated block on the SR create form. */
 export interface SrBlockToggle {
   enabled: boolean;
+  label?: string;
+  placeholder?: string;
+  required?: boolean;
 }
 
 export interface SrDetailStatusStep {
@@ -135,16 +423,39 @@ export interface SrDetailConfig {
 /** Resolved (fully-defaulted) per-project SR configuration. */
 export interface SrConfig {
   enabled: boolean;
-  psr: { enabled: boolean };
-  isr: { enabled: boolean };
+  numbering: {
+    PSR: SrTicketNumberConfig;
+    ISR: SrTicketNumberConfig;
+  };
+  psr: { enabled: boolean; intake: PsrIntakeConfig; workflow: PsrWorkflowConfig };
+  isr: {
+    enabled: boolean;
+    linkFromNormalTickets: {
+      enabled: boolean;
+      createEnabled: boolean;
+      linkExistingEnabled: boolean;
+    };
+  };
   wip: SrWipConfig;
   reopen: SrReopenConfig;
+  /** Editable per-project message templates (duplicate / closure / response). */
+  messages: SrMessagesConfig;
+  /** Not-happy escalation on negative parent feedback. */
+  feedback: SrFeedbackConfig;
   email: SrEmailConfig;
+  /** Permanent junk senders (auto-junk on ingest). */
+  emailJunk: SrEmailJunkConfig;
   ivr: { enabled: boolean };
   /** Configurable classify-call channels (PSR flow). */
   classifyChannels: SrClassifyChannel[];
   /** Optional create-form blocks (each also permission-gated). */
   blocks: {
+    parentLookup: SrBlockToggle;
+    childSelection: SrBlockToggle;
+    category: SrBlockToggle;
+    subject: SrBlockToggle;
+    description: SrBlockToggle;
+    dynamicFields: SrBlockToggle;
     assigneeEmails: SrBlockToggle;
     prioritySchedule: SrBlockToggle;
     offlineReEntry: SrBlockToggle;
@@ -244,4 +555,5 @@ export const SR_PSR_STATUSES: SrStatusSeed[] = [
   { code: 5, name: "Closed", color: "#6b7280", isClosed: true },
   { code: 6, name: "Re-open", color: "#ef4444", isClosed: false },
   { code: 7, name: "Re-Opened WIP", color: "#f97316", isClosed: false },
+  { code: 8, name: "Cancelled", color: "#94a3b8", isClosed: true },
 ];

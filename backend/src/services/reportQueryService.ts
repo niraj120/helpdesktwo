@@ -33,6 +33,11 @@ export const DATA_POINT_FIELD_MAP: Record<string, string> = {
   ticket_category_level_3: "categoryLevel3Name",
   ticket_category_level_4: "categoryLevel4Name",
   ticket_category_level_5: "categoryLevel5Name",
+  ticket_category_level_6: "categoryLevel6Name",
+  ticket_category_level_7: "categoryLevel7Name",
+  ticket_category_level_8: "categoryLevel8Name",
+  ticket_category_level_9: "categoryLevel9Name",
+  ticket_category_level_10: "categoryLevel10Name",
   ticket_assigned_to: "assignedToName",
   ticket_created_by: "createdByName",
   ticket_created_at: "createdAt",
@@ -48,6 +53,17 @@ export const DATA_POINT_FIELD_MAP: Record<string, string> = {
   ticket_escalation_level: "currentEscalationLevelNumber",
   ticket_assigned_via: "assignedVia",
   ticket_escalation_count: "escalationCount",
+  // Service Request (PSR/ISR) — all in the Ticket collection
+  sr_interaction_type: "interactionTypeLabel",
+  sr_cancelled: "srCancelledLabel",
+  sr_cancel_reason: "srCancelReason",
+  sr_reopened: "srReopenedLabel",
+  sr_reopen_count: "srReopenCount",
+  sr_wip_committed_date: "srWipCommittedDate",
+  sr_wip_revision_count: "srWipRevisionCount",
+  sr_parent_satisfied: "srParentSatisfiedLabel",
+  sr_auto_closed: "srAutoClosedLabel",
+  sr_sla_source: "srSlaSource",
   // Customer
   customer_name: "createdByName",
   customer_email: "createdByEmail",
@@ -376,6 +392,11 @@ export async function runReportQuery(
     { $lookup: { from: "categories", localField: "categoryHierarchy.level3", foreignField: "_id", as: "_catL3", pipeline: [{ $project: { name: 1 } }] } },
     { $lookup: { from: "categories", localField: "categoryHierarchy.level4", foreignField: "_id", as: "_catL4", pipeline: [{ $project: { name: 1 } }] } },
     { $lookup: { from: "categories", localField: "categoryHierarchy.level5", foreignField: "_id", as: "_catL5", pipeline: [{ $project: { name: 1 } }] } },
+    { $lookup: { from: "categories", localField: "categoryHierarchy.level6", foreignField: "_id", as: "_catL6", pipeline: [{ $project: { name: 1 } }] } },
+    { $lookup: { from: "categories", localField: "categoryHierarchy.level7", foreignField: "_id", as: "_catL7", pipeline: [{ $project: { name: 1 } }] } },
+    { $lookup: { from: "categories", localField: "categoryHierarchy.level8", foreignField: "_id", as: "_catL8", pipeline: [{ $project: { name: 1 } }] } },
+    { $lookup: { from: "categories", localField: "categoryHierarchy.level9", foreignField: "_id", as: "_catL9", pipeline: [{ $project: { name: 1 } }] } },
+    { $lookup: { from: "categories", localField: "categoryHierarchy.level10", foreignField: "_id", as: "_catL10", pipeline: [{ $project: { name: 1 } }] } },
   ];
 
   // ── 3. $addFields — compute derived columns ───────────────────────────────
@@ -449,6 +470,9 @@ export async function runReportQuery(
             { case: { $eq: ["$status", 3] }, then: "On Hold" },
             { case: { $eq: ["$status", 4] }, then: "Resolved" },
             { case: { $eq: ["$status", 5] }, then: "Closed" },
+            { case: { $eq: ["$status", 6] }, then: "Re-open" },
+            { case: { $eq: ["$status", 7] }, then: "Re-Opened WIP" },
+            { case: { $eq: ["$status", 8] }, then: "Cancelled" },
           ],
           default: "Unknown",
         },
@@ -462,6 +486,11 @@ export async function runReportQuery(
       categoryLevel3Name: { $ifNull: [{ $arrayElemAt: ["$_catL3.name", 0] }, ""] },
       categoryLevel4Name: { $ifNull: [{ $arrayElemAt: ["$_catL4.name", 0] }, ""] },
       categoryLevel5Name: { $ifNull: [{ $arrayElemAt: ["$_catL5.name", 0] }, ""] },
+      categoryLevel6Name: { $ifNull: [{ $arrayElemAt: ["$_catL6.name", 0] }, ""] },
+      categoryLevel7Name: { $ifNull: [{ $arrayElemAt: ["$_catL7.name", 0] }, ""] },
+      categoryLevel8Name: { $ifNull: [{ $arrayElemAt: ["$_catL8.name", 0] }, ""] },
+      categoryLevel9Name: { $ifNull: [{ $arrayElemAt: ["$_catL9.name", 0] }, ""] },
+      categoryLevel10Name: { $ifNull: [{ $arrayElemAt: ["$_catL10.name", 0] }, ""] },
       slaDueAt: { $ifNull: ["$roleLevelSLA.dueAt", "$ticketLevelSLA.dueAt"] },
       slaBreachedAt: {
         $ifNull: ["$roleLevelSLA.breachedAt", "$ticketLevelSLA.breachedAt"],
@@ -575,6 +604,31 @@ export async function runReportQuery(
       // Footfall computed fields
       studentPortalEmail: { $ifNull: ["$metadata.studentEmail", ""] },
       responseCount: { $size: { $ifNull: ["$comments", []] } },
+      // ── Service Request (PSR/ISR) computed fields ────────────────────────
+      interactionTypeLabel: { $ifNull: ["$interactionType", "normal"] },
+      srCancelledLabel: {
+        $cond: [{ $eq: ["$status", 8] }, "Yes", "No"],
+      },
+      srCancelReason: { $ifNull: ["$cancel.reason", ""] },
+      srReopenedLabel: {
+        $cond: [{ $gt: [{ $ifNull: ["$reopen.count", 0] }, 0] }, "Yes", "No"],
+      },
+      srReopenCount: { $ifNull: ["$reopen.count", 0] },
+      srWipCommittedDate: { $ifNull: ["$wip.committedDate", null] },
+      srWipRevisionCount: { $ifNull: ["$wip.revisionCount", 0] },
+      srParentSatisfiedLabel: {
+        $switch: {
+          branches: [
+            { case: { $eq: ["$parentClosure.satisfied", true] }, then: "Satisfied" },
+            { case: { $eq: ["$parentClosure.satisfied", false] }, then: "Not satisfied" },
+          ],
+          default: "",
+        },
+      },
+      srAutoClosedLabel: {
+        $cond: [{ $eq: ["$metadata.autoClose", true] }, "Yes", "No"],
+      },
+      srSlaSource: { $ifNull: ["$slaSource", ""] },
     },
   };
 

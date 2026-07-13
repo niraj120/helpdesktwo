@@ -7,7 +7,11 @@ export default defineConfig(({ mode }) => {
   const isProduction = mode === 'production';
   
   return {
-    plugins: [react()],
+    plugins: [
+      react({
+        jsxImportSource: '@/utils/csp-jsx-runtime',
+      }),
+    ],
     server: {
       port: 3001,
       strictPort: true,

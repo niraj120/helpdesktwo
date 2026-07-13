@@ -24,6 +24,7 @@ interface SchemaDraft {
 
 const CHANNELS = [
   { v: "online", l: "Online (Portal)" },
+  { v: "prospect_parent", l: "Prospect Parent / CRM Lead" },
   { v: "walk_in", l: "Walk-in" },
   { v: "email", l: "Email" },
   { v: "ivr", l: "IVR" },

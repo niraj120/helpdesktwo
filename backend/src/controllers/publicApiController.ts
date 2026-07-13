@@ -465,27 +465,26 @@ export const createPublicTicket = async (
       return cat ? (cat as any)._id : undefined;
     };
 
-    const [catL1, catL2, catL3, catL4, catL5] = await Promise.all([
-      resolveCategoryOid(req.body.category_level_1),
-      resolveCategoryOid(req.body.category_level_2),
-      resolveCategoryOid(req.body.category_level_3),
-      resolveCategoryOid(req.body.category_level_4),
-      resolveCategoryOid(req.body.category_level_5),
-    ]);
+    const catLevels = await Promise.all(
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) =>
+        resolveCategoryOid(req.body[`category_level_${n}`]),
+      ),
+    );
+    const [catL1] = catLevels;
     const categoryObjectId = catL1;
-    const deepestCategoryObjectId = catL5 ?? catL4 ?? catL3 ?? catL2 ?? catL1;
+    // Deepest selected level (level10 → level1).
+    const deepestCategoryObjectId =
+      [...catLevels].reverse().find(Boolean) ?? catL1;
     // Subject: read from Subject / Title / subject form fields (matches submitTicket convention)
     const formSubject: string =
       ((req.body.Subject || req.body.Title || req.body.subject) as string) ||
       "";
     const builtCategoryHierarchy: Record<string, any> | undefined = catL1
-      ? {
-          level1: catL1,
-          ...(catL2 ? { level2: catL2 } : {}),
-          ...(catL3 ? { level3: catL3 } : {}),
-          ...(catL4 ? { level4: catL4 } : {}),
-          ...(catL5 ? { level5: catL5 } : {}),
-        }
+      ? Object.fromEntries(
+          catLevels
+            .map((c, i) => [`level${i + 1}`, c])
+            .filter(([, c]) => !!c),
+        )
       : undefined;
 
     // ── Priority from category ─────────────────────────────────────────────

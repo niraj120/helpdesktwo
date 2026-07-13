@@ -1,11 +1,16 @@
 import { Request, Response, NextFunction } from "express";
 import bcrypt from "bcryptjs";
-import mongoose from "mongoose";
 import { PublicApiKey } from "../models/PublicApiKey";
 
 export interface PublicApiRequest extends Request {
   publicApiProjectId?: string; // Validated project ObjectId string
 }
+
+// In-memory cache of validated keys → projectId. The webview makes several
+// calls with the same key; caching skips the (expensive) bcrypt compare on
+// every repeat. Short TTL so revocation takes effect quickly.
+const KEY_CACHE = new Map<string, { projectId: string; exp: number }>();
+const KEY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Middleware for all /v1/* public API routes.
@@ -33,12 +38,39 @@ export const validatePublicApiKey = async (
     return;
   }
 
-  // ── 2. Load all active keys (across all projects) and bcrypt-match ─
-  const activeKeys = await PublicApiKey.find({ isActive: true })
+  // ── 1b. Cache hit → skip bcrypt + DB entirely. ───────────────────
+  const cached = KEY_CACHE.get(apiKey);
+  if (cached && cached.exp > Date.now()) {
+    const headerPid = req.headers["x-project-id"] as string | undefined;
+    if (headerPid && headerPid !== cached.projectId) {
+      res.status(403).json({
+        status: "error",
+        code: "PROJECT_MISMATCH",
+        message: "X-Project-ID does not match the project tied to this API key.",
+      });
+      return;
+    }
+    req.publicApiProjectId = cached.projectId;
+    next();
+    return;
+  }
+
+  // ── 2. Narrow by keyPrefix (first 8 chars) so we bcrypt-compare only the
+  //       candidate(s) for this key, not every active key. bcrypt.compare is
+  //       ~200ms each — comparing against all keys made every /v1 call slow.
+  const prefix = apiKey.slice(0, 8);
+  let candidates = await PublicApiKey.find({ isActive: true, keyPrefix: prefix })
     .select("keyHash projectId")
     .lean();
 
-  if (activeKeys.length === 0) {
+  // Back-compat: if no key stored a matching prefix, fall back to all active.
+  if (candidates.length === 0) {
+    candidates = await PublicApiKey.find({ isActive: true })
+      .select("keyHash projectId")
+      .lean();
+  }
+
+  if (candidates.length === 0) {
     res.status(401).json({
       status: "error",
       code: "INVALID_API_KEY",
@@ -48,7 +80,7 @@ export const validatePublicApiKey = async (
   }
 
   let matchedProjectId: string | null = null;
-  for (const record of activeKeys) {
+  for (const record of candidates) {
     const match = await bcrypt.compare(apiKey, record.keyHash);
     if (match) {
       matchedProjectId = record.projectId.toString();
@@ -75,6 +107,12 @@ export const validatePublicApiKey = async (
     });
     return;
   }
+
+  // Cache the validated key so repeat calls skip bcrypt.
+  KEY_CACHE.set(apiKey, {
+    projectId: matchedProjectId,
+    exp: Date.now() + KEY_CACHE_TTL_MS,
+  });
 
   // ── 4. Attach validated project ID to request ────────────────────
   req.publicApiProjectId = matchedProjectId;

@@ -13,6 +13,7 @@ import { validatePasswordPolicy } from "../utils/passwordPolicyUtils";
 import ExcelJS from "exceljs";
 import multer from "multer";
 import { dashboardEvents } from "../services/dashboardEventBus";
+import { normalizeMdmFieldMapping } from "../utils/mdmFieldMapping";
 
 const normalizeContactPhone = (value?: unknown): string => {
   const digits = String(value ?? "").replace(/\D/g, "");
@@ -445,6 +446,7 @@ export const createUser = async (
       mdmSourceId,
       payrollType,
       company,
+      isIvrAgent,
     } = req.body;
     let resolvedRole = role;
 
@@ -515,6 +517,7 @@ export const createUser = async (
       centers: centers || [],
       payrollType: payrollType || null,
       company: company || null,
+      isIvrAgent: !!isIvrAgent,
     };
 
     // Store departmentRef if provided (ObjectId from dropdown)
@@ -895,6 +898,8 @@ export const updateUser = async (
     if (payrollType !== undefined)
       (user as any).payrollType = payrollType || null;
     if (company !== undefined) (user as any).company = company || null;
+    if (req.body.isIvrAgent !== undefined)
+      (user as any).isIvrAgent = !!req.body.isIvrAgent;
 
     // Handle hierarchy mapping when reportingManager changes
     if (reportingManager !== undefined) {
@@ -1318,6 +1323,7 @@ export const saveMdmFieldConfig = async (
       return;
     }
     const presetName = (name && String(name).trim()) || "Default";
+    const normalizedFieldMapping = normalizeMdmFieldMapping(fieldMapping);
     const cfg = await MDMFieldConfig.findOneAndUpdate(
       { mdmSourceId, dataType: dataType || "employees", name: presetName },
       {
@@ -1325,7 +1331,7 @@ export const saveMdmFieldConfig = async (
         dataType: dataType || "employees",
         name: presetName,
         selectedFields: Array.isArray(selectedFields) ? selectedFields : [],
-        fieldMapping: fieldMapping || {},
+        fieldMapping: normalizedFieldMapping,
         updatedBy: req.user?.userId,
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },

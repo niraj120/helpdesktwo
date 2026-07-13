@@ -299,7 +299,7 @@ export const getDataPoints = async (req: Request, res: Response) => {
         );
         for (const lvl of levels) {
           const n = lvl?.levelNumber;
-          if (!n || n < 1 || n > 5 || lvl?.isActive === false) continue;
+          if (!n || n < 1 || n > 10 || lvl?.isActive === false) continue;
           categoryLevelDataPoints.push({
             _id: `virtual_cat_level_${n}`,
             key: `ticket_category_level_${n}`,

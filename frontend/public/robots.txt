@@ -1,0 +1,21 @@
+# SAC Helpdesk — robots directives (GIGW)
+# The application is authenticated. Only the public login entry and the
+# public (no-login) ticket / feedback pages are intended for indexing.
+# Everything else — the authenticated application and the API — is disallowed.
+
+User-agent: *
+Allow: /$
+Allow: /login
+Allow: /feedback/
+Disallow: /api/
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /tickets
+Disallow: /service-requests
+Disallow: /users
+Disallow: /settings
+Disallow: /reports
+Disallow: /integrations
+
+# Sitemap of public pages (update the host if the public SAC domain differs).
+Sitemap: https://helpdesk.hubblehox.ai/sitemap.xml

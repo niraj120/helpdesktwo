@@ -11,9 +11,10 @@
  * - Identical render path for both contexts — zero duplication.
  */
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { DocumentArrowUpIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { conditionEngine, FormFieldSchema } from "../utils/conditionEngine";
+import { serviceRequestApi } from "../services/serviceRequests";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,211 @@ const LABEL_STYLE: React.CSSProperties = {
 
 const WRAPPER_STYLE: React.CSSProperties = { marginBottom: "20px" };
 
+type RenderOption = { label: string; value: string; raw?: any };
+
+const scalarFromConfiguredField = (raw: any, configuredField?: string) => {
+  if (!raw || typeof raw !== "object" || !configuredField?.trim()) return "";
+  const field = configuredField.trim();
+  const candidates = [
+    field,
+    field.includes(".") ? field.split(".").pop() || field : field,
+  ];
+  for (const key of candidates) {
+    const value = raw[key];
+    if (value !== undefined && value !== null && value !== "" && typeof value !== "object") {
+      return String(value);
+    }
+  }
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalizedCandidates = candidates.map(normalize);
+  for (const [key, value] of Object.entries(raw)) {
+    if (value === undefined || value === null || value === "" || typeof value === "object") continue;
+    if (normalizedCandidates.includes(normalize(key))) return String(value);
+  }
+  return "";
+};
+
+const normalizeOptions = (field: FormFieldSchema): RenderOption[] =>
+  (field.options || []).map((option) => ({
+    label: String(option),
+    value: String(option),
+  }));
+
+interface DynamicOptionsSelectProps {
+  field: FormFieldSchema;
+  value: any;
+  formData: Record<string, any>;
+  projectId?: string;
+  disabled: boolean;
+  required: boolean;
+  multiple?: boolean;
+  style: React.CSSProperties;
+  onChange: (value: any, selected?: RenderOption | RenderOption[]) => void;
+}
+
+const DynamicOptionsSelect: React.FC<DynamicOptionsSelectProps> = ({
+  field,
+  value,
+  formData,
+  projectId,
+  disabled,
+  required,
+  multiple,
+  style,
+  onChange,
+}) => {
+  const [remoteOptions, setRemoteOptions] = useState<RenderOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const mdm = field.mdm || {};
+  const dependencyRaw = mdm.dependsOnField
+    ? formData[`${mdm.dependsOnField}Raw`]
+    : undefined;
+  const dependencyRawValue =
+    dependencyRaw && mdm.dependsOnRemoteField
+      ? scalarFromConfiguredField(dependencyRaw, mdm.dependsOnRemoteField)
+      : "";
+  const dependencyValue = mdm.dependsOnField
+    ? dependencyRawValue || formData[mdm.dependsOnField]
+    : undefined;
+  const dependencyMissing =
+    field.optionsSource === "mdm" &&
+    Boolean(mdm.dependsOnField) &&
+    (dependencyValue === undefined || dependencyValue === null || dependencyValue === "");
+
+  useEffect(() => {
+    if (field.optionsSource !== "mdm") {
+      setRemoteOptions([]);
+      setError("");
+      return;
+    }
+    if (!mdm.sourceId || dependencyMissing) {
+      setRemoteOptions([]);
+      setError("");
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    serviceRequestApi
+      .formMdmOptions({
+        projectId,
+        sourceId: mdm.sourceId,
+        dataType: mdm.dataType || "custom",
+        labelField: mdm.labelField,
+        valueField: mdm.valueField,
+        searchParam: mdm.searchParam,
+        dependsOnValue: dependencyValue,
+        dependsOnParam: mdm.dependsOnParam,
+        dependsOnRemoteField: mdm.dependsOnRemoteField,
+        limit: mdm.limit || 100,
+      })
+      .then((res) => {
+        if (cancelled) return;
+        const options = Array.isArray(res?.data)
+          ? res.data.map((item: any) => ({
+              label: String(item.label ?? item.value ?? ""),
+              value: String(item.value ?? item.label ?? ""),
+              raw: item.raw ?? item,
+            }))
+          : [];
+        setRemoteOptions(
+          options.filter((option: RenderOption) => option.label && option.value),
+        );
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setRemoteOptions([]);
+        setError(err?.response?.data?.message || "Failed to load MDM options");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    field.optionsSource,
+    mdm.sourceId,
+    mdm.dataType,
+    mdm.labelField,
+    mdm.valueField,
+    mdm.searchParam,
+    mdm.dependsOnField,
+    mdm.dependsOnParam,
+    mdm.dependsOnRemoteField,
+    mdm.limit,
+    dependencyMissing,
+    dependencyValue,
+    projectId,
+  ]);
+
+  const options = useMemo(
+    () => (field.optionsSource === "mdm" ? remoteOptions : normalizeOptions(field)),
+    [field, remoteOptions],
+  );
+  const isDisabled = disabled || loading || dependencyMissing;
+
+  // Auto-select when there's exactly one option (and nothing chosen yet);
+  // multi-option dropdowns are left for the user to pick.
+  useEffect(() => {
+    if (
+      !multiple &&
+      !disabled &&
+      options.length === 1 &&
+      (value === undefined || value === null || value === "")
+    ) {
+      onChange(options[0].value, options[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options, multiple, disabled, value]);
+
+  return (
+    <>
+      <select
+        multiple={multiple}
+        value={multiple ? value || [] : value}
+        onChange={(e) => {
+          if (multiple) {
+            const values = Array.from(e.target.selectedOptions, (o) => o.value);
+            onChange(
+              values,
+              options.filter((option) => values.includes(option.value)),
+            );
+          } else {
+            const selected = options.find((option) => option.value === e.target.value);
+            onChange(e.target.value, selected);
+          }
+        }}
+        required={required}
+        disabled={isDisabled}
+        style={multiple ? { ...style, minHeight: "100px" } : style}
+      >
+        {!multiple && (
+          <option value="">
+            {dependencyMissing
+              ? `Select ${mdm.dependsOnField} first`
+              : loading
+                ? "Loading options..."
+                : field.placeholder || `Select ${field.fieldLabel || field.fieldName}`}
+          </option>
+        )}
+        {options.map((opt) => (
+          <option key={`${opt.value}-${opt.label}`} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      {error && (
+        <div style={{ marginTop: 4, color: "#b91c1c", fontSize: 12 }}>
+          {error}
+        </div>
+      )}
+    </>
+  );
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const FormRenderer: React.FC<FormRendererProps> = ({
@@ -74,6 +280,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
   previewMode = false,
   showAllFields = false,
   branding,
+  projectId,
   categoryFieldOverride,
 }) => {
   const primaryColor = branding?.primaryColor || "#3b82f6";
@@ -113,55 +320,74 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
           return categoryFieldOverride;
         }
         return (
-          <select
+          <DynamicOptionsSelect
+            field={field}
             value={value}
-            onChange={(e) => onChange(field.fieldName, e.target.value)}
-            required={isRequired}
+            formData={formData}
+            projectId={projectId}
             disabled={disabled}
+            required={isRequired}
             style={baseStyle}
-          >
-            <option value="">
-              {field.placeholder ||
-                `Select ${field.fieldLabel || field.fieldName}`}
-            </option>
-            {field.options?.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
+            onChange={(next, selected) => {
+              onChange(field.fieldName, next);
+              const opt = Array.isArray(selected) ? undefined : selected;
+              if (opt) {
+                onChange(`${field.fieldName}Label`, opt.label);
+                onChange(`${field.fieldName}Raw`, opt.raw ?? opt);
+              }
+            }}
+          />
         );
 
       case "multiselect":
         return (
-          <select
-            multiple
+          <DynamicOptionsSelect
+            field={field}
             value={value || []}
-            onChange={(e) => {
-              const selected = Array.from(
-                e.target.selectedOptions,
-                (o) => o.value,
-              );
-              onChange(field.fieldName, selected);
-            }}
-            required={isRequired}
+            formData={formData}
+            projectId={projectId}
             disabled={disabled}
-            style={{ ...baseStyle, minHeight: "100px" }}
-          >
-            {field.options?.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
+            required={isRequired}
+            multiple
+            style={baseStyle}
+            onChange={(next, selected) => {
+              const opts = Array.isArray(selected) ? selected : [];
+              onChange(field.fieldName, next);
+              onChange(`${field.fieldName}Labels`, opts.map((opt) => opt.label));
+              onChange(`${field.fieldName}Raws`, opts.map((opt) => opt.raw ?? opt));
+            }}
+          />
         );
 
-      case "radio":
+      case "radio": {
+        const options =
+          field.optionsSource === "mdm" ? [] : normalizeOptions(field);
+        if (field.optionsSource === "mdm") {
+          return (
+            <DynamicOptionsSelect
+              field={field}
+              value={value}
+              formData={formData}
+              projectId={projectId}
+              disabled={disabled}
+              required={isRequired}
+              style={baseStyle}
+              onChange={(next, selected) => {
+                onChange(field.fieldName, next);
+                const opt = Array.isArray(selected) ? undefined : selected;
+                if (opt) {
+                  onChange(`${field.fieldName}Label`, opt.label);
+                  onChange(`${field.fieldName}Raw`, opt.raw ?? opt);
+                }
+              }}
+            />
+          );
+        }
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {field.options?.map((opt) => (
+            {options.map((opt) => (
               <label
-                key={opt}
+                key={opt.value}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -172,26 +398,44 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
                 <input
                   type="radio"
                   name={field.fieldName}
-                  value={opt}
-                  checked={value === opt}
+                  value={opt.value}
+                  checked={value === opt.value}
                   onChange={(e) => onChange(field.fieldName, e.target.value)}
                   disabled={disabled}
                   style={{ accentColor: primaryColor }}
                 />
                 <span style={{ fontSize: "14px", color: "#374151" }}>
-                  {opt}
+                  {opt.label}
                 </span>
               </label>
             ))}
           </div>
         );
+      }
 
-      case "checkbox":
+      case "checkbox": {
+        const options =
+          field.optionsSource === "mdm" ? [] : normalizeOptions(field);
+        if (field.optionsSource === "mdm") {
+          return (
+            <DynamicOptionsSelect
+              field={field}
+              value={value || []}
+              formData={formData}
+              projectId={projectId}
+              disabled={disabled}
+              required={isRequired}
+              multiple
+              style={baseStyle}
+              onChange={(next) => onChange(field.fieldName, next)}
+            />
+          );
+        }
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {field.options?.map((opt) => (
+            {options.map((opt) => (
               <label
-                key={opt}
+                key={opt.value}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -201,27 +445,28 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
               >
                 <input
                   type="checkbox"
-                  value={opt}
-                  checked={(value || []).includes(opt)}
+                  value={opt.value}
+                  checked={(value || []).includes(opt.value)}
                   onChange={(e) => {
                     const cur: string[] = value || [];
                     onChange(
                       field.fieldName,
                       e.target.checked
-                        ? [...cur, opt]
-                        : cur.filter((v) => v !== opt),
+                        ? [...cur, opt.value]
+                        : cur.filter((v) => v !== opt.value),
                     );
                   }}
                   disabled={disabled}
                   style={{ accentColor: primaryColor }}
                 />
                 <span style={{ fontSize: "14px", color: "#374151" }}>
-                  {opt}
+                  {opt.label}
                 </span>
               </label>
             ))}
           </div>
         );
+      }
 
       case "file":
         if (disabled) {

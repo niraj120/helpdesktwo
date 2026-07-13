@@ -15,6 +15,13 @@ export interface ILead extends Document {
   enquiryNo?: string;
   source: "email" | "online" | "walk-in" | "ivr" | "other";
   status: "new" | "in_followup" | "converted" | "closed" | "lost";
+  crmSyncStatus: "not_required" | "pending" | "synced" | "failed";
+  crmSyncReason?: string;
+  crmSyncedAt?: Date;
+  crmExternalId?: string;
+  crmLastPayload?: Record<string, any>;
+  crmLastResponse?: Record<string, any>;
+  formData?: Record<string, any>;
   notes?: string;
   emailIntakeId?: mongoose.Types.ObjectId;
   assignedTo?: mongoose.Types.ObjectId;
@@ -49,6 +56,18 @@ const LeadSchema = new Schema<ILead>(
       default: "new",
       index: true,
     },
+    crmSyncStatus: {
+      type: String,
+      enum: ["not_required", "pending", "synced", "failed"],
+      default: "not_required",
+      index: true,
+    },
+    crmSyncReason: { type: String },
+    crmSyncedAt: { type: Date },
+    crmExternalId: { type: String, trim: true, index: true },
+    crmLastPayload: { type: Schema.Types.Mixed },
+    crmLastResponse: { type: Schema.Types.Mixed },
+    formData: { type: Schema.Types.Mixed, default: {} },
     notes: { type: String },
     emailIntakeId: { type: Schema.Types.ObjectId, ref: "EmailIntake" },
     assignedTo: { type: Schema.Types.ObjectId, ref: "User" },
@@ -59,6 +78,7 @@ const LeadSchema = new Schema<ILead>(
 );
 
 LeadSchema.index({ projectId: 1, status: 1, createdAt: -1 });
+LeadSchema.index({ projectId: 1, crmSyncStatus: 1, createdAt: -1 });
 
 export const Lead = mongoose.model<ILead>("Lead", LeadSchema);
 export default Lead;

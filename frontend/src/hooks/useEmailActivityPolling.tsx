@@ -9,13 +9,19 @@ import { toast } from "react-hot-toast";
 interface UseEmailActivityPollingOptions {
   enabled?: boolean;
   showNotifications?: boolean;
+  projectId?: string | null;
   onNewTickets?: (tickets: EmailActivityData) => void;
 }
 
 export const useEmailActivityPolling = (
   options: UseEmailActivityPollingOptions = {},
 ) => {
-  const { enabled = true, showNotifications = true, onNewTickets } = options;
+  const {
+    enabled = true,
+    showNotifications = true,
+    projectId,
+    onNewTickets,
+  } = options;
 
   const [latestActivity, setLatestActivity] =
     useState<EmailActivityData | null>(null);
@@ -24,6 +30,8 @@ export const useEmailActivityPolling = (
 
   useEffect(() => {
     if (!enabled) return;
+
+    emailActivityPolling.setProjectId(projectId);
 
     // Subscribe to activity data
     const unsubscribeData = emailActivityPolling.subscribe(
@@ -65,7 +73,7 @@ export const useEmailActivityPolling = (
       unsubscribeStatus();
       emailActivityPolling.stop();
     };
-  }, [enabled, showNotifications, onNewTickets]);
+  }, [enabled, showNotifications, projectId, onNewTickets]);
 
   return {
     latestActivity,

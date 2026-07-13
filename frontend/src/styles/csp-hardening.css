@@ -1,0 +1,146 @@
+/*
+ * CSP hardening styles.
+ *
+ * Keep styles that replaced React inline style attributes here so the
+ * frontend can progressively move toward a CSP without style-src unsafe-inline.
+ */
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  z-index: 999;
+  padding: 1rem;
+  background-color: #3f41d1;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+}
+
+.app-toast {
+  background: #363636;
+  color: #fff;
+}
+
+.app-toast-viewport {
+  position: fixed;
+  z-index: 9999;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.app-toast-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.app-toast-item--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.app-toast-item--hidden {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.app-toast-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.app-toast-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.app-toast-success {
+  background: #22c55e;
+  color: #fff;
+}
+
+.app-toast-error {
+  background: #ef4444;
+  color: #fff;
+}
+
+.app-toast-warning {
+  background: #b45309;
+  color: #fff;
+}
+
+.noscript-message {
+  text-align: center;
+  padding: 50px;
+  font-family: Arial, sans-serif;
+}
+
+.map-info-window {
+  padding: 8px;
+  max-width: 250px;
+}
+
+.map-info-window__title {
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: #1f2937;
+}
+
+.map-info-window__text {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.sr-tab-button:not(.sr-tab-button--active):hover {
+  background: #f3f4f6;
+}
+
+.sr-linked-isr-row:hover,
+.sr-table-row:hover {
+  background: #f6f8fc;
+}
+
+.sr-status-card:not(.sr-status-card--active):hover {
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.sr-triage-row:not(.sr-triage-row--selected):hover {
+  background: #f8fafc;
+}
+
+.sr-request-source-card:hover {
+  border-color: #3f41d1;
+}

@@ -69,8 +69,9 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
 
   const [loading, setLoading] = useState(true);
   const [branding, setBranding] = useState<ProjectBranding | null>(null);
-  const [ticketSettings, setTicketSettings] =
-    useState<TicketSubmissionSettings | null>(null);
+  // Dynamic portal fields from SR Settings → Student Portal channel
+  const [portalFields, setPortalFields] = useState<any[]>([]);
+  const [portalAnnouncement, setPortalAnnouncement] = useState<string | null>(null);
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [fieldFiles, setFieldFiles] = useState<Record<string, File[]>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -103,141 +104,46 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
   const fetchData = async () => {
     try {
       const token = localStorage.getItem("authToken");
-      if (!token) {
-        // No token - component will show login prompt or handle accordingly
-        // Don't redirect, let the parent route handle it
-        setLoading(false);
-        return;
-      }
+      if (!token) { setLoading(false); return; }
 
-      // Fetch branding
+      // Load branding
       const brandingRes = await axios.get(
         `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`,
       );
-      const brandingData = brandingRes.data.success
-        ? brandingRes.data.data
-        : brandingRes.data;
+      const brandingData = brandingRes.data.success ? brandingRes.data.data : brandingRes.data;
       setBranding(brandingData);
 
-      // Fetch categories from master
-      const categoriesRes = await axios.get(
-        `${API_CONFIG.API_URL}/categories/project/${brandingData.projectId}`,
-      );
-      const categoryList = categoriesRes.data.success
-        ? categoriesRes.data.data
-        : categoriesRes.data;
-      const activeCategoryNames = categoryList
-        .filter((cat: any) => cat.isActive)
-        .map((cat: any) => cat.name);
-
-      console.log("📁 Categories fetched from master:", activeCategoryNames);
-      console.log("📁 Total categories:", activeCategoryNames.length);
-
-      // Fetch ticket settings
-      const cacheBuster = `?t=${Date.now()}`;
-      const settingsRes = await axios.get(
-        `${API_CONFIG.API_URL}/projects/${brandingData.projectId}/ticket-settings${cacheBuster}`,
-      );
-      const settings = settingsRes.data.success
-        ? settingsRes.data.data
-        : settingsRes.data;
-
-      console.log("📋 Ticket settings received:", settings);
-      console.log("📝 Online form fields:", settings.onlineFormFields);
-
-      // Filter out student profile fields (Name, Email, Phone/Mobile Number) and Priority
-      const excludeFields = [
-        "name",
-        "email",
-        "phone",
-        "mobile",
-        "mobile number",
-        "phone number",
-        "student name",
-        "student email",
-        "contact number",
-        "email address",
-        "full name",
-        "priority",
-      ];
-      let formFields = settings.onlineFormFields || [];
-
-      // If no fields configured, use default fields (excluding profile fields)
-      if (formFields.length === 0) {
-        formFields = [
-          {
-            fieldName: "Subject",
-            fieldType: "text",
-            required: true,
-            placeholder: "Enter query subject",
-          },
-          {
-            fieldName: "Description",
-            fieldType: "textarea",
-            required: true,
-            placeholder: "Describe your issue in detail",
-          },
-          {
-            fieldName: "Category",
-            fieldType: "dropdown",
-            required: false,
-            placeholder: "Select category",
-            options: activeCategoryNames,
-          },
-        ];
-      } else {
-        // Update category field options with fetched categories
-        formFields = formFields.map((field: OnlineFormField) => {
-          if (
-            field.fieldName.toLowerCase() === "category" &&
-            field.fieldType === "dropdown"
-          ) {
-            return { ...field, options: activeCategoryNames };
-          }
-          return field;
-        });
-
-        // Inject a Category field at the top if none is present.
-        // FormRenderer will replace it with HierarchyCategorySelector when
-        // hierarchy is configured (levelCount > 1), or render a plain dropdown otherwise.
-        const hasCategoryField = formFields.some(
-          (f: OnlineFormField) => f.fieldName.toLowerCase() === "category",
+      // Load category objects for assignment preview (non-fatal)
+      try {
+        const categoriesRes = await axios.get(
+          `${API_CONFIG.API_URL}/categories/project/${brandingData.projectId}`,
         );
-        if (!hasCategoryField) {
-          formFields = [
-            {
-              fieldName: "Category",
-              fieldType: "dropdown",
-              required: false,
-              placeholder: "Select category",
-              options: activeCategoryNames,
-            },
-            ...formFields,
-          ];
-        }
+        const categoryList = categoriesRes.data.success ? categoriesRes.data.data : categoriesRes.data;
+        setCategoryObjects(
+          categoryList.filter((c: any) => c.isActive).map((c: any) => ({ _id: c._id, name: c.name }))
+        );
+      } catch { /* non-fatal */ }
+
+      // Load SR config → student_portal channel fields
+      const DEFAULT_PORTAL_FIELDS = [
+        { id: "_cat",  label: "Category",    type: "dropdown", required: false, dataSource: "category" },
+        { id: "_subj", label: "Subject",      type: "text",     required: true,  dataSource: "none" },
+        { id: "_desc", label: "Description",  type: "textarea", required: false, dataSource: "none" },
+      ];
+      try {
+        const cfgRes = await axios.get(
+          `${API_CONFIG.API_URL}/service-requests/config?projectId=${brandingData.projectId}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        const srCfg = cfgRes.data?.data ?? cfgRes.data;
+        const saved = srCfg?.customChannelFields?.student_portal;
+        setPortalFields(saved?.length ? saved : DEFAULT_PORTAL_FIELDS);
+        setPortalAnnouncement(srCfg?.announcement || null);
+      } catch {
+        setPortalFields(DEFAULT_PORTAL_FIELDS);
       }
-
-      // Set categories AFTER processing fields
-      setCategories(activeCategoryNames);
-      setCategoryObjects(
-        categoryList
-          .filter((cat: any) => cat.isActive)
-          .map((cat: any) => ({ _id: cat._id, name: cat.name })),
-      );
-
-      const filteredFields = formFields.filter(
-        (field: OnlineFormField) =>
-          !excludeFields.includes(field.fieldName.toLowerCase()),
-      );
-
-      console.log("✅ Filtered fields (without profile):", filteredFields);
-
-      setTicketSettings({
-        ...settings,
-        onlineFormFields: filteredFields,
-      });
     } catch (error) {
-      console.error("Error fetching data:", error);
+      console.error("Error fetching portal data:", error);
       setSubmitError("Failed to load form. Please try again.");
     } finally {
       setLoading(false);
@@ -309,135 +215,47 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
         return;
       }
 
-      // Validate required fields — respects conditional visibility
-      const allFields = ticketSettings?.onlineFormFields || [];
-      const { visibleFields, requiredFields } = conditionEngine(
-        allFields,
-        formData,
-      );
-
-      // For the Category field, when using HierarchyCategorySelector the value
-      // stored in formData["category"] is a CategoryHierarchyValue object.
-      // Replace the truthiness check with an explicit level1 check.
-      const categoryFieldName = allFields.find(
-        (f) => f.fieldName.toLowerCase() === "category",
-      )?.fieldName;
-      const missingFields = Array.from(requiredFields).filter((fieldName) => {
-        if (
-          categoryFieldName &&
-          fieldName === categoryFieldName &&
-          hierarchyConfig &&
-          hierarchyConfig.levelCount > 1
-        ) {
-          // Hierarchy selector: require level1 to be selected
-          return !categoryHierarchy.level1;
-        }
-        return !formData[fieldName] && !(fieldFiles[fieldName]?.length > 0);
-      });
-
-      if (missingFields.length > 0) {
-        setSubmitError("Please fill in all required fields");
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        setSubmitting(false);
-        return;
-      }
-
-      // Validate mandatory hierarchy sub-levels (level 2, 3, 4) when options exist
-      if (hierarchyConfig && hierarchyConfig.levelCount > 1) {
-        const onlineLevels =
-          hierarchyConfig.visibilitySettings.showInOnlineForm;
-        for (const levelConf of hierarchyConfig.levels) {
-          if (!onlineLevels.includes(levelConf.levelNumber)) continue;
-          if (!levelConf.isMandatory) continue;
-          if (levelConf.levelNumber === 1) continue; // already checked above
-          // Only require if options are available for this level
-          if (!hierarchyLevelHasOptions[levelConf.levelNumber]) continue;
-          const val =
-            categoryHierarchy[
-              `level${levelConf.levelNumber}` as keyof typeof categoryHierarchy
-            ];
-          if (!val) {
-            setSubmitError(`Please select ${levelConf.displayName}`);
+      // Validate required portal fields
+      const activeFields = portalFields.filter((f: any) => f.type !== "search");
+      for (const field of activeFields) {
+        if (!field.required) continue;
+        if (field.dataSource === "category") {
+          if (!categoryHierarchy.level1) {
+            setSubmitError(`${field.label} is required`);
             window.scrollTo({ top: 0, behavior: "smooth" });
             setSubmitting(false);
             return;
           }
-        }
-      }
-
-      // Validate field-level rules (minLength, maxLength, regex) for visible fields
-      for (const field of allFields) {
-        if (!visibleFields.has(field.fieldName)) continue;
-        const v = (field as any).validation;
-        if (!v) continue;
-        const rawValue = formData[field.fieldName];
-        const value = rawValue == null ? "" : String(rawValue);
-        // Skip empty optional fields — required check was already done above
-        if (!value) continue;
-        const label = (field as any).displayLabel || field.fieldName;
-        if (v.minLength != null && value.length < Number(v.minLength)) {
-          setSubmitError(`${label} must be at least ${v.minLength} characters`);
+        } else if (!formData[field.id]?.toString().trim()) {
+          setSubmitError(`${field.label} is required`);
           window.scrollTo({ top: 0, behavior: "smooth" });
           setSubmitting(false);
           return;
         }
-        if (v.maxLength != null && value.length > Number(v.maxLength)) {
-          setSubmitError(`${label} must be at most ${v.maxLength} characters`);
-          window.scrollTo({ top: 0, behavior: "smooth" });
-          setSubmitting(false);
-          return;
-        }
-        if (v.regex) {
-          try {
-            const re = new RegExp(v.regex);
-            if (!re.test(value)) {
-              setSubmitError(`${label} is not in the correct format`);
-              window.scrollTo({ top: 0, behavior: "smooth" });
-              setSubmitting(false);
-              return;
-            }
-          } catch {
-            // invalid regex pattern — skip silently
-          }
-        }
       }
 
-      // Prepare form data — only send values from visible fields
+      // Build formData payload keyed by both id and label for backend compatibility
+      const fieldPayload: Record<string, any> = {};
+      activeFields.forEach((f: any) => {
+        if (f.dataSource === "category") {
+          fieldPayload[f.label]       = categoryHierarchy.displayPath || "";
+          fieldPayload[f.id]          = categoryHierarchy.displayPath || "";
+        } else {
+          fieldPayload[f.label] = formData[f.id] || "";
+          fieldPayload[f.id]    = formData[f.id] || "";
+        }
+      });
+
+      // Prepare multipart form data for submission
       const submitData = new FormData();
       submitData.append("projectId", branding?.projectId || "");
-      submitData.append(
-        "formData",
-        JSON.stringify(filterFormDataToVisible(formData, visibleFields)),
-      );
+      submitData.append("formData", JSON.stringify(fieldPayload));
 
-      // Add hierarchical category data if configured
-      if (
-        hierarchyConfig &&
-        hierarchyConfig.levelCount > 1 &&
-        categoryHierarchy &&
-        categoryHierarchy.level1
-      ) {
-        submitData.append(
-          "categoryHierarchy",
-          JSON.stringify(categoryHierarchy),
-        );
-        // Also set the primary category from level1 for backward compatibility
+      // Add hierarchical category data if present
+      if (categoryHierarchy?.level1) {
+        submitData.append("categoryHierarchy", JSON.stringify(categoryHierarchy));
         submitData.append("category", categoryHierarchy.level1);
       }
-
-      // Add file attachments — only for visible fields
-      Object.entries(fieldFiles).forEach(([fieldName, files]) => {
-        if (!visibleFields.has(fieldName)) return;
-        files.forEach((file) => {
-          submitData.append(fieldName, file);
-        });
-      });
-
-      console.log("📤 Submitting ticket with data:", {
-        projectId: branding?.projectId,
-        formData: formData,
-        fileCount: Object.values(fieldFiles).flat().length,
-      });
 
       // Submit ticket
       const response = await axios.post(
@@ -735,9 +553,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
             <h1 className="text-3xl font-bold text-gray-900 mb-2">
               Submit a Query
             </h1>
-            {ticketSettings?.welcomeMessage && (
-              <p className="text-gray-600">{ticketSettings.welcomeMessage}</p>
-            )}
+            {/* no welcome message in dynamic config — use branding name */}
           </div>
         )}
 
@@ -792,8 +608,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
                   </div>
                 )}
                 <p className="text-gray-600 text-sm mt-3 mb-6">
-                  {ticketSettings?.successMessage ||
-                    "Your query has been submitted. Our team will get back to you soon."}
+                  Your query has been submitted. Our team will get back to you soon.
                 </p>
                 <div className="flex gap-3">
                   <button
@@ -823,11 +638,9 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
           )}
 
         {/* Announcement */}
-        {ticketSettings?.announcement && (
+        {portalAnnouncement && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-            <p className="text-blue-900 text-sm">
-              {ticketSettings.announcement}
-            </p>
+            <p className="text-blue-900 text-sm">{portalAnnouncement}</p>
           </div>
         )}
 
@@ -847,88 +660,97 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
         {/* Form */}
         <div className="bg-white rounded-xl shadow-md p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
-            {ticketSettings?.onlineFormFields &&
-            ticketSettings.onlineFormFields.length > 0 ? (
-              <FormRenderer
-                fields={ticketSettings.onlineFormFields}
-                formData={formData}
-                onChange={handleInputChange}
-                onFileChange={handleFileChange}
-                fieldFiles={fieldFiles}
-                onRemoveFile={removeFieldFile}
-                branding={branding || undefined}
-                categoryFieldOverride={
-                  hierarchyConfig &&
-                  hierarchyConfig.levelCount > 1 &&
-                  branding?.projectId ? (
+            {portalFields.filter((f: any) => f.type !== "search").map((field: any) => {
+              const commonClasses = "w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2";
+              const value = formData[field.id] || "";
+
+              const control = (() => {
+                if (field.dataSource === "category" && branding?.projectId) {
+                  return (
                     <HierarchyCategorySelector
                       projectId={branding.projectId}
                       value={categoryHierarchy}
+                      maxLevel={field.categoryMaxLevel}
                       onLevelOptionsChange={(level, hasOpts) =>
-                        setHierarchyLevelHasOptions((prev) => ({
-                          ...prev,
-                          [level]: hasOpts,
-                        }))
+                        setHierarchyLevelHasOptions(prev => ({ ...prev, [level]: hasOpts }))
                       }
-                      onChange={(newValue) => {
+                      onChange={newValue => {
                         setCategoryHierarchy(newValue);
-                        handleInputChange("category", newValue);
-                        // Also push level names into formData keyed by level displayName
-                        // so conditionEngine can match text conditions like
-                        // "Subcategory equals Name change" (names, not ObjectIds).
-                        if (hierarchyConfig?.levels) {
-                          const nameUpdates: Record<string, string> = {};
-                          hierarchyConfig.levels.forEach((l: any) => {
-                            const nameKey =
-                              `level${l.levelNumber}Name` as keyof typeof newValue;
-                            nameUpdates[l.displayName] =
-                              (newValue[nameKey] as string) || "";
-                          });
-                          setFormData((prev: any) => ({
-                            ...prev,
-                            ...nameUpdates,
-                          }));
-                        }
-                        // Trigger preview for hierarchical selector using level1 (ObjectId or name)
+                        setFormData(prev => ({ ...prev, [field.id]: newValue.displayPath || "" }));
                         const level1 = newValue?.level1;
                         if (level1) {
-                          // If it looks like an ObjectId (24-char hex) use directly
-                          if (/^[a-f0-9]{24}$/i.test(level1)) {
-                            fetchAssignmentPreview(level1);
-                          } else {
-                            const match = categoryObjects.find(
-                              (c) => c.name === level1,
-                            );
+                          if (/^[a-f0-9]{24}$/i.test(level1)) fetchAssignmentPreview(level1);
+                          else {
+                            const match = categoryObjects.find(c => c.name === level1);
                             if (match) fetchAssignmentPreview(match._id);
                             else setAssignmentPreview(null);
                           }
-                        } else {
-                          setAssignmentPreview(null);
-                        }
+                        } else setAssignmentPreview(null);
                       }}
                       mode="online"
                       showValidation={false}
                     />
-                  ) : undefined
+                  );
                 }
-              />
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p>
-                  No form fields configured. Please contact the administrator.
-                </p>
-              </div>
-            )}
+                if (field.type === "textarea") {
+                  return (
+                    <textarea
+                      placeholder={`Enter ${field.label.toLowerCase()}…`}
+                      value={value}
+                      onChange={e => handleInputChange(field.id, e.target.value)}
+                      required={!!field.required}
+                      rows={4}
+                      className={commonClasses}
+                      style={{ ["--tw-ring-color" as any]: branding?.primaryColor, resize: "vertical" }}
+                    />
+                  );
+                }
+                if (field.type === "dropdown" && field.dataSource === "static" && field.staticOptions?.length) {
+                  return (
+                    <select
+                      value={value}
+                      onChange={e => handleInputChange(field.id, e.target.value)}
+                      required={!!field.required}
+                      className={commonClasses}
+                      style={{ ["--tw-ring-color" as any]: branding?.primaryColor }}
+                    >
+                      <option value="">-- Select {field.label} --</option>
+                      {(field.staticOptions || []).map((opt: string) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  );
+                }
+                const inputType = field.type === "mobile" ? "tel" : field.type === "email" ? "email" : field.type === "date" ? "date" : "text";
+                return (
+                  <input
+                    type={inputType}
+                    placeholder={`Enter ${field.label.toLowerCase()}…`}
+                    value={value}
+                    onChange={e => handleInputChange(field.id, e.target.value)}
+                    required={!!field.required}
+                    className={commonClasses}
+                    style={{ ["--tw-ring-color" as any]: branding?.primaryColor }}
+                  />
+                );
+              })();
 
-            {/* US-014: Assignment preview — shown after category selection */}
+              return (
+                <div key={field.id} className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    {field.label}
+                    {field.required && <span className="text-red-500 ml-1">*</span>}
+                  </label>
+                  {control}
+                </div>
+              );
+            })}
+
+            {/* Assignment preview — shown after category selection */}
             {assignmentPreview && (
               <div
                 className="flex items-start gap-2 px-4 py-3 rounded-lg text-sm"
-                style={{
-                  backgroundColor: "#f0f9ff",
-                  border: "1px solid #bae6fd",
-                  color: "#0369a1",
-                }}
+                style={{ backgroundColor: "#f0f9ff", border: "1px solid #bae6fd", color: "#0369a1" }}
               >
                 <span style={{ fontSize: "16px", lineHeight: 1 }}>ℹ️</span>
                 <span>{assignmentPreview}</span>

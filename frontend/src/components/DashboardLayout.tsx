@@ -80,12 +80,6 @@ const DashboardLayout = ({
   const location = useLocation();
   const { i18n } = useTranslation();
 
-  // Enable email activity polling for real-time ticket notifications
-  useEmailActivityPolling({
-    enabled: true,
-    showNotifications: true,
-  });
-
   // Load expanded menus from sessionStorage on mount
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(() => {
     const saved = sessionStorage.getItem("expandedMenus");
@@ -364,6 +358,15 @@ const DashboardLayout = ({
   // IMPORTANT: Main system routes take priority - they should never be treated as project portal
   const isProjectPortal = urlHasPortal && !isMainSystemRoute;
   const customUrlPath = customUrlPathFromUrl || projectContext?.customUrlPath;
+  const emailActivityProjectId = isProjectPortal ? projectContext?.projectId : null;
+
+  // Enable email activity polling for real-time ticket notifications.
+  // Project portal users only receive activity for their active project.
+  useEmailActivityPolling({
+    enabled: !isProjectPortal || !!emailActivityProjectId,
+    showNotifications: true,
+    projectId: emailActivityProjectId,
+  });
 
   // Clear stale projectContext when accessing main system routes
   useEffect(() => {

@@ -154,6 +154,14 @@ export const hrmsService = {
     return { fields, count: totalAvailable || rows.length, sample: rows.slice(0, 3) };
   },
 
+  /** Full employee list (rows with _raw + normalized fields) for bulk sync. */
+  async listAll(
+    mdmSourceId?: string,
+  ): Promise<{ rows: HRMSEmployeeData[]; fields: string[] }> {
+    const { rows, fields } = await loadEmployees(mdmSourceId);
+    return { rows, fields };
+  },
+
   async syncEmployeeData(
     employeeCode: string,
     mdmSourceId?: string,

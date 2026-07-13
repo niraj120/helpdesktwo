@@ -80,6 +80,7 @@ const SimpleStudentDashboard = lazy(
 );
 const StudentTicketDetail = lazy(() => import("./pages/StudentTicketDetail"));
 const PublicFeedbackPage = lazy(() => import("./pages/PublicFeedbackPage"));
+const ParentServiceRequestPortal = lazy(() => import("./pages/ParentServiceRequestPortal"));
 const AuthenticatedStudentSubmitTicket = lazy(
   () => import("./pages/AuthenticatedStudentSubmitTicket"),
 );
@@ -97,6 +98,7 @@ const ServiceRequestsHub = lazy(
 const ServiceRequestSettingsHub = lazy(
   () => import("./pages/service-request/ServiceRequestSettingsHub"),
 );
+const IvrAgentManagement = lazy(() => import("./pages/IvrAgentManagement"));
 const ServiceRequestDetail = lazy(
   () => import("./pages/service-request/ServiceRequestDetail"),
 );
@@ -193,6 +195,12 @@ const EmailToTicketConfiguration = lazy(
 );
 const IntegrationsManagement = lazy(
   () => import("./components/IntegrationsManagement"),
+);
+const PSRPipelinesPage = lazy(
+  () => import("./pages/integrations/PSRPipelinesPage"),
+);
+const PSRBuilderPage = lazy(
+  () => import("./pages/integrations/PSRBuilderPage"),
 );
 
 // System Monitoring
@@ -297,6 +305,11 @@ function App() {
           <Route
             path="/:customUrlPath/feedback/:ticketId"
             element={<PublicFeedbackPage />}
+          />
+          {/* Parent self-service webview — no login; app loads it in a modal. */}
+          <Route
+            path="/portal/service-requests"
+            element={<ParentServiceRequestPortal />}
           />
           <Route
             path="/:customUrlPath/student/my-tickets"
@@ -583,10 +596,15 @@ function App() {
             element={
               <ProtectedRoute
                 permission={[
+                  "SR_VIEW_ALL",
+                  "SR_VIEW_OWN",
+                  "SR_VIEW_ASSIGNED",
                   "SR_PSR_RECEIVE",
                   "SR_PSR_CREATE",
                   "SR_ISR_CREATE",
+                  "SR_ISR_RECEIVE",
                   "EMAIL_TRIAGE_ACCESS",
+                  "IVR_TRIAGE_ACCESS",
                   "TICKET_VIEW_ALL",
                 ]}
               >
@@ -606,6 +624,15 @@ function App() {
                 ]}
               >
                 <ServiceRequestSettingsHub />
+              </ProtectedRoute>
+            }
+          />
+          {/* IVR Agent Management */}
+          <Route
+            path="/ivr-agents"
+            element={
+              <ProtectedRoute permission="IVR_AGENT_MANAGE">
+                <IvrAgentManagement />
               </ProtectedRoute>
             }
           />
@@ -640,20 +667,24 @@ function App() {
           />
           <Route
             path="/service-requests/clusters"
-            element={<Navigate to="/sr-settings?tab=clusters" replace />}
+            element={<Navigate to="/sr-settings" replace />}
           />
           <Route
             path="/role-mapping"
-            element={<Navigate to="/sr-settings?tab=rolemap" replace />}
+            element={<Navigate to="/sr-settings" replace />}
           />
           <Route
             path="/service-requests/:id"
             element={
               <ProtectedRoute
                 permission={[
+                  "SR_VIEW_ALL",
+                  "SR_VIEW_OWN",
+                  "SR_VIEW_ASSIGNED",
                   "SR_PSR_RECEIVE",
+                  "SR_ISR_RECEIVE",
                   "SR_PSR_CREATE",
-                  "TICKET_VIEW_ALL",
+                  "SR_ISR_CREATE",
                 ]}
               >
                 <ServiceRequestDetail />
@@ -959,6 +990,26 @@ function App() {
             element={
               <ProtectedRoute permission="EMAIL_CONFIG_VIEW">
                 <EmailToTicketConfiguration />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* PSR Pipelines — advanced composition system (dev/admin) */}
+          <Route
+            path="/integrations/psr-pipelines"
+            element={
+              <ProtectedRoute permission={PERMISSIONS.MDM_VIEW}>
+                <PSRPipelinesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* PSR Builder — simple master/table builder */}
+          <Route
+            path="/integrations/psr-builder"
+            element={
+              <ProtectedRoute permission={PERMISSIONS.MDM_VIEW}>
+                <PSRBuilderPage />
               </ProtectedRoute>
             }
           />

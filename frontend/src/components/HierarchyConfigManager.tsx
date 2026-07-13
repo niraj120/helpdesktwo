@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import axios from "axios";
 import API_URL from "../config/api";
 import {
@@ -45,6 +45,54 @@ interface Priority {
   color?: string;
 }
 
+const CATEGORY_APPLIES_TO_OPTIONS = [
+  {
+    value: "normal" as const,
+    label: "Normal Ticket",
+    description: "Show this category for standard query tickets.",
+  },
+  {
+    value: "PSR" as const,
+    label: "PSR",
+    description: "Show this category for Parent Service Requests.",
+  },
+  {
+    value: "ISR" as const,
+    label: "ISR",
+    description: "Show this category for Internal Service Requests.",
+  },
+];
+
+type CategoryAppliesTo = (typeof CATEGORY_APPLIES_TO_OPTIONS)[number]["value"];
+
+const getCategoryScopes = (category?: Pick<CategoryItem, "sr">) =>
+  category?.sr?.appliesTo || [];
+
+const categoryMatchesScope = (
+  category: Pick<CategoryItem, "sr">,
+  scope: CategoryAppliesTo,
+) => {
+  const scopes = getCategoryScopes(category);
+  // Legacy categories created before scope support are treated as Normal flow.
+  if (scopes.length === 0) return scope === "normal";
+  // Older PSR/ISR shared categories are kept visible under PSR only. ISR must
+  // be explicitly created or replicated from PSR.
+  if (scopes.includes("PSR") && scopes.includes("ISR")) return scope === "PSR";
+  return scopes.length === 1 && scopes[0] === scope;
+};
+
+const filterTreeByScope = (
+  nodes: TreeNode[],
+  scope: CategoryAppliesTo,
+): TreeNode[] =>
+  nodes.reduce<TreeNode[]>((acc, node) => {
+    const children = filterTreeByScope(node.children || [], scope);
+    if (categoryMatchesScope(node, scope) || children.length > 0) {
+      acc.push({ ...node, children });
+    }
+    return acc;
+  }, []);
+
 /**
  * HierarchyConfigManager - Admin component for configuring and managing hierarchical categories
  */
@@ -65,6 +113,9 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
   const [categoryTree, setCategoryTree] = useState<TreeNode[]>([]);
   const [treeLoading, setTreeLoading] = useState(false);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [activeScope, setActiveScope] =
+    useState<CategoryAppliesTo>("normal");
+  const [replicatingScope, setReplicatingScope] = useState(false);
 
   // Modal state
   const [modalState, setModalState] = useState<CategoryModalState>({
@@ -76,6 +127,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
     code: "" as string | number,
     description: "",
     defaultPriority: "",
+    appliesTo: [] as CategoryAppliesTo[],
     isActive: true,
   });
   const [formSaving, setFormSaving] = useState(false);
@@ -89,6 +141,11 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
     isOpen: boolean;
     category?: CategoryItem;
   }>({ isOpen: false });
+
+  const scopedCategoryTree = useMemo(
+    () => filterTreeByScope(categoryTree, activeScope),
+    [categoryTree, activeScope],
+  );
 
   // Bulk upload state
   const [bulkUpload, setBulkUpload] = useState<{
@@ -127,8 +184,9 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
     try {
       setConfigLoading(true);
       const token = localStorage.getItem("authToken");
+      const params = new URLSearchParams({ scope: activeScope });
       const response = await axios.get(
-        `${API_URL}/hierarchy-config/${projectId}`,
+        `${API_URL}/hierarchy-config/${projectId}?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -143,7 +201,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
     } finally {
       setConfigLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, activeScope]);
 
   /**
    * Fetch category tree
@@ -227,8 +285,9 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
     try {
       setConfigSaving(true);
       const token = localStorage.getItem("authToken");
+      const params = new URLSearchParams({ scope: activeScope });
       const response = await axios.post(
-        `${API_URL}/hierarchy-config/${projectId}`,
+        `${API_URL}/hierarchy-config/${projectId}?${params.toString()}`,
         editedConfig,
         { headers: { Authorization: `Bearer ${token}` } },
       );
@@ -249,6 +308,33 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
     }
   };
 
+  const handleReplicatePsrToIsr = async () => {
+    if (!projectId || replicatingScope) return;
+    const confirmed = window.confirm(
+      "Copy PSR categories into ISR as separate editable ISR categories?",
+    );
+    if (!confirmed) return;
+
+    try {
+      setReplicatingScope(true);
+      const token = localStorage.getItem("authToken");
+      await axios.post(
+        `${API_URL}/hierarchy-config/${projectId}/categories/replicate-scope`,
+        { fromScope: "PSR", toScope: "ISR" },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      await fetchCategoryTree();
+    } catch (err: any) {
+      console.error("Error replicating PSR categories to ISR:", err);
+      alert(
+        err.response?.data?.message ||
+          "Failed to replicate PSR categories to ISR",
+      );
+    } finally {
+      setReplicatingScope(false);
+    }
+  };
+
   /**
    * Update level count
    */
@@ -260,6 +346,11 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
       "Topic",
       "Subtopic",
       "Sub-subtopic",
+      "Level 6",
+      "Level 7",
+      "Level 8",
+      "Level 9",
+      "Level 10",
     ];
 
     for (let i = 1; i <= count; i++) {
@@ -344,6 +435,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
       code: "",
       description: "",
       defaultPriority: "",
+      appliesTo: [activeScope],
       isActive: true,
     });
     setFormError(null);
@@ -364,6 +456,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
       code: category.code,
       description: "",
       defaultPriority: category.defaultPriority || "",
+      appliesTo: [activeScope],
       isActive: category.isActive,
     });
     setFormError(null);
@@ -384,6 +477,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
       code: "",
       description: "",
       defaultPriority: "",
+      appliesTo: [],
       isActive: true,
     });
     setFormError(null);
@@ -433,6 +527,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
       setFormError(null);
       const token = localStorage.getItem("authToken");
       const axiosConfig = { headers: { Authorization: `Bearer ${token}` } };
+      const appliesTo = [activeScope];
 
       if (modalState.mode === "add") {
         // Create new category with auto-generated code
@@ -449,6 +544,9 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
             parentId: modalState.parentId,
             level: newLevel,
             defaultPriority: categoryForm.defaultPriority || undefined,
+            sr: {
+              appliesTo,
+            },
             isActive: categoryForm.isActive,
           },
           axiosConfig,
@@ -461,6 +559,9 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
             name: categoryForm.name.trim(),
             code: modalState.category?.code, // Keep existing code
             defaultPriority: categoryForm.defaultPriority || undefined,
+            sr: {
+              appliesTo,
+            },
             isActive: categoryForm.isActive,
           },
           axiosConfig,
@@ -468,7 +569,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
       }
 
       closeModal();
-      fetchCategoryTree();
+      await fetchCategoryTree();
     } catch (err: any) {
       console.error("Error saving category:", err);
       setFormError(err.response?.data?.message || "Failed to save category");
@@ -643,7 +744,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
 
       const response = await axios.post(
         `${API_URL}/hierarchy-config/${projectId}/categories/bulk`,
-        { categories: bulkUpload.parsedData },
+        { categories: bulkUpload.parsedData, scope: activeScope },
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
@@ -689,6 +790,17 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
     const isExpanded = expandedNodes.has(node._id);
     const hasChildren = node.children && node.children.length > 0;
     const canAddChild = config && node.level < config.levelCount;
+    const scopes = getCategoryScopes(node);
+    const scopeLabels = scopes.length
+      ? scopes
+          .map(
+            (scope) =>
+              CATEGORY_APPLIES_TO_OPTIONS.find(
+                (option) => option.value === scope,
+              )?.label || scope,
+          )
+          .join(", ")
+      : "Normal Ticket";
 
     return (
       <div key={node._id} className="select-none">
@@ -733,6 +845,9 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
                 {node.defaultPriority}
               </span>
             )}
+            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+              {scopeLabels}
+            </span>
             {!node.isActive && (
               <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded">
                 Inactive
@@ -826,19 +941,65 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
 
   return (
     <div className={className}>
+      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
+        <div className="mb-3">
+          <h3 className="text-lg font-semibold text-gray-800">
+            Select Category Flow
+          </h3>
+          <p className="text-sm text-gray-500">
+            Normal is the existing query flow. PSR and ISR can have separate
+            category hierarchies for service requests.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {CATEGORY_APPLIES_TO_OPTIONS.map((option) => {
+            const active = activeScope === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setActiveScope(option.value)}
+                className={`rounded-lg border p-3 text-left transition ${
+                  active
+                    ? "border-blue-500 bg-blue-50 text-blue-900 shadow-sm"
+                    : "border-gray-200 bg-white text-gray-700 hover:border-blue-200 hover:bg-gray-50"
+                }`}
+              >
+                <span className="block text-sm font-semibold">
+                  {option.label}
+                </span>
+                <span className="mt-1 block text-xs text-gray-500">
+                  {option.description}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Configuration Section */}
       <div className="mb-6 p-4 bg-white border border-gray-200 rounded-lg">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">
-          Hierarchy Configuration
-        </h3>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800">
+              Hierarchy Configuration
+            </h3>
+            <p className="text-sm text-gray-500">
+              Configuring {CATEGORY_APPLIES_TO_OPTIONS.find((option) => option.value === activeScope)?.label}
+            </p>
+          </div>
+          <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+            {CATEGORY_APPLIES_TO_OPTIONS.find((option) => option.value === activeScope)?.label}
+          </span>
+        </div>
 
         {/* Level Count */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Number of Levels
           </label>
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map((count) => (
+          <div className="flex flex-wrap gap-2">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => (
               <button
                 key={count}
                 onClick={() => handleLevelCountChange(count)}
@@ -995,6 +1156,15 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
             Category Items
           </h3>
           <div className="flex items-center gap-2">
+            {activeScope === "ISR" && (
+              <button
+                onClick={handleReplicatePsrToIsr}
+                disabled={replicatingScope}
+                className="px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 text-sm"
+              >
+                {replicatingScope ? "Replicating..." : "Replicate PSR to ISR"}
+              </button>
+            )}
             <button
               onClick={() =>
                 setBulkUpload((prev) => ({ ...prev, isOpen: true }))
@@ -1033,7 +1203,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
                   d="M12 4v16m8-8H4"
                 />
               </svg>
-              Add Root Category
+            Add {CATEGORY_APPLIES_TO_OPTIONS.find((option) => option.value === activeScope)?.label} Root
             </button>
           </div>
         </div>
@@ -1044,7 +1214,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
               <div key={i} className="h-10 bg-gray-200 rounded"></div>
             ))}
           </div>
-        ) : categoryTree.length === 0 ? (
+        ) : scopedCategoryTree.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <svg
               className="w-12 h-12 mx-auto mb-2 text-gray-300"
@@ -1059,11 +1229,19 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
                 d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
               />
             </svg>
-            <p>No categories yet. Add your first root category.</p>
+            <p>
+              No categories configured for{" "}
+              {
+                CATEGORY_APPLIES_TO_OPTIONS.find(
+                  (option) => option.value === activeScope,
+                )?.label
+              }
+              .
+            </p>
           </div>
         ) : (
           <div className="border border-gray-200 rounded-lg overflow-hidden">
-            {categoryTree.map((node) => renderTreeNode(node))}
+            {scopedCategoryTree.map((node) => renderTreeNode(node))}
           </div>
         )}
       </div>
@@ -1138,6 +1316,28 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
                   Tickets with this category will auto-assign this priority.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Category flow
+                </label>
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                  <span className="font-semibold">
+                    {
+                      CATEGORY_APPLIES_TO_OPTIONS.find(
+                        (option) => option.value === activeScope,
+                      )?.label
+                    }
+                  </span>
+                  <span className="ml-2 text-xs text-blue-600">
+                    Categories are saved only under the selected flow.
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  To copy PSR categories to ISR, switch to ISR and use Replicate
+                  PSR to ISR.
                 </p>
               </div>
 

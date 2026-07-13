@@ -18,11 +18,34 @@ const SrPage: React.FC<{
   actions?: React.ReactNode;
   children: React.ReactNode;
   embedded?: boolean;
-}> = ({ title, subtitle, actions, children, embedded }) => {
+  showHeaderWhenEmbedded?: boolean;
+}> = ({ title, subtitle, actions, children, embedded, showHeaderWhenEmbedded }) => {
   if (embedded) {
     return (
-      <div style={{ fontFamily: SR.font }}>
-        {actions ? (
+      <div
+        style={
+          showHeaderWhenEmbedded
+            ? { ...srStyles.page, fontFamily: SR.font }
+            : { fontFamily: SR.font }
+        }
+      >
+        {showHeaderWhenEmbedded ? (
+          <div
+            style={{
+              ...srStyles.headerCard,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: 16,
+            }}
+          >
+            <div>
+              <h1 style={srStyles.title}>{title}</h1>
+              {subtitle ? <p style={srStyles.subtitle}>{subtitle}</p> : null}
+            </div>
+            {actions ? <div>{actions}</div> : null}
+          </div>
+        ) : actions ? (
           <div
             style={{
               display: "flex",

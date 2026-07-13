@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   ChevronDownIcon,
   FunnelIcon,
@@ -9,6 +9,8 @@ import {
 import SrPage from "../../components/sr/SrPage";
 import { SR, srStyles, srButton } from "../../utils/srTheme";
 import { useProjectContext } from "../../contexts/ProjectContext";
+import { PERMISSIONS } from "../../constants/permissions";
+import { usePermissions } from "../../hooks/usePermissions";
 import {
   serviceRequestApi,
   SR_STATUS_META,
@@ -50,7 +52,17 @@ interface SelectOption {
   label: string;
 }
 
+type RequestScopeKey = "project" | "assigned" | "raised" | "my";
+
+interface RequestScopeOption {
+  key: RequestScopeKey;
+  label: string;
+  description: string;
+  permissions: string[];
+}
+
 interface SrFilters {
+  interactionType: string;
   createdFrom: string;
   createdTo: string;
   updatedFrom: string;
@@ -67,6 +79,7 @@ interface SrFilters {
 }
 
 const DEFAULT_FILTERS: SrFilters = {
+  interactionType: "all",
   createdFrom: "",
   createdTo: "",
   updatedFrom: "",
@@ -82,12 +95,15 @@ const DEFAULT_FILTERS: SrFilters = {
   sortOrder: "desc",
 };
 
+const LIVE_REFRESH_INTERVAL_MS = 15000;
+
 const SOURCE_OPTIONS: SelectOption[] = [
   { value: "", label: "Any source" },
-  { value: "online", label: "Online" },
-  { value: "offline", label: "Offline" },
-  { value: "email", label: "Email" },
-  { value: "ivr", label: "IVR" },
+  { value: "online", label: "Via Parent / Online" },
+  { value: "walk_in", label: "Walk-in / New Request" },
+  { value: "offline", label: "Offline / Legacy Walk-in" },
+  { value: "email", label: "Via Mail" },
+  { value: "ivr", label: "Via IVR" },
   { value: "whatsapp", label: "WhatsApp" },
   { value: "sms", label: "SMS" },
   { value: "chatbot", label: "Chatbot" },
@@ -116,6 +132,57 @@ const LINKED_ISR_OPTIONS: SelectOption[] = [
   { value: "none", label: "No linked ISRs" },
   { value: "pending", label: "Has pending ISRs" },
   { value: "completed", label: "All ISRs done" },
+];
+const REQUEST_TYPE_OPTIONS: SelectOption[] = [
+  { value: "all", label: "PSR and ISR" },
+  { value: "PSR", label: "PSR only" },
+  { value: "ISR", label: "ISR only" },
+];
+const REQUEST_TYPE_TOGGLE_OPTIONS: SelectOption[] = [
+  { value: "all", label: "All" },
+  { value: "PSR", label: "PSR" },
+  { value: "ISR", label: "ISR" },
+];
+const REQUEST_SCOPE_OPTIONS: RequestScopeOption[] = [
+  {
+    key: "project",
+    label: "Total Requests",
+    description: "All PSR/ISR tickets in this project",
+    permissions: [PERMISSIONS.SR_VIEW_ALL],
+  },
+  {
+    key: "assigned",
+    label: "Assigned to Me",
+    description: "Tickets currently assigned to you",
+    permissions: [
+      PERMISSIONS.SR_VIEW_ASSIGNED,
+      PERMISSIONS.SR_PSR_RECEIVE,
+      PERMISSIONS.SR_ISR_RECEIVE,
+    ],
+  },
+  {
+    key: "raised",
+    label: "Raised by Me",
+    description: "PSR/ISR tickets you created",
+    permissions: [
+      PERMISSIONS.SR_VIEW_OWN,
+      PERMISSIONS.SR_PSR_CREATE,
+      PERMISSIONS.SR_ISR_CREATE,
+    ],
+  },
+  {
+    key: "my",
+    label: "My Requests",
+    description: "Tickets you raised or received",
+    permissions: [
+      PERMISSIONS.SR_VIEW_OWN,
+      PERMISSIONS.SR_VIEW_ASSIGNED,
+      PERMISSIONS.SR_PSR_CREATE,
+      PERMISSIONS.SR_ISR_CREATE,
+      PERMISSIONS.SR_PSR_RECEIVE,
+      PERMISSIONS.SR_ISR_RECEIVE,
+    ],
+  },
 ];
 
 /** existing_parent → "Existing Parent" */
@@ -336,6 +403,7 @@ const LinkedIsrCell: React.FC<{
                 return (
                   <div
                     key={isr._id}
+                    className="sr-linked-isr-row"
                     onClick={(e) => {
                       e.stopPropagation();
                       onOpen(isr._id);
@@ -349,12 +417,6 @@ const LinkedIsrCell: React.FC<{
                       borderRadius: 8,
                       cursor: "pointer",
                     }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "#f6f8fc")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = "transparent")
-                    }
                   >
                     <span
                       style={{
@@ -390,16 +452,22 @@ const LinkedIsrCell: React.FC<{
 
 const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { hasAnyPermission } = usePermissions();
   // Follow the global project switcher: in single-project view scope to the
   // current project; in unified view the backend scopes to accessible projects.
   const { currentProjectId, viewMode } = useProjectContext();
   const [rows, setRows] = useState<SrRow[]>([]);
+  const knownRowIdsRef = useRef<Set<string>>(new Set());
+  const hasLoadedRowsRef = useRef(false);
+  const [unreadRowIds, setUnreadRowIds] = useState<Set<string>>(new Set());
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [page, setPage] = useState(1);
+  const [viewScope, setViewScope] = useState<RequestScopeKey>("project");
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [filters, setFilters] = useState<SrFilters>(DEFAULT_FILTERS);
   const [priorityOptions, setPriorityOptions] = useState<SelectOption[]>([
@@ -407,9 +475,63 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   ]);
   const [statusOptions, setStatusOptions] = useState<SelectOption[]>([]);
   const limit = 20;
+  const [selectedRequestIds, setSelectedRequestIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkError, setBulkError] = useState("");
+  const [bulkMergeStep, setBulkMergeStep] = useState<"idle" | "pick-primary">("idle");
+  const [bulkMergePrimaryId, setBulkMergePrimaryId] = useState("");
 
-  const projectId =
-    viewMode === "single" && currentProjectId ? currentProjectId : undefined;
+  const isProjectPortal = location.pathname.includes("/portal/");
+  const storedProjectId = (() => {
+    if (!isProjectPortal) return undefined;
+    try {
+      const raw = localStorage.getItem("projectContext");
+      if (!raw) return undefined;
+      const parsed = JSON.parse(raw);
+      return parsed?.projectId ? String(parsed.projectId) : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const projectId = isProjectPortal
+    ? currentProjectId || storedProjectId
+    : viewMode === "single" && currentProjectId
+      ? currentProjectId
+      : undefined;
+  const detailPath = (id: string) =>
+    isProjectPortal
+      ? `${location.pathname.replace(/\/service-requests(?:\/[^/]+)?$/, "")}/service-requests/${id}`
+      : `/service-requests/${id}`;
+  const visibleScopes = useMemo(
+    () =>
+      REQUEST_SCOPE_OPTIONS.filter((option) =>
+        hasAnyPermission(option.permissions),
+      ),
+    [hasAnyPermission],
+  );
+  const canDeleteSr = hasAnyPermission([
+    PERMISSIONS.SR_DELETE,
+    PERMISSIONS.SR_CONFIG_MANAGE,
+  ]);
+  const canMergeSr = hasAnyPermission([
+    PERMISSIONS.SR_MERGE,
+    PERMISSIONS.SR_CONFIG_MANAGE,
+  ]);
+  const canBulkActions = canDeleteSr || canMergeSr;
+  const selectedRequestRows = useMemo(
+    () => rows.filter((row) => selectedRequestIds.has(row._id)),
+    [rows, selectedRequestIds],
+  );
+  const allRequestsSelected =
+    rows.length > 0 && rows.every((row) => selectedRequestIds.has(row._id));
+
+  useEffect(() => {
+    if (!visibleScopes.length) return;
+    if (!visibleScopes.some((option) => option.key === viewScope)) {
+      setViewScope(visibleScopes[0].key);
+      setPage(1);
+    }
+  }, [visibleScopes, viewScope]);
 
   const filterValue = (key: keyof SrFilters, value: string) => {
     setPage(1);
@@ -421,6 +543,66 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     setStatus("all");
     setSearch("");
     setFilters(DEFAULT_FILTERS);
+  };
+
+  const toggleRequestSelect = (id: string) => {
+    setBulkError("");
+    setSelectedRequestIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllRequests = () => {
+    setBulkError("");
+    setSelectedRequestIds(
+      allRequestsSelected ? new Set() : new Set(rows.map((row) => row._id)),
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedRequestIds);
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} selected service request(s)?`)) return;
+    setBulkLoading(true);
+    setBulkError("");
+    try {
+      await serviceRequestApi.bulkDelete(ids);
+      setSelectedRequestIds(new Set());
+      setBulkMergeStep("idle");
+      setBulkMergePrimaryId("");
+      await load();
+    } catch (err: any) {
+      setBulkError(err?.response?.data?.message || "Failed to delete service requests");
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleConfirmBulkMerge = async () => {
+    if (!bulkMergePrimaryId) return;
+    const secondaryIds = Array.from(selectedRequestIds).filter(
+      (id) => id !== bulkMergePrimaryId,
+    );
+    if (!secondaryIds.length) {
+      setBulkError("Select at least one secondary service request to merge.");
+      return;
+    }
+    setBulkLoading(true);
+    setBulkError("");
+    try {
+      await serviceRequestApi.merge(bulkMergePrimaryId, secondaryIds);
+      setSelectedRequestIds(new Set());
+      setBulkMergeStep("idle");
+      setBulkMergePrimaryId("");
+      await load();
+    } catch (err: any) {
+      setBulkError(err?.response?.data?.message || "Failed to merge service requests");
+    } finally {
+      setBulkLoading(false);
+    }
   };
 
   const activeFilters = [
@@ -446,6 +628,12 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
       ? {
           key: "priority",
           label: `Priority: ${optionLabel(priorityOptions, filters.priority)}`,
+        }
+      : undefined,
+    filters.interactionType && filters.interactionType !== "all"
+      ? {
+          key: "interactionType",
+          label: `Type: ${optionLabel(REQUEST_TYPE_OPTIONS, filters.interactionType)}`,
         }
       : undefined,
     filters.wipFrom
@@ -544,14 +732,49 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     };
   }, [projectId]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const markRowRead = (id: string) => {
+    setUnreadRowIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const highlightUnreadRow = (id: string) =>
+    unreadRowIds.has(id)
+      ? { background: "#fffbeb", boxShadow: "inset 3px 0 0 #f59e0b" }
+      : {};
+
+  const rememberRows = useCallback((items: SrRow[], silent?: boolean) => {
+    const ids = new Set(items.map((item) => item._id).filter(Boolean));
+    if (silent && hasLoadedRowsRef.current) {
+      const newIds = items
+        .map((item) => item._id)
+        .filter((id) => id && !knownRowIdsRef.current.has(id));
+      if (newIds.length) {
+        setUnreadRowIds((prev) => {
+          const next = new Set(prev);
+          newIds.forEach((id) => next.add(id));
+          return next;
+        });
+      }
+    } else if (!silent) {
+      setUnreadRowIds(new Set());
+    }
+    knownRowIdsRef.current = ids;
+    hasLoadedRowsRef.current = true;
+  }, []);
+
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true);
     try {
       const cleanedFilters = Object.fromEntries(
         Object.entries(filters).filter(([, value]) => value),
       );
       const res = await serviceRequestApi.list({
-        interactionType: "PSR",
+        interactionType: filters.interactionType || "all",
+        viewScope,
         status,
         search: search.trim() || undefined,
         projectId,
@@ -559,19 +782,34 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
         page,
         limit,
       });
-      setRows((res.items as SrRow[]) || []);
+      const items = (res.items as SrRow[]) || [];
+      rememberRows(items, options?.silent);
+      setRows(items);
       setTotal(res.total || 0);
       setStatusCounts(res.statusCounts || {});
     } catch (e) {
       console.error("Failed to load service requests:", e);
       setRows([]);
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
-  }, [status, search, projectId, filters, page]);
+  }, [status, search, projectId, filters, page, viewScope, rememberRows]);
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  useEffect(() => {
+    const refreshSilently = () => load({ silent: true });
+    const intervalId = window.setInterval(refreshSilently, LIVE_REFRESH_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshSilently();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [load]);
 
   const th = srStyles.th;
@@ -660,8 +898,8 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
 
   return (
     <SrPage
-      title="Parent Service Requests"
-      subtitle="View and manage Parent Service Requests (PSR)."
+      title="Service Requests"
+      subtitle="View and manage PSR/ISR tickets created by or assigned to permitted users."
       embedded={embedded}
       actions={
         embedded ? undefined : (
@@ -674,6 +912,116 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
         )
       }
     >
+        {visibleScopes.length > 0 && (
+          <div
+            style={{
+              ...srStyles.card,
+              padding: 8,
+              marginBottom: 14,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 8,
+            }}
+          >
+            {visibleScopes.map((option) => {
+              const active = viewScope === option.key;
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => {
+                    setViewScope(option.key);
+                    setStatus("all");
+                    setPage(1);
+                  }}
+                  style={{
+                    textAlign: "left",
+                    border: active ? `2px solid ${SR.primary}` : "1px solid #e7ebf3",
+                    background: active ? "#eef4ff" : "#fff",
+                    borderRadius: 10,
+                    padding: active ? "10px 11px" : "11px 12px",
+                    color: "#111827",
+                    cursor: "pointer",
+                    minHeight: 66,
+                    boxShadow: active
+                      ? "0 8px 18px rgba(37, 99, 235, 0.13)"
+                      : "0 2px 8px rgba(15, 23, 42, 0.04)",
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>
+                    {option.label}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.35 }}>
+                    {option.description}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div
+          style={{
+            ...srStyles.card,
+            padding: 8,
+            marginBottom: 14,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ padding: "4px 6px" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#111827" }}>
+              Request type
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+              Filter service requests by PSR or ISR.
+            </div>
+          </div>
+          <div
+            role="group"
+            aria-label="Request type filter"
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              background: "#f8fafc",
+              border: "1px solid #e7ebf3",
+              borderRadius: 10,
+              padding: 4,
+            }}
+          >
+            {REQUEST_TYPE_TOGGLE_OPTIONS.map((option) => {
+              const active = (filters.interactionType || "all") === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => filterValue("interactionType", option.value)}
+                  style={{
+                    border: active ? `1px solid ${SR.primary}` : "1px solid transparent",
+                    background: active ? SR.primary : "transparent",
+                    color: active ? "#fff" : "#334155",
+                    borderRadius: 8,
+                    padding: "8px 14px",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    minWidth: 58,
+                    boxShadow: active
+                      ? "0 8px 18px rgba(79, 70, 229, 0.22)"
+                      : "none",
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Status counters (click to filter) */}
         <div
           style={{
@@ -688,6 +1036,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
             return (
               <div
                 key={s.key}
+                className={`sr-status-card${active ? " sr-status-card--active" : ""}`}
                 onClick={() => {
                   setPage(1);
                   setStatus(s.key);
@@ -703,18 +1052,6 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                   cursor: "pointer",
                   transition: "all 0.15s ease",
                   userSelect: "none",
-                }}
-                onMouseEnter={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.borderColor = s.color;
-                    e.currentTarget.style.transform = "translateY(-1px)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.borderColor = "#e7ebf3";
-                    e.currentTarget.style.transform = "translateY(0)";
-                  }
                 }}
               >
                 <div
@@ -914,6 +1251,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                 {dateControl("WIP to", "wipTo")}
                 {selectControl("Source", "source", SOURCE_OPTIONS)}
                 {selectControl("Channel", "classification", CHANNEL_OPTIONS)}
+                {selectControl("Request type", "interactionType", REQUEST_TYPE_OPTIONS)}
                 {selectControl("Linked ISR", "linkedIsrState", LINKED_ISR_OPTIONS)}
                 {dateControl("Updated from", "updatedFrom")}
                 {dateControl("Updated to", "updatedTo")}
@@ -979,17 +1317,141 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
           )}
         </div>
 
+        {canBulkActions && selectedRequestIds.size > 0 && (
+          <div
+            style={{
+              ...srStyles.card,
+              marginBottom: 14,
+              padding: "12px 14px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              borderColor: "#bfdbfe",
+              background: "#f8fbff",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#111827" }}>
+                {selectedRequestIds.size} service request(s) selected
+              </div>
+              {bulkError && (
+                <div style={{ marginTop: 4, fontSize: 12, color: "#b91c1c" }}>
+                  {bulkError}
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {canMergeSr && selectedRequestIds.size > 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBulkMergePrimaryId(Array.from(selectedRequestIds)[0] || "");
+                    setBulkMergeStep("pick-primary");
+                  }}
+                  disabled={bulkLoading}
+                  style={srButton("primary")}
+                >
+                  Merge
+                </button>
+              )}
+              {canDeleteSr && (
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={bulkLoading}
+                  style={srButton("danger")}
+                >
+                  Delete
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRequestIds(new Set());
+                  setBulkMergeStep("idle");
+                  setBulkMergePrimaryId("");
+                  setBulkError("");
+                }}
+                style={srButton("neutral")}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
+        {bulkMergeStep === "pick-primary" && (
+          <div
+            style={{
+              ...srStyles.card,
+              marginBottom: 14,
+              padding: 16,
+              borderColor: "#c7d2fe",
+              background: "#fbfdff",
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 900, color: "#111827" }}>
+              Merge selected service requests
+            </div>
+            <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>
+              Choose the primary PSR/ISR. Other selected requests will merge into it.
+            </div>
+            <select
+              value={bulkMergePrimaryId}
+              onChange={(event) => setBulkMergePrimaryId(event.target.value)}
+              style={{ ...srStyles.ctrl, marginTop: 12, maxWidth: 520, width: "100%" }}
+            >
+              {selectedRequestRows.map((row) => (
+                <option key={row._id} value={row._id}>
+                  {row.ticketNumber} - {row.subject}
+                </option>
+              ))}
+            </select>
+            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={handleConfirmBulkMerge}
+                disabled={bulkLoading || !bulkMergePrimaryId}
+                style={srButton("primary")}
+              >
+                {bulkLoading ? "Merging..." : "Confirm Merge"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkMergeStep("idle");
+                  setBulkMergePrimaryId("");
+                }}
+                style={srButton("neutral")}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         <div style={{ ...srStyles.card, padding: 0, overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
           <table
             style={{
               width: "100%",
               borderCollapse: "collapse",
-              minWidth: 1280,
+              minWidth: canBulkActions ? 1320 : 1280,
             }}
           >
             <thead>
               <tr>
+                {canBulkActions && (
+                  <th style={{ ...th, width: 42 }}>
+                    <input
+                      type="checkbox"
+                      checked={allRequestsSelected}
+                      onChange={toggleSelectAllRequests}
+                    />
+                  </th>
+                )}
                 <th style={th}>Service ID</th>
                 <th style={th}>Subject</th>
                 <th style={th}>Category</th>
@@ -1009,13 +1471,13 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td style={td} colSpan={14}>
+                  <td style={td} colSpan={canBulkActions ? 15 : 14}>
                     Loading…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td style={{ ...td, color: "#9ca3af" }} colSpan={14}>
+                  <td style={{ ...td, color: "#9ca3af" }} colSpan={canBulkActions ? 15 : 14}>
                     No service requests found.
                   </td>
                 </tr>
@@ -1025,15 +1487,23 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                   return (
                   <tr
                     key={r._id}
-                    onClick={() => navigate(`/tickets/${r._id}`)}
-                    style={{ cursor: "pointer", transition: "background 0.12s ease" }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "#f6f8fc")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = "transparent")
-                    }
+                    className="sr-table-row"
+                    onClick={() => {
+                      markRowRead(r._id);
+                      navigate(detailPath(r._id));
+                    }}
+                    style={{ cursor: "pointer", transition: "background 0.12s ease", ...highlightUnreadRow(r._id) }}
                   >
+                    {canBulkActions && (
+                      <td style={td}>
+                        <input
+                          type="checkbox"
+                          checked={selectedRequestIds.has(r._id)}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() => toggleRequestSelect(r._id)}
+                        />
+                      </td>
+                    )}
                     <td style={td}>
                       <span style={{ color: "#2563EB", fontWeight: 600 }}>
                         {r.ticketNumber}
@@ -1064,7 +1534,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                     <td style={td}>
                       <LinkedIsrCell
                         row={r}
-                        onOpen={(id) => navigate(`/tickets/${id}`)}
+                        onOpen={(id) => navigate(detailPath(id))}
                       />
                     </td>
                     <td style={td}>{name(r.assignedTo)}</td>

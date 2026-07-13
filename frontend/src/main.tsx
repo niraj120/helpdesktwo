@@ -2,16 +2,17 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Toaster } from 'react-hot-toast'
 import { BrandingProvider } from './contexts/BrandingContext'
 import { ProjectContextProvider } from './contexts/ProjectContext'
 import NetworkStatusNotifier from './components/NetworkStatusNotifier'
+import CspSafeToaster from './components/CspSafeToaster'
 
 import './i18n/index' // Initialize i18n
 import App from './App.tsx'
 import './index.css'
 import './styles/hubblehox.css' // HubbleHox Design System
 import './styles/accessibility.css' // Import accessibility styles
+import './styles/csp-hardening.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,26 +34,7 @@ const AppWrapper = () => (
         <ProjectContextProvider>
           <App />
           <NetworkStatusNotifier />
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              duration: 4000,
-              style: {
-                background: '#363636',
-                color: '#fff',
-              },
-              success: {
-                style: {
-                  background: '#22c55e',
-                },
-              },
-              error: {
-                style: {
-                  background: '#ef4444',
-                },
-              },
-            }}
-          />
+          <CspSafeToaster />
         </ProjectContextProvider>
       </BrandingProvider>
     </BrowserRouter>
