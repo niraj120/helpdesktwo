@@ -5,6 +5,14 @@ echo "=== Setting up nginx configuration ==="
 
 # Create nginx config
 sudo tee /etc/nginx/sites-available/helpdesk > /dev/null << 'EOF'
+server_tokens off;
+
+server {
+    listen 80 default_server;
+    server_name _;
+    return 444;
+}
+
 server {
     listen 80;
     server_name helpdesk.hubblehox.ai;
@@ -48,6 +56,7 @@ server {
     }
 
     location /api {
+        proxy_hide_header X-XSS-Protection;
         proxy_pass http://127.0.0.1:3003;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -64,6 +73,7 @@ server {
     }
 
     location /v1 {
+        proxy_hide_header X-XSS-Protection;
         proxy_pass http://127.0.0.1:3003/api/v1;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -83,7 +93,6 @@ server {
 
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
 }
 EOF
 
