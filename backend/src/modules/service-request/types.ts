@@ -124,12 +124,25 @@ export interface PsrEmailIntakeConfig {
   sources: PsrEmailSourceMapping[];
 }
 
+export interface PsrParentLookupConfig {
+  enabled: boolean;
+  /** PsrTable _id whose psr_tbl_* collection holds registered parents. */
+  tableId: string;
+  /** Column `as` names (builder labels) that hold the caller's mobile. */
+  mobileColumns: string[];
+  nameColumn?: string;
+  schoolColumn?: string;
+  studentCountColumn?: string;
+}
+
 export interface PsrIvrIntakeConfig {
   enabled: boolean;
   provider: "smartflo";
   mode: PsrEmailMode;
   apiBaseUrl?: string;
   webhookPath?: string;
+  /** Match inbound callers against a PSR parent table & populate their details. */
+  parentLookup?: PsrParentLookupConfig;
 }
 
 export type PsrLookupSource =
@@ -249,6 +262,63 @@ export interface PsrAssignmentConfig {
   ssdVertexCategoryKeywords: string[];
 }
 
+/**
+ * PSR entity-based routing.
+ *
+ * Normal tickets route on the CATEGORY taxonomy. PSR requests instead route on
+ * an entity SCOPE tuple (e.g. school + grade + subject) that the parent selects
+ * from PSR-Builder dropdowns (mirrored from MDM). The owner (subject teacher,
+ * HOD, principal…) of a given scope tuple lives in MDM staffing data, mirrored
+ * as a PsrTable. This config declares the routing dimensions and how to resolve
+ * a scope tuple → the staff who own it. Nothing is hardcoded — see
+ * [[no-hardcoding-configurable-by-permission]].
+ */
+export interface PsrRoutingDimension {
+  /** Stable key reused across form, matrix and ticket (e.g. "school","grade","subject"). */
+  key: string;
+  /** Human label for the config UI. */
+  label: string;
+  /** Form field id (customChannelFields) that supplies this value at submit. */
+  fieldId?: string;
+}
+
+/** How an owner identifier stored in the map table resolves to a helpdesk User. */
+export interface PsrOwnerHolderResolution {
+  by: "employeeCode" | "email" | "userId";
+}
+
+/** Maps a scope tuple → the staff who own it, mirrored from MDM as a PsrTable. */
+export interface PsrOwnerMapConfig {
+  /** PsrTable (MDM mirror) holding the ownership rows. */
+  tableId?: string;
+  /** Table columns (`.as`) holding each dimension value, keyed by dimension key. */
+  scopeColumns: Record<string, string>;
+  /** Table columns holding each role's owner identifier, keyed by role key. */
+  roleColumns: Record<string, string>;
+  /** Role key that owns the request first (L1, e.g. "SUBJECT_TEACHER").
+   *  Defaults to the first roleColumns key when unset. */
+  primaryRole?: string;
+  /** How a holder identifier in the table maps to a helpdesk User. */
+  holderResolution: PsrOwnerHolderResolution;
+}
+
+/** When no owner row matches the scope tuple. */
+export interface PsrRoutingFallback {
+  mode: "category" | "role" | "user" | "none";
+  roleId?: string;
+  userId?: string;
+}
+
+export interface PsrRoutingConfig {
+  enabled: boolean;
+  /** Ordered routing dimensions (e.g. school → grade → subject). */
+  dimensions: PsrRoutingDimension[];
+  /** Owner lookup table + column mapping. */
+  ownerMap: PsrOwnerMapConfig;
+  /** Fallback when the scope tuple has no matching owner row. */
+  fallback: PsrRoutingFallback;
+}
+
 export interface PsrParentCommunicationConfig {
   twoWayCommunicationEnabled: boolean;
   parentCanAddComments: boolean;
@@ -325,6 +395,8 @@ export interface PsrWorkflowConfig {
   lifecycle: PsrLifecycleConfig;
   notifications: PsrNotificationConfig;
   assignment: PsrAssignmentConfig;
+  /** Entity-scope routing (school/grade/subject → teacher/HOD/principal). */
+  routing: PsrRoutingConfig;
   parentCommunication: PsrParentCommunicationConfig;
   linkedIsr: PsrLinkedIsrConfig;
   emailIntegration: PsrEmailIntegrationConfig;

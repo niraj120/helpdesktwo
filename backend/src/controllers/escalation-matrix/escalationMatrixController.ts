@@ -10,7 +10,6 @@ import { User } from "../../models/User";
 import { Ticket } from "../../models/Ticket";
 import CategoryEscalationConfig from "../../models/ticket-module/CategoryEscalationConfig";
 import escalationMatrixService from "../../services/escalationMatrixService";
-import { logActivity } from "../../utils/logger";
 import * as slaService from "../../services/slaService";
 import mongoose from "mongoose";
 import JobLog from "../../models/JobLog";
@@ -253,6 +252,7 @@ export const createEscalationMatrix = async (
       applicablePriorities,
       scopeMode,
       categoryIds,
+      assignmentSource,
       slaWarningConfig,
     } = req.body;
 
@@ -294,8 +294,9 @@ export const createEscalationMatrix = async (
 
     // Validate all roleIds exist — skipped for PER_PRIORITY mode where top-level
     // levels are only a UI template and may carry an empty roleId.
-    // Also skipped for levels where assigneeType === 'user'.
-    if (priorityMode !== "PER_PRIORITY") {
+    // Also skipped for levels where assigneeType === 'user', and for entity-routing
+    // matrices where the assignee is resolved from the ticket scope (roleKey), not a roleId.
+    if (priorityMode !== "PER_PRIORITY" && assignmentSource !== "entity_routing") {
       const emptyRoleLevel = levels.find(
         (l: any) =>
           l.assigneeType !== "user" &&
@@ -351,6 +352,9 @@ export const createEscalationMatrix = async (
           l.assigneeUserId && String(l.assigneeUserId).trim() !== ""
             ? l.assigneeUserId
             : null,
+        // PSR entity routing: owner role + scope subset resolved from the ticket.
+        roleKey: l.roleKey && String(l.roleKey).trim() !== "" ? l.roleKey : undefined,
+        scopeSubset: Array.isArray(l.scopeSubset) ? l.scopeSubset : undefined,
         slaHours: l.slaHours || 24,
         slaUnit: l.slaUnit || "hrs",
         responseTime: l.responseTime,
@@ -366,6 +370,7 @@ export const createEscalationMatrix = async (
       applicablePriorities: normalizedPriorities,
       scopeMode: scopeMode || "PRIORITY",
       categoryIds: Array.isArray(categoryIds) ? categoryIds : [],
+      assignmentSource: assignmentSource === "entity_routing" ? "entity_routing" : "category",
       slaWarningConfig: slaWarningConfig || undefined,
       isActive: isActive !== false,
       createdBy: userId,
@@ -430,16 +435,6 @@ export const createEscalationMatrix = async (
 
     await matrix.save();
 
-    // Log activity
-    await logActivity({
-      action: "CREATE",
-      entityType: "EscalationMatrix",
-      entityId: matrix._id.toString(),
-      userId,
-      description: `Created escalation matrix: ${name}`,
-      metadata: { name, escalationMode, levelCount: levels.length },
-    });
-
     console.log(`✅ Created escalation matrix: ${name} (${matrix._id})`);
 
     res.status(201).json({
@@ -483,6 +478,7 @@ export const updateEscalationMatrix = async (
       applicablePriorities,
       scopeMode,
       categoryIds,
+      assignmentSource,
       slaWarningConfig,
     } = req.body;
 
@@ -543,7 +539,12 @@ export const updateEscalationMatrix = async (
       // levels are only a UI template and may carry an empty roleId.
       // Also skipped for levels where assigneeType === 'user'.
       const effectivePriorityMode = priorityMode ?? matrix.priorityMode;
-      if (effectivePriorityMode !== "PER_PRIORITY") {
+      const effectiveAssignmentSource =
+        assignmentSource ?? (matrix as any).assignmentSource;
+      if (
+        effectivePriorityMode !== "PER_PRIORITY" &&
+        effectiveAssignmentSource !== "entity_routing"
+      ) {
         const emptyRoleLevel = levels.find(
           (l: any) =>
             l.assigneeType !== "user" &&
@@ -601,6 +602,9 @@ export const updateEscalationMatrix = async (
           l.assigneeUserId && String(l.assigneeUserId).trim() !== ""
             ? l.assigneeUserId
             : null,
+        // PSR entity routing: owner role + scope subset resolved from the ticket.
+        roleKey: l.roleKey && String(l.roleKey).trim() !== "" ? l.roleKey : undefined,
+        scopeSubset: Array.isArray(l.scopeSubset) ? l.scopeSubset : undefined,
         slaHours: l.slaHours || 24,
         slaUnit: l.slaUnit || "hrs",
         responseTime: l.responseTime,
@@ -632,6 +636,10 @@ export const updateEscalationMatrix = async (
     if (isActive !== undefined) matrix.isActive = isActive;
     if (autoEscalate !== undefined) matrix.autoEscalate = autoEscalate;
     if (scopeMode !== undefined) (matrix as any).scopeMode = scopeMode;
+    if (assignmentSource !== undefined) {
+      (matrix as any).assignmentSource =
+        assignmentSource === "entity_routing" ? "entity_routing" : "category";
+    }
     if (categoryIds !== undefined) {
       (matrix as any).categoryIds = Array.isArray(categoryIds)
         ? categoryIds
@@ -714,15 +722,6 @@ export const updateEscalationMatrix = async (
 
     console.log("✅ [UPDATE] Escalation Matrix saved successfully");
 
-    // Log activity
-    await logActivity({
-      action: "UPDATE",
-      entityType: "EscalationMatrix",
-      entityId: matrix._id.toString(),
-      userId,
-      description: `Updated escalation matrix: ${matrix.name}`,
-    });
-
     console.log(`✅ Updated escalation matrix: ${matrix.name} (${matrix._id})`);
 
     res.status(200).json({
@@ -777,15 +776,6 @@ export const deleteEscalationMatrix = async (
 
     await EscalationMatrix.findByIdAndDelete(id);
 
-    // Log activity
-    await logActivity({
-      action: "DELETE",
-      entityType: "EscalationMatrix",
-      entityId: id,
-      userId,
-      description: `Deleted escalation matrix: ${matrix.name}`,
-    });
-
     console.log(`✅ Deleted escalation matrix: ${matrix.name} (${id})`);
 
     res.status(200).json({
@@ -826,15 +816,6 @@ export const toggleEscalationMatrixStatus = async (
     matrix.isActive = !matrix.isActive;
     matrix.updatedBy = userId;
     await matrix.save();
-
-    // Log activity
-    await logActivity({
-      action: "UPDATE",
-      entityType: "EscalationMatrix",
-      entityId: id,
-      userId,
-      description: `${matrix.isActive ? "Activated" : "Deactivated"} escalation matrix: ${matrix.name}`,
-    });
 
     res.status(200).json({
       success: true,
@@ -1119,20 +1100,6 @@ export const escalateTicketWithMatrix = async (
       return;
     }
 
-    // Log activity
-    await logActivity({
-      action: "ESCALATE",
-      entityType: "Ticket",
-      entityId: id,
-      userId,
-      description: result.message,
-      metadata: {
-        targetLevelId,
-        targetUserId,
-        reason,
-        assignedTo: result.assignedUser?._id?.toString(),
-      },
-    });
 
     // Push notification to the newly assigned agent after escalation
     if (result.assignedUser?._id) {
@@ -1223,15 +1190,6 @@ export const assignMatrixToTicket = async (
       return;
     }
 
-    // Log activity
-    await logActivity({
-      action: "UPDATE",
-      entityType: "Ticket",
-      entityId: id,
-      userId,
-      description: result.message,
-    });
-
     res.status(200).json(result);
   } catch (error: any) {
     console.error("Error assigning matrix to ticket:", error);
@@ -1292,16 +1250,6 @@ export const processAutoEscalation = async (
     console.log(
       `✅ Auto-escalation complete: ${result.escalated}/${result.processed} tickets escalated`,
     );
-
-    // Log activity
-    logActivity({
-      type: "SYSTEM",
-      action: "auto_escalation_processed",
-      description: `Auto-escalation processed: ${result.escalated} tickets escalated`,
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-      metadata: result,
-    });
 
     res.status(200).json({
       success: true,

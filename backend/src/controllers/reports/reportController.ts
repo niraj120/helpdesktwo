@@ -318,11 +318,44 @@ export const getDataPoints = async (req: Request, res: Response) => {
       }
     }
 
+    // Per-project PSR entity-routing dimensions → one data point per configured
+    // dimension (e.g. School, Grade, Subject), read from ticket.routing.scope.<key>.
+    // Virtual (not persisted); lets reports/dashboards slice by the routing tuple.
+    const routingScopeDataPoints: any[] = [];
+    if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
+      try {
+        const { getSrConfigForProject } = await import(
+          "../../modules/service-request/srConfigAdmin"
+        );
+        const srCfg: any = await getSrConfigForProject(projectId);
+        const dims = srCfg?.psr?.workflow?.routing?.dimensions || [];
+        let i = 0;
+        for (const d of dims) {
+          if (!d?.key) continue;
+          routingScopeDataPoints.push({
+            _id: `virtual_sr_routing_${d.key}`,
+            key: `sr_routing_scope_${d.key}`,
+            label: d.label || d.key,
+            description: `PSR routing — ${d.label || d.key}`,
+            category: "service_request",
+            fieldPath: `srRoutingScope_${d.key}`,
+            fieldType: "string",
+            isActive: true,
+            isSystem: false,
+            order: 610 + i++,
+          });
+        }
+      } catch (e) {
+        // SR config unavailable — skip silently.
+      }
+    }
+
     return res.status(200).json({
       success: true,
       data: [
         ...dataPoints,
         ...categoryLevelDataPoints,
+        ...routingScopeDataPoints,
         ...customFormDataPoints,
       ],
     });

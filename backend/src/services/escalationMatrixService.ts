@@ -126,6 +126,63 @@ export async function getMatrixByProjectId(
  * and optionally a category-specific config (US-021).
  * Should be called during ticket creation.
  */
+/**
+ * Find the active PSR entity-routing matrix for a project (assignmentSource=
+ * 'entity_routing'). PSR tickets escalate on the school/grade/subject scope, not
+ * category, so they use this matrix instead of the category/priority one.
+ */
+export async function getEntityRoutingMatrix(
+  projectId: string,
+): Promise<IEscalationMatrix | null> {
+  try {
+    const m = await EscalationMatrix.findOne({
+      projectIds: toObjectIdStrict(projectId, "projectId"),
+      assignmentSource: "entity_routing",
+      isActive: true,
+    }).lean();
+    return (m as any) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve a level's assignee from a PSR ticket's routing scope (school/grade/subject)
+ * using the level's roleKey + scopeSubset. Returns null for non-entity matrices or
+ * when nothing resolves (caller then falls back to its normal role/user logic).
+ * Dynamic imports keep this free of a circular dependency with the SR module.
+ */
+async function resolveEntityRoutingAssignee(
+  matrix: any,
+  level: any,
+  ticket: any,
+): Promise<mongoose.Types.ObjectId | null> {
+  if (matrix?.assignmentSource !== "entity_routing") return null;
+  const scope = ticket?.routing?.scope;
+  const roleKey = level?.roleKey;
+  if (!scope || !roleKey || !ticket?.project) return null;
+  try {
+    const { getSrConfigForProject } = await import(
+      "../modules/service-request/srConfigAdmin"
+    );
+    const { resolveRoleForScope } = await import(
+      "../modules/service-request/psrRoutingResolver"
+    );
+    const cfg: any = await getSrConfigForProject(String(ticket.project));
+    const routing = cfg?.psr?.workflow?.routing;
+    const userId = await resolveRoleForScope(
+      routing,
+      scope,
+      roleKey,
+      level.scopeSubset,
+      String(ticket.project),
+    );
+    return userId ? new mongoose.Types.ObjectId(userId) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function autoAssignMatrixToTicket(
   ticketId: string | mongoose.Types.ObjectId,
   projectId: string | mongoose.Types.ObjectId,
@@ -143,11 +200,22 @@ export async function autoAssignMatrixToTicket(
       console.log(`📋 Fetched ticket priority: ${priority}`);
     }
 
-    const matrix = await getMatrixByProjectId(
-      projectId.toString(),
-      priority,
-      categoryId,
-    );
+    // PSR tickets escalate on their entity scope — prefer the entity-routing
+    // matrix; fall back to the category/priority matrix if none is configured.
+    const preTicket = await Ticket.findById(ticketId)
+      .select("interactionType")
+      .lean();
+    let matrix: IEscalationMatrix | null = null;
+    if ((preTicket as any)?.interactionType === "PSR") {
+      matrix = await getEntityRoutingMatrix(projectId.toString());
+    }
+    if (!matrix) {
+      matrix = await getMatrixByProjectId(
+        projectId.toString(),
+        priority,
+        categoryId,
+      );
+    }
 
     if (!matrix) {
       return {
@@ -308,6 +376,27 @@ export async function autoAssignMatrixToTicket(
     // Include workingCalendarId if we resolved it in this function
     if (workingCalendarId) {
       matrixUpdateFields.workingCalendarId = workingCalendarId;
+    }
+
+    // PSR entity routing: resolve the start-level owner from the ticket's scope
+    // (school/grade/subject). Takes precedence over role/user config on the level.
+    if (
+      (matrix as any).assignmentSource === "entity_routing" &&
+      !ticket.assignedTo &&
+      !matrixUpdateFields.assignedTo
+    ) {
+      const ownerId = await resolveEntityRoutingAssignee(
+        matrix,
+        startLevel,
+        ticket,
+      );
+      if (ownerId) {
+        matrixUpdateFields.assignedTo = ownerId;
+        matrixUpdateFields.assignedVia = "condition-based";
+        console.log(
+          `🎯 [Escalation] PSR entity routing — L${startLevel.levelNumber} owner ${ownerId}`,
+        );
+      }
     }
 
     // If the start level is a direct-user assignment and the ticket is currently
@@ -1152,6 +1241,23 @@ export async function executeEscalation(
     }
   }
 
+  // PSR entity routing: resolve this level's owner from the ticket scope
+  // (school/grade/subject). Deterministic per level+scope — no round-robin.
+  if (!assignedUser && (matrix as any)?.assignmentSource === "entity_routing") {
+    const ownerId = await resolveEntityRoutingAssignee(matrix, targetLevel, ticket);
+    if (ownerId) {
+      const owner = await User.findById(ownerId).select(
+        "firstName lastName email isActive role",
+      );
+      if (owner && owner.isActive) {
+        assignedUser = owner;
+        console.log(
+          `🎯 Entity routing: L${targetLevel.levelNumber} owner resolved from scope`,
+        );
+      }
+    }
+  }
+
   // For de-escalation, try to find the previous handler at the target level
   if (
     !assignedUser &&
@@ -1886,7 +1992,31 @@ export async function processAutoEscalation(): Promise<{
         let assignedUser: { _id: any; firstName?: string; lastName?: string };
         const nextIsUserType = (nextLevel as any).assigneeType === "user";
 
-        if (nextIsUserType) {
+        // PSR entity routing: resolve next level's owner from the ticket scope.
+        let entityOwner: any = null;
+        if ((matrix as any)?.assignmentSource === "entity_routing") {
+          const ownerId = await resolveEntityRoutingAssignee(
+            matrix,
+            nextLevel,
+            ticket,
+          );
+          if (ownerId) {
+            const owner = await User.findById(ownerId).select(
+              "_id firstName lastName isActive",
+            );
+            if (owner && (owner as any).isActive) entityOwner = owner;
+          }
+          if (!entityOwner) {
+            const errMsg = `Ticket ${ticket.ticketNumber}: entity routing found no owner for L${nextLevel.levelNumber} (role ${nextLevel.roleKey || "?"})`;
+            console.log(`⚠️  [AUTO-ESC] ${errMsg}`);
+            result.errors.push(errMsg);
+            continue;
+          }
+        }
+
+        if (entityOwner) {
+          assignedUser = entityOwner;
+        } else if (nextIsUserType) {
           // Direct-user level: use the named user
           const namedUserId = (nextLevel as any).assigneeUserId;
           if (!namedUserId) {

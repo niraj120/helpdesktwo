@@ -14,6 +14,10 @@ export interface EscalationLevel {
   assigneeType?: "role" | "user";
   roleId: string; // Role responsible at this level (used when assigneeType='role')
   roleName?: string; // Populated from role
+  /** PSR entity routing: owner role resolved from the ticket scope (e.g. SUBJECT_TEACHER). */
+  roleKey?: string;
+  /** PSR entity routing: scope dimensions matched for this level (e.g. ["school","subject"]). */
+  scopeSubset?: string[];
   /** Specific user ID — used when assigneeType='user' */
   assigneeUserId?: string;
   /** Display name of the specific user (populated) */
@@ -83,6 +87,9 @@ export interface EscalationMatrix {
   scopeMode?: "PRIORITY" | "CATEGORY";
   /** Category IDs this matrix applies to — used when scopeMode='CATEGORY' */
   categoryIds?: string[];
+  /** How each level's assignee is resolved: 'category' (role/user) or 'entity_routing'
+   *  (PSR — resolved from the ticket's school/grade/subject scope via level.roleKey). */
+  assignmentSource?: "category" | "entity_routing";
   priorityMode?: PriorityMode; // NEW: Controls if matrix is same for all priorities or different
   allowSkipLevel: boolean; // Only for RANDOM mode
   allowBackward: boolean; // Allows backward escalation
@@ -172,6 +179,9 @@ export interface EscalationMatrixFormData {
   scopeMode?: "PRIORITY" | "CATEGORY";
   /** Category IDs this matrix applies to — used when scopeMode='CATEGORY' */
   categoryIds?: string[];
+  /** How each level's assignee is resolved: 'category' (role/user) or 'entity_routing'
+   *  (PSR — resolved from the ticket's school/grade/subject scope via level.roleKey). */
+  assignmentSource?: "category" | "entity_routing";
   priorityMode?: PriorityMode; // NEW: Controls if matrix uses same levels for all priorities
   allowSkipLevel: boolean;
   allowBackward: boolean;
@@ -209,6 +219,10 @@ export interface EscalationLevelFormData {
   /** Whether this level assigns to a role or a specific user */
   assigneeType?: "role" | "user";
   roleId: string;
+  /** PSR entity routing: owner role resolved from the ticket scope (e.g. SUBJECT_TEACHER). */
+  roleKey?: string;
+  /** PSR entity routing: scope dimensions matched for this level (e.g. ["school","subject"]). */
+  scopeSubset?: string[];
   /** Specific user ID — used when assigneeType='user' */
   assigneeUserId?: string;
   /** Display name of the specific user (for UI only, not sent to backend) */

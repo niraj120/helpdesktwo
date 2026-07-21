@@ -16,6 +16,14 @@ export interface IEscalationLevel {
   roleId: mongoose.Types.ObjectId; // Role responsible at this level (used when assigneeType='role')
   /** Specific user ObjectId — used when assigneeType='user' */
   assigneeUserId?: mongoose.Types.ObjectId;
+  /**
+   * PSR entity-routing: the owner role resolved for this level (e.g. "SUBJECT_TEACHER",
+   * "HOD", "PRINCIPAL"). Used only when the matrix's assignmentSource='entity_routing';
+   * the assignee is resolved from the ticket's routing scope, not roleId. */
+  roleKey?: string;
+  /** PSR entity-routing: which scope dimensions to match for this level's role
+   *  (e.g. ["school","subject"] for HOD). Empty = full ticket scope. */
+  scopeSubset?: string[];
   slaHours: number; // SLA duration for this level (always stored as hours internally)
   slaUnit?: SlaUnit; // Display unit for UI (mins, hrs, days) - default 'hrs'
   levelType?: "reassign" | "notify"; // US-ESC-005: 'reassign' reassigns ticket; 'notify' only notifies  /** US-ESC-006: specific users to notify in addition to role (used when levelType='notify') */
@@ -56,6 +64,12 @@ export interface IEscalationMatrix extends Document {
   scopeMode?: "PRIORITY" | "CATEGORY";
   /** Category ObjectIds this matrix applies to — used when scopeMode='CATEGORY' */
   categoryIds?: mongoose.Types.ObjectId[];
+  /**
+   * How each level's assignee is resolved:
+   *  - 'category' (default): role/user configured on the level (existing behaviour).
+   *  - 'entity_routing': resolve from the PSR ticket's routing scope (school/grade/subject)
+   *    via the level's roleKey + scopeSubset. Used for PSR entity-based escalation. */
+  assignmentSource?: "category" | "entity_routing";
   priorityMode: "SAME_FOR_ALL" | "PER_PRIORITY"; // Controls if matrix is same for all priorities or different
   allowSkipLevel: boolean; // Only applicable for RANDOM mode
   allowBackward: boolean; // Allows backward escalation
@@ -125,6 +139,16 @@ const EscalationLevelSchema = new Schema<IEscalationLevel>(
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
+    },
+    // PSR entity-routing: owner role resolved from the ticket scope at this level.
+    roleKey: {
+      type: String,
+      trim: true,
+      default: undefined,
+    },
+    scopeSubset: {
+      type: [String],
+      default: undefined,
     },
     slaHours: {
       type: Number,
@@ -238,6 +262,13 @@ const EscalationMatrixSchema = new Schema<IEscalationMatrix>(
         ref: "Category",
       },
     ],
+    // PSR entity-routing vs classic category/role assignment.
+    assignmentSource: {
+      type: String,
+      enum: ["category", "entity_routing"],
+      default: "category",
+      index: true,
+    },
     priorityMode: {
       type: String,
       required: true,

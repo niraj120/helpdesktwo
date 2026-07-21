@@ -645,6 +645,15 @@ export async function runReportQuery(
       (addFields.$addFields as any)[computedName] = {
         $ifNull: [`$metadata.customFields.${rawName}`, ""],
       };
+    } else if (key.startsWith("sr_routing_scope_")) {
+      // PSR entity-routing scope dimension (e.g. sr_routing_scope_school →
+      // ticket.routing.scope.school). Dimensions are configurable per project.
+      const dim = key.replace(/^sr_routing_scope_/, "");
+      const computedName = `srRoutingScope_${dim}`;
+      fieldMap[key] = computedName;
+      (addFields.$addFields as any)[computedName] = {
+        $ifNull: [`$routing.scope.${dim}`, ""],
+      };
     }
   }
 

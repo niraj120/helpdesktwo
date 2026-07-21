@@ -58,5 +58,11 @@ router.post(
   checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
   c.resolveOnCall,
 );
+// Outbound Click-to-Call (call the caller back via TATA SmartFlo).
+router.post(
+  "/calls/:id/click-to-call",
+  checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
+  c.clickToCall,
+);
 
 export default router;

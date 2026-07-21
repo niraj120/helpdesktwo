@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import { Status } from "../models/Status";
 import { Project } from "../models/Project";
 import { AuthRequest } from "../middleware/auth";
-import { logActivity } from "../utils/logger";
 
 // Get all statuses across all projects (for debugging/admin)
 export const getAllStatuses = async (req: AuthRequest, res: Response) => {
@@ -149,33 +148,6 @@ export const createStatus = async (req: AuthRequest, res: Response) => {
 
     await status.save();
 
-    // Log activity
-    try {
-      const currentUser = req.user;
-      if (currentUser) {
-        await logActivity({
-          userId: currentUser.userId,
-          userName:
-            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
-          userEmail: currentUser.email,
-          action: "create",
-          entity: "status",
-          entityId: status._id.toString(),
-          entityName: status.name,
-          projectId: projectId,
-          projectName: project.name,
-          description: `Status ${status.name} (${status.code}) created in project ${project.name}`,
-          req,
-          metadata: {
-            code: status.code,
-            isDefault: status.isDefault,
-            isClosed: status.isClosed,
-          },
-        });
-      }
-    } catch (logError) {
-      console.error("Failed to log activity:", logError);
-    }
 
     return res.status(201).json({
       success: true,
@@ -249,56 +221,6 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
       { new: true, runValidators: true },
     );
 
-    // Log activity
-    try {
-      const currentUser = req.user;
-      if (currentUser && updated) {
-        const projectData = await Project.findById(updated.projectId);
-        const changes = [];
-        if (name !== undefined)
-          changes.push({
-            field: "name",
-            oldValue: existing.name,
-            newValue: name,
-          });
-        if (code !== undefined)
-          changes.push({
-            field: "code",
-            oldValue: existing.code,
-            newValue: code,
-          });
-        if (isDefault !== undefined)
-          changes.push({
-            field: "isDefault",
-            oldValue: existing.isDefault,
-            newValue: isDefault,
-          });
-        if (requireClosingRemark !== undefined)
-          changes.push({
-            field: "requireClosingRemark",
-            oldValue: (existing as any).requireClosingRemark,
-            newValue: requireClosingRemark,
-          });
-
-        await logActivity({
-          userId: currentUser.userId,
-          userName:
-            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
-          userEmail: currentUser.email,
-          action: "update",
-          entity: "status",
-          entityId: updated._id.toString(),
-          entityName: updated.name,
-          projectId: updated.projectId.toString(),
-          projectName: projectData?.name,
-          changes: changes.length > 0 ? changes : undefined,
-          description: `Status ${updated.name} updated`,
-          req,
-        });
-      }
-    } catch (logError) {
-      console.error("Failed to log activity:", logError);
-    }
 
     return res.json({
       success: true,
@@ -344,29 +266,6 @@ export const deleteStatus = async (req: AuthRequest, res: Response) => {
     status.isActive = false;
     await status.save();
 
-    // Log activity
-    try {
-      const currentUser = req.user;
-      if (currentUser) {
-        const projectData = await Project.findById(projectId);
-        await logActivity({
-          userId: currentUser.userId,
-          userName:
-            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
-          userEmail: currentUser.email,
-          action: "delete",
-          entity: "status",
-          entityId: status._id.toString(),
-          entityName: statusName,
-          projectId: projectId.toString(),
-          projectName: projectData?.name,
-          description: `Status ${statusName} (${statusCode}) deleted (soft delete)`,
-          req,
-        });
-      }
-    } catch (logError) {
-      console.error("Failed to log activity:", logError);
-    }
 
     return res.json({
       success: true,

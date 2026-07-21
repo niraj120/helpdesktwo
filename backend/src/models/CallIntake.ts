@@ -68,7 +68,33 @@ export interface ICallIntake extends Document {
   assignedBucket?: string;
   /** Missed-call round-robin outcome. */
   assignmentStatus?: "assigned" | "unassigned_no_agent";
+  /** Friendly label of the DID the call came in on (from the DID registry). */
+  didLabel?: string;
+  /** How the assignee was resolved: agent-number | did-dedicated | round-robin | manual. */
+  matchedBy?: string;
   remark?: string;
+  /**
+   * Outbound Click-to-Call attempts made to call this caller back. Each entry
+   * correlates a SmartFlo originate (refId + customIdentifier) to the agent who
+   * placed it; the matching webhook is stitched back via customIdentifier.
+   */
+  outboundCalls?: {
+    refId?: string;
+    customIdentifier: string;
+    agentUserId?: mongoose.Types.ObjectId;
+    agentNumber?: string;
+    callerId?: string;
+    destinationNumber?: string;
+    status: "initiated" | "answered" | "missed" | "failed";
+    initiatedBy?: mongoose.Types.ObjectId;
+    initiatedAt: Date;
+    /** Terminal webhook status stamp. */
+    completedAt?: Date;
+    message?: string;
+  }[];
+  /** Convenience mirror of the most recent outboundCalls entry status. */
+  lastOutboundStatus?: "initiated" | "answered" | "missed" | "failed";
+  lastOutboundAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -156,10 +182,41 @@ const CallIntakeSchema = new Schema<ICallIntake>(
       type: String,
       enum: ["assigned", "unassigned_no_agent"],
     },
+    didLabel: { type: String },
+    matchedBy: { type: String },
     remark: { type: String },
+    outboundCalls: [
+      {
+        _id: false,
+        refId: { type: String },
+        customIdentifier: { type: String, required: true },
+        agentUserId: { type: Schema.Types.ObjectId, ref: "User" },
+        agentNumber: { type: String },
+        callerId: { type: String },
+        destinationNumber: { type: String },
+        status: {
+          type: String,
+          enum: ["initiated", "answered", "missed", "failed"],
+          default: "initiated",
+        },
+        initiatedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        initiatedAt: { type: Date, default: Date.now },
+        completedAt: { type: Date },
+        message: { type: String },
+      },
+    ],
+    lastOutboundStatus: {
+      type: String,
+      enum: ["initiated", "answered", "missed", "failed"],
+    },
+    lastOutboundAt: { type: Date },
   },
   { timestamps: true },
 );
+
+// Correlate an inbound webhook back to the originating Click-to-Call.
+CallIntakeSchema.index({ "outboundCalls.customIdentifier": 1 });
+CallIntakeSchema.index({ "outboundCalls.refId": 1 });
 
 CallIntakeSchema.index({ projectId: 1, callStatus: 1, receivedAt: -1 });
 

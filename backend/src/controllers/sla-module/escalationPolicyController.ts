@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import EscalationPolicy from '../../models/sla-module/EscalationPolicy';
 import { User } from '../../models/User';
-import { logActivity } from '../../utils/logger';
 
 // Get all escalation policies
 export const getAllEscalationPolicies = async (req: Request, res: Response): Promise<void> => {
@@ -162,35 +161,6 @@ export const createEscalationPolicy = async (req: Request, res: Response): Promi
       .populate('projectIds', 'name code')
       .populate('createdBy', 'firstName lastName email');
     
-    // Log activity
-    try {
-      const currentUser = (req as any).user;
-      if (currentUser) {
-        const projectNames = (populatedPolicy as any)?.projectIds?.map((p: any) => p.name).join(', ') || 
-                            (populatedPolicy as any)?.projectId?.name || 'No projects';
-        const projectId = (populatedPolicy as any)?.projectIds?.[0]?._id || 
-                         (populatedPolicy as any)?.projectIds?.[0] || 
-                         (populatedPolicy as any)?.projectId?._id || 
-                         (populatedPolicy as any)?.projectId;
-        
-        await logActivity({
-          userId: currentUser.userId,
-          userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
-          userEmail: currentUser.email,
-          action: 'create',
-          entity: 'escalation-policy',
-          entityId: policy._id.toString(),
-          entityName: policy.name,
-          projectId: projectId?.toString(),
-          projectName: projectNames,
-          description: `Escalation policy ${policy.name} created`,
-          req,
-          metadata: { levels: policy.levels.length, isActive: policy.isActive }
-        });
-      }
-    } catch (logError) {
-      console.error('Failed to log activity:', logError);
-    }
 
     res.status(201).json({
       success: true,

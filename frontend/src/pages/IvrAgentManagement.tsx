@@ -476,6 +476,9 @@ const IvrAgentManagement: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* DID registry: multiple DIDs → dedicated agent(s) */}
+        <DidSection projectId={projectId} agents={agents} flash={flash} />
       </div>
 
       {breakFor && (
@@ -719,6 +722,215 @@ const DigitModal: React.FC<{
           <button onClick={save} style={button("primary")}>Save</button>
         </div>
       </div>
+    </div>
+  );
+};
+
+// ── DID registry section ─────────────────────────────────────────────────────
+interface DidRow {
+  _id: string;
+  didNumber: string;
+  label?: string;
+  active: boolean;
+  agentUserIds: { _id: string; fullName?: string; firstName?: string; lastName?: string; email?: string }[];
+}
+const agentName = (a: any) =>
+  a?.fullName || `${a?.firstName || ""} ${a?.lastName || ""}`.trim() || a?.email || "Agent";
+
+const DidSection: React.FC<{
+  projectId: string;
+  agents: Agent[];
+  flash: (t: "ok" | "err", s: string) => void;
+}> = ({ projectId, agents, flash }) => {
+  const empty = { didNumber: "", label: "", agentUserIds: [] as string[], active: true };
+  const [dids, setDids] = useState<DidRow[]>([]);
+  const [draft, setDraft] = useState<typeof empty & { _id?: string }>({ ...empty });
+  const [showForm, setShowForm] = useState(false);
+
+  const load = async () => {
+    if (!projectId) return setDids([]);
+    try {
+      const r = await ivrAgentApi.listDids(projectId);
+      setDids(r.dids || []);
+    } catch {
+      /* ignore */
+    }
+  };
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  const startNew = () => {
+    setDraft({ ...empty });
+    setShowForm(true);
+  };
+  const startEdit = (d: DidRow) => {
+    setDraft({
+      _id: d._id,
+      didNumber: d.didNumber,
+      label: d.label || "",
+      agentUserIds: (d.agentUserIds || []).map((a) => String(a._id)),
+      active: d.active !== false,
+    });
+    setShowForm(true);
+  };
+  const toggleAgent = (uid: string) =>
+    setDraft((d) => ({
+      ...d,
+      agentUserIds: d.agentUserIds.includes(uid)
+        ? d.agentUserIds.filter((x) => x !== uid)
+        : [...d.agentUserIds, uid],
+    }));
+  const save = async () => {
+    if (!draft.didNumber.trim()) return flash("err", "DID number required");
+    try {
+      await ivrAgentApi.upsertDid({
+        projectId,
+        didNumber: draft.didNumber.trim(),
+        label: draft.label.trim(),
+        agentUserIds: draft.agentUserIds,
+        active: draft.active,
+      });
+      flash("ok", "DID saved");
+      setShowForm(false);
+      setDraft({ ...empty });
+      load();
+    } catch (e: any) {
+      flash("err", e?.response?.data?.message || "Save failed");
+    }
+  };
+  const remove = async (id: string) => {
+    try {
+      await ivrAgentApi.removeDid(id);
+      flash("ok", "DID removed");
+      load();
+    } catch {
+      flash("err", "Delete failed");
+    }
+  };
+
+  const cell: React.CSSProperties = {
+    padding: "10px 12px",
+    fontSize: 13,
+    borderBottom: `1px solid ${tokens.border}`,
+    textAlign: "left",
+  };
+
+  return (
+    <div style={{ ...styles.card, marginTop: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>DID Mapping</div>
+          <div style={{ fontSize: 13, color: tokens.muted }}>
+            Map each TATA DID number to its dedicated agent(s). Answered calls are
+            attributed to the agent by the DID they came in on.
+          </div>
+        </div>
+        <button onClick={startNew} style={button("primary")}>
+          + Add DID
+        </button>
+      </div>
+
+      {showForm && (
+        <div style={{ border: `1px solid ${tokens.border}`, borderRadius: 10, padding: 14, marginBottom: 14, background: "#f8fafc" }}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+            <div>
+              <label style={styles.label}>DID number</label>
+              <input
+                style={{ ...styles.ctrl, minWidth: 200 }}
+                value={draft.didNumber}
+                onChange={(e) => setDraft({ ...draft, didNumber: e.target.value })}
+                placeholder="e.g. 918062351628"
+              />
+            </div>
+            <div>
+              <label style={styles.label}>Label</label>
+              <input
+                style={{ ...styles.ctrl, minWidth: 200 }}
+                value={draft.label}
+                onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+                placeholder="e.g. IVR 1"
+              />
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, alignSelf: "flex-end", fontSize: 13, paddingBottom: 8 }}>
+              <input type="checkbox" checked={draft.active} onChange={(e) => setDraft({ ...draft, active: e.target.checked })} />
+              Active
+            </label>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <label style={styles.label}>Dedicated agent(s)</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+              {agents.length === 0 && (
+                <span style={{ fontSize: 12, color: tokens.muted }}>No IVR agents in this project yet.</span>
+              )}
+              {agents.map((a) => (
+                <label
+                  key={a.userId}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 12,
+                    padding: "4px 10px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    border: `1px solid ${draft.agentUserIds.includes(a.userId) ? tokens.primary : tokens.border}`,
+                    background: draft.agentUserIds.includes(a.userId) ? tokens.primarySoft : "#fff",
+                  }}
+                >
+                  <input type="checkbox" checked={draft.agentUserIds.includes(a.userId)} onChange={() => toggleAgent(a.userId)} />
+                  {a.name}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={save} style={button("primary")}>Save DID</button>
+            <button onClick={() => { setShowForm(false); setDraft({ ...empty }); }} style={button("neutral")}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {dids.length === 0 ? (
+        <div style={{ fontSize: 13, color: tokens.muted, padding: "8px 2px" }}>
+          No DIDs configured yet.
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["DID number", "Label", "Agent(s)", "Active", ""].map((h) => (
+                  <th key={h} style={{ ...cell, fontWeight: 700, color: tokens.muted, fontSize: 12 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dids.map((d) => (
+                <tr key={d._id}>
+                  <td style={cell}>{d.didNumber}</td>
+                  <td style={cell}>{d.label || "—"}</td>
+                  <td style={cell}>
+                    {(d.agentUserIds || []).length
+                      ? d.agentUserIds.map(agentName).join(", ")
+                      : <span style={{ color: tokens.muted }}>Unassigned</span>}
+                  </td>
+                  <td style={cell}>
+                    <span style={{ color: d.active ? tokens.success : tokens.muted, fontWeight: 600 }}>
+                      {d.active ? "Yes" : "No"}
+                    </span>
+                  </td>
+                  <td style={{ ...cell, whiteSpace: "nowrap" }}>
+                    <button onClick={() => startEdit(d)} style={{ ...button("neutral"), padding: "4px 10px", marginRight: 6 }}>Edit</button>
+                    <button onClick={() => remove(d._id)} style={{ ...button("danger"), padding: "4px 10px" }}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };

@@ -24,7 +24,6 @@ import {
   sendTicketCreatedEmail,
   sendStudentWelcomeEmail,
 } from "../utils/emailService";
-import { logActivity } from "../utils/logger";
 import { buildStudentPortalUrl } from "../utils/projectUrl";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -803,27 +802,6 @@ export const createPublicTicket = async (
       })();
     }
 
-    // Activity log
-    (async () => {
-      try {
-        await logActivity({
-          userId: (linkedUser as any)?._id?.toString() ?? "anonymous",
-          userName: studentName ?? "Anonymous",
-          userEmail: studentEmail ?? "unknown",
-          action: "create",
-          entity: "ticket",
-          entityId: ticket._id.toString(),
-          entityName: ticket.subject,
-          projectId: project_id,
-          projectName: (project as any)?.name || "",
-          description: `Ticket ${ticket.ticketNumber} created via public API`,
-          req,
-          metadata: { ticketNumber: ticket.ticketNumber, source: "public-api" },
-        });
-      } catch (e) {
-        console.error("[createPublicTicket] Activity log failed:", e);
-      }
-    })();
 
     const userName = linkedUser
       ? ((linkedUser as any).fullName ??

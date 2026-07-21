@@ -14,6 +14,7 @@ export interface IUser extends Document {
   role: mongoose.Types.ObjectId; // Reference to Role model
   isActive: boolean;
   isIvrAgent?: boolean; // Marks user as an IVR agent (eligible for missed-call round-robin)
+  tataAgentNumber?: string; // SmartFlo agent number rung first on outbound Click-to-Call
   lastLogin?: Date;
   eulaAccepted?: boolean; // EULA acceptance status
   eulaAcceptedAt?: Date; // When EULA was accepted
@@ -153,6 +154,10 @@ const userSchema = new Schema<IUser>(
     isIvrAgent: {
       type: Boolean,
       default: false,
+    },
+    tataAgentNumber: {
+      type: String,
+      trim: true,
     },
     lastLogin: {
       type: Date,

@@ -21,6 +21,12 @@ import { generateSrTicketNumber } from "./srTicketNumber";
 import { SrError, notifySrWatchers } from "./serviceRequestService";
 import { autoAssignTicket } from "../../utils/ticketAutoAssignment";
 import {
+  resolveScopeOwners,
+  buildRoutingScope,
+  primaryOwnerRole,
+} from "./psrRoutingResolver";
+import { autoAssignMatrixToTicket } from "../../services/escalationMatrixService";
+import {
   InteractionType,
   ModeOfContact,
   RequestType,
@@ -293,6 +299,65 @@ export async function createServiceRequest(
     ? "offline"
     : CHANNEL_TO_SOURCE[input.channel];
 
+  // ── PSR entity-scope routing (school/grade/subject → owner) ──────────────────
+  // Resolve the owning staff from the parent-selected scope tuple BEFORE the
+  // category auto-assign, so a scoped owner (e.g. subject teacher) wins. If no
+  // owner resolves, we fall through to category assignment (per fallback.mode).
+  let routingScope: Record<string, string> | undefined;
+  let routingOwners: Record<string, string> | undefined;
+  // When routing owns the assignment decision, the category auto-assign below is
+  // skipped (fallback modes role/user/none). Only fallback.mode "category" defers.
+  let routingDefersToCategory = true;
+  if (input.interactionType === "PSR" && !assignedTo) {
+    const routingCfg = resolveSrConfig(project)?.psr?.workflow?.routing;
+    if (routingCfg?.enabled) {
+      const scope = buildRoutingScope(routingCfg, input.formData);
+      if (Object.keys(scope).length) {
+        const resolved = await resolveScopeOwners(
+          routingCfg,
+          scope,
+          input.projectId,
+        );
+        routingScope = scope as Record<string, string>;
+        routingOwners = Object.fromEntries(
+          Object.entries(resolved.owners).filter(([, v]) => !!v) as [
+            string,
+            string,
+          ][],
+        );
+        const primary = primaryOwnerRole(routingCfg);
+        const ownerId = primary ? resolved.owners[primary] : null;
+        const fbMode = routingCfg.fallback?.mode || "category";
+        // A scope was supplied, so routing owns the decision unless it defers.
+        routingDefersToCategory = fbMode === "category";
+        if (ownerId) {
+          assignedTo = new mongoose.Types.ObjectId(ownerId);
+          assignedVia = "condition-based";
+        } else if (fbMode === "user" && routingCfg.fallback?.userId) {
+          assignedTo = new mongoose.Types.ObjectId(routingCfg.fallback.userId);
+          assignedVia = "fallback";
+        } else if (fbMode === "role" && routingCfg.fallback?.roleId) {
+          // Resolve any active member of the fallback role in this project.
+          const roleUser = await User.findOne({
+            role: new mongoose.Types.ObjectId(routingCfg.fallback.roleId),
+            isActive: true,
+            $or: [
+              { projects: new mongoose.Types.ObjectId(input.projectId) },
+              { projects: { $size: 0 } },
+            ],
+          })
+            .select("_id")
+            .lean();
+          if (roleUser?._id) {
+            assignedTo = new mongoose.Types.ObjectId(String(roleUser._id));
+            assignedVia = "by-role";
+          }
+        }
+        // fbMode "none" → intentionally left unassigned; category auto-assign skipped.
+      }
+    }
+  }
+
   if (categoryId) {
     if (!selfAssignStaffExistingParentPsr) {
       const routing = await resolveSrRouting(
@@ -302,7 +367,7 @@ export async function createServiceRequest(
         submissionSource,
       );
       autoCloseRule = routing.autoClose;
-      if (!assignedTo) {
+      if (!assignedTo && routingDefersToCategory) {
         const assignment = await autoAssignTicket(
           input.projectId,
           categoryId,
@@ -392,6 +457,9 @@ export async function createServiceRequest(
       input.requestType ||
       (input.interactionType === "PSR" ? "SR" : undefined),
     linkedPsrId,
+    routing: routingScope
+      ? { scope: routingScope, owners: routingOwners || {} }
+      : undefined,
     modeOfContact: input.modeOfContact,
     submissionSource: submissionSource as any,
     sourceEmail: input.sourceEmail || undefined,
@@ -482,6 +550,22 @@ export async function createServiceRequest(
       } as any);
       await ticket.save();
       autoClosed = true;
+    }
+  }
+
+  // Attach an escalation matrix so PSRs can escalate along the entity ladder
+  // (teacher → HOD → principal). Prefers the project's entity-routing matrix;
+  // falls back to its category/priority matrix. Non-fatal on failure.
+  if (input.interactionType === "PSR" && !autoClosed) {
+    try {
+      await autoAssignMatrixToTicket(
+        String(ticket._id),
+        input.projectId,
+        priority,
+        categoryId ? String(categoryId) : undefined,
+      );
+    } catch (e) {
+      console.warn("[SR] escalation matrix attach failed:", (e as any)?.message);
     }
   }
 

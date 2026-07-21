@@ -62,6 +62,17 @@ export const SR_CONFIG_DEFAULTS: SrConfig = {
         provider: "smartflo",
         mode: "triage",
         webhookPath: "/api/public/service-requests/ivr/ingest",
+        // Match an inbound caller against a PSR-builder parent table (psr_tbl_*)
+        // and populate their name/school onto the call. tableId is a PsrTable
+        // _id; the column names are the builder's `as` labels.
+        parentLookup: {
+          enabled: false,
+          tableId: "",
+          mobileColumns: [] as string[],
+          nameColumn: "",
+          schoolColumn: "",
+          studentCountColumn: "",
+        },
       },
     },
     workflow: {
@@ -117,6 +128,16 @@ export const SR_CONFIG_DEFAULTS: SrConfig = {
         appointmentAssignToPsl: true,
         appointmentCategoryKeywords: ["appointment"],
         ssdVertexCategoryKeywords: ["finance", "marketing", "it"],
+      },
+      routing: {
+        enabled: false,
+        dimensions: [],
+        ownerMap: {
+          scopeColumns: {},
+          roleColumns: {},
+          holderResolution: { by: "employeeCode" },
+        },
+        fallback: { mode: "category" },
       },
       parentCommunication: {
         twoWayCommunicationEnabled: true,
@@ -457,6 +478,31 @@ const resolvePsrWorkflow = (stored?: any) => {
       )
         ? stored.assignment.ssdVertexCategoryKeywords
         : defaults.assignment.ssdVertexCategoryKeywords,
+    },
+    routing: {
+      ...defaults.routing,
+      ...(stored?.routing || {}),
+      dimensions: Array.isArray(stored?.routing?.dimensions)
+        ? stored.routing.dimensions
+        : defaults.routing.dimensions,
+      ownerMap: {
+        ...defaults.routing.ownerMap,
+        ...(stored?.routing?.ownerMap || {}),
+        scopeColumns: {
+          ...(stored?.routing?.ownerMap?.scopeColumns || {}),
+        },
+        roleColumns: {
+          ...(stored?.routing?.ownerMap?.roleColumns || {}),
+        },
+        holderResolution: {
+          ...defaults.routing.ownerMap.holderResolution,
+          ...(stored?.routing?.ownerMap?.holderResolution || {}),
+        },
+      },
+      fallback: {
+        ...defaults.routing.fallback,
+        ...(stored?.routing?.fallback || {}),
+      },
     },
     parentCommunication: {
       ...defaults.parentCommunication,

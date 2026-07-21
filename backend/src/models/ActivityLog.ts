@@ -1,7 +1,8 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export interface IActivityLog extends Document {
-  userId: mongoose.Types.ObjectId;
+  // Nullable: system/cron/seed writes have no acting user (source="system").
+  userId?: mongoose.Types.ObjectId | null;
   userName: string;
   userEmail: string;
   action:
@@ -12,7 +13,7 @@ export interface IActivityLog extends Document {
     | "access_denied"
     | "impersonate"
     | "impersonate_end";
-  entity: string; // e.g., 'ticket', 'user', 'project', 'sla-rule', 'escalation-policy'
+  entity: string; // canonical mongoose model name (e.g. "Ticket", "Project")
   entityId?: string;
   entityName?: string;
   changes?: {
@@ -23,9 +24,14 @@ export interface IActivityLog extends Document {
   description?: string;
   ipAddress?: string;
   userAgent?: string;
-  project?: mongoose.Types.ObjectId;
+  project?: mongoose.Types.ObjectId | null;
   projectName?: string;
   role?: string;
+  /** Origin of the mutation: web | public-api | student | system | job. */
+  source?: string;
+  /** Resolved request route, e.g. "PUT /api/projects/:id". */
+  route?: string;
+  method?: string;
   timestamp: Date;
   metadata?: Record<string, any>;
 }
@@ -35,7 +41,8 @@ const activityLogSchema = new Schema<IActivityLog>(
     userId: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false, // null for system/cron/seed writes
+      default: null,
       index: true,
     },
     userName: {
@@ -96,6 +103,16 @@ const activityLogSchema = new Schema<IActivityLog>(
       type: String,
     },
     role: {
+      type: String,
+    },
+    source: {
+      type: String,
+      index: true,
+    },
+    route: {
+      type: String,
+    },
+    method: {
       type: String,
     },
     timestamp: {

@@ -6,7 +6,11 @@ import {
   getActivityLogById,
   createActivityLog,
   getActivityStats,
-  exportActivityLogs
+  exportActivityLogs,
+  getArchivedActivityLogs,
+  getArchiveSettings,
+  updateArchiveSettings,
+  runArchiveNow
 } from '../controllers/activityLogController';
 
 const router = Router();
@@ -28,6 +32,20 @@ router.get('/stats', checkPermission('AUDIT_VIEW_ACTIVITY'), getActivityStats);
 // @route   GET /api/activity-logs/export
 // @access  Private (Admin/Superadmin)
 router.get('/export', checkPermission('AUDIT_EXPORT'), exportActivityLogs);
+
+// @desc    Search archived (cold/GCS) activity logs
+// @route   GET /api/activity-logs/archive
+// @access  Private (Admin/Superadmin)
+router.get('/archive', checkPermission('AUDIT_VIEW_ACTIVITY'), getArchivedActivityLogs);
+
+// @desc    Archival settings (enable toggle + retention days; bucket is env-only)
+// @route   GET/PUT /api/activity-logs/archive-settings
+router.get('/archive-settings', checkPermission('AUDIT_VIEW_ACTIVITY'), getArchiveSettings);
+router.put('/archive-settings', checkPermission('AUDIT_EXPORT'), updateArchiveSettings);
+
+// @desc    Trigger an archival pass on demand
+// @route   POST /api/activity-logs/archive/run
+router.post('/archive/run', checkPermission('AUDIT_EXPORT'), runArchiveNow);
 
 // @desc    Get single activity log by ID
 // @route   GET /api/activity-logs/:id

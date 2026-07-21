@@ -141,6 +141,7 @@ const EscalationMatrixContent: React.FC = () => {
     escalationMode: "SEQUENTIAL",
     scopeMode: "PRIORITY",
     categoryIds: [],
+    assignmentSource: "category",
     priorityMode: "SAME_FOR_ALL",
     allowSkipLevel: false,
     allowBackward: false,
@@ -610,6 +611,7 @@ const EscalationMatrixContent: React.FC = () => {
       escalationMode: "SEQUENTIAL",
       scopeMode: "PRIORITY",
       categoryIds: [],
+      assignmentSource: "category",
       priorityMode: "SAME_FOR_ALL",
       allowSkipLevel: false,
       allowBackward: false,
@@ -678,6 +680,10 @@ const EscalationMatrixContent: React.FC = () => {
         l.roleId !== null && typeof l.roleId === "object"
           ? (l.roleId as any)._id
           : l.roleId,
+      roleKey: (l as any).roleKey || "",
+      scopeSubset: Array.isArray((l as any).scopeSubset)
+        ? (l as any).scopeSubset
+        : [],
       assigneeUserId: (l as any).assigneeUserId
         ? typeof (l as any).assigneeUserId === "object"
           ? ((l as any).assigneeUserId as any)._id
@@ -751,6 +757,10 @@ const EscalationMatrixContent: React.FC = () => {
       description: fullMatrix.description || "",
       escalationMode: fullMatrix.escalationMode,
       scopeMode: (fullMatrix as any).scopeMode || "PRIORITY",
+      assignmentSource:
+        (fullMatrix as any).assignmentSource === "entity_routing"
+          ? "entity_routing"
+          : "category",
       categoryIds:
         (fullMatrix as any).categoryIds?.map((id: any) =>
           typeof id === "object" ? (id._id ?? String(id)) : String(id),
@@ -855,10 +865,17 @@ const EscalationMatrixContent: React.FC = () => {
     }
 
     const isCategoryMode = formData.scopeMode === "CATEGORY";
+    const isEntityRouting = formData.assignmentSource === "entity_routing";
 
-    // Helper: check level has a valid assignee (role or user)
+    // Helper: check level has a valid assignee.
+    // Entity-routing levels resolve the assignee from the ticket scope, so they
+    // only need a roleKey (e.g. SUBJECT_TEACHER), not a role/user.
     const levelHasAssignee = (l: EscalationLevelFormData) =>
-      l.assigneeType === "user" ? !!l.assigneeUserId : !!l.roleId;
+      isEntityRouting
+        ? !!(l.roleKey && l.roleKey.trim())
+        : l.assigneeType === "user"
+          ? !!l.assigneeUserId
+          : !!l.roleId;
 
     if (isCategoryMode) {
       // Category mode validation
@@ -2417,6 +2434,60 @@ const EscalationMatrixContent: React.FC = () => {
                       </button>
                     </div>
 
+                    {/* PSR entity routing — assign/escalate by school/grade/subject scope */}
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "10px",
+                        padding: "12px 14px",
+                        border:
+                          formData.assignmentSource === "entity_routing"
+                            ? "2px solid #d97706"
+                            : "1px solid #e5e7eb",
+                        borderRadius: "8px",
+                        backgroundColor:
+                          formData.assignmentSource === "entity_routing"
+                            ? "#fffbeb"
+                            : "white",
+                        cursor: "pointer",
+                        marginTop: "4px",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.assignmentSource === "entity_routing"}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            assignmentSource: e.target.checked
+                              ? "entity_routing"
+                              : "category",
+                          })
+                        }
+                        style={{ marginTop: "3px" }}
+                      />
+                      <div>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: "14px",
+                            color: "#374151",
+                          }}
+                        >
+                          🧭 PSR entity routing (school / grade / subject)
+                        </div>
+                        <p
+                          style={{ fontSize: "12px", color: "#6b7280", margin: "2px 0 0" }}
+                        >
+                          Resolve each level's assignee from the parent's selected
+                          combination (teacher → HOD → principal) instead of a fixed role.
+                          Each level below sets a <strong>role key</strong> + optional
+                          scope. Configure the owner map in SR Settings → Entity Routing.
+                        </p>
+                      </div>
+                    </label>
+
                     {/* Category selection — shown only when CATEGORY scope is chosen */}
                     {formData.scopeMode === "CATEGORY" && (
                       <div
@@ -3560,6 +3631,57 @@ const EscalationMatrixContent: React.FC = () => {
                               placeholder="Level name"
                             />
 
+                            {/* PSR entity routing: role key + optional scope subset */}
+                            {formData.assignmentSource === "entity_routing" && (
+                              <>
+                                <input
+                                  type="text"
+                                  value={level.roleKey || ""}
+                                  onChange={(e) =>
+                                    updateLevel(
+                                      index,
+                                      "roleKey",
+                                      e.target.value
+                                        .toUpperCase()
+                                        .replace(/\s+/g, "_"),
+                                    )
+                                  }
+                                  placeholder="Role key (SUBJECT_TEACHER)"
+                                  title="Owner role resolved from the ticket scope"
+                                  style={{
+                                    flex: 1,
+                                    padding: "8px 12px",
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: "6px",
+                                    fontSize: "14px",
+                                  }}
+                                />
+                                <input
+                                  type="text"
+                                  value={(level.scopeSubset || []).join(", ")}
+                                  onChange={(e) =>
+                                    updateLevel(
+                                      index,
+                                      "scopeSubset",
+                                      e.target.value
+                                        .split(",")
+                                        .map((s) => s.trim().toLowerCase())
+                                        .filter(Boolean),
+                                    )
+                                  }
+                                  placeholder="Scope (school, subject) — blank = full"
+                                  title="Which routing dimensions to match for this level. Blank = full ticket scope."
+                                  style={{
+                                    flex: 1,
+                                    padding: "8px 12px",
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: "6px",
+                                    fontSize: "14px",
+                                  }}
+                                />
+                              </>
+                            )}
+
                             <select
                               value={level.roleId}
                               onChange={(e) =>
@@ -3572,6 +3694,7 @@ const EscalationMatrixContent: React.FC = () => {
                                 borderRadius: "6px",
                                 fontSize: "14px",
                                 display:
+                                  formData.assignmentSource === "entity_routing" ||
                                   (level.assigneeType ?? "role") === "user"
                                     ? "none"
                                     : undefined,
@@ -3587,10 +3710,13 @@ const EscalationMatrixContent: React.FC = () => {
                                 ))}
                             </select>
 
-                            {/* Assignee type toggle: Role / User */}
+                            {/* Assignee type toggle: Role / User (hidden for entity routing) */}
                             <div
                               style={{
-                                display: "flex",
+                                display:
+                                  formData.assignmentSource === "entity_routing"
+                                    ? "none"
+                                    : "flex",
                                 gap: "2px",
                                 padding: "2px",
                                 backgroundColor: "#f3f4f6",

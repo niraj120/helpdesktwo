@@ -8,6 +8,7 @@ import {
   DEFAULT_IVR_DIGITS,
   OTHER_BUCKET,
 } from "../../../models/IvrDigitConfig";
+import { IvrDidConfig } from "../../../models/IvrDidConfig";
 
 const fail = (res: Response, err: any) => {
   const status = err?.status || 500;
@@ -202,6 +203,64 @@ export async function addLeave(req: AuthRequest, res: Response) {
 export async function removeLeave(req: AuthRequest, res: Response) {
   try {
     await IvrAgentLeave.deleteOne({ _id: req.params.leaveId });
+    res.json({ success: true });
+  } catch (err) {
+    fail(res, err);
+  }
+}
+
+// ---- DID registry (multiple DIDs → dedicated agent(s)) ------------------
+
+/** GET /ivr-agents/dids?projectId — list the project's DID → agent mappings. */
+export async function listDids(req: AuthRequest, res: Response) {
+  try {
+    const projectId = str(req.query.projectId);
+    if (!projectId) throw { status: 400, message: "projectId required" };
+    const dids = await IvrDidConfig.find({ projectId })
+      .populate("agentUserIds", "firstName lastName fullName email")
+      .sort({ label: 1, didNumber: 1 })
+      .lean();
+    res.json({ success: true, dids });
+  } catch (err) {
+    fail(res, err);
+  }
+}
+
+/**
+ * PUT /ivr-agents/dids — create or update a DID mapping (upsert by number).
+ * body: { projectId, didNumber, label?, agentUserIds?: string[], active? }
+ */
+export async function upsertDid(req: AuthRequest, res: Response) {
+  try {
+    const { projectId, didNumber, label, agentUserIds, active } =
+      req.body || {};
+    if (!projectId) throw { status: 400, message: "projectId required" };
+    const num = String(didNumber || "").trim();
+    if (!num) throw { status: 400, message: "didNumber required" };
+    const did = await IvrDidConfig.findOneAndUpdate(
+      { projectId, didNumber: num },
+      {
+        $set: {
+          label: String(label || "").trim(),
+          agentUserIds: Array.isArray(agentUserIds)
+            ? agentUserIds.filter(Boolean)
+            : [],
+          active: active !== false,
+          updatedBy: req.user?.userId,
+        },
+      },
+      { upsert: true, new: true },
+    );
+    res.json({ success: true, did });
+  } catch (err) {
+    fail(res, err);
+  }
+}
+
+/** DELETE /ivr-agents/dids/:didId — remove a DID mapping. */
+export async function deleteDid(req: AuthRequest, res: Response) {
+  try {
+    await IvrDidConfig.deleteOne({ _id: req.params.didId });
     res.json({ success: true });
   } catch (err) {
     fail(res, err);

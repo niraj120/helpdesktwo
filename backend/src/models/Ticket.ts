@@ -199,6 +199,12 @@ export interface ITicket extends Document {
   requestType?: "OCR" | "SR";
   /** ISR only: the parent PSR this ISR was spawned from / linked to. */
   linkedPsrId?: mongoose.Types.ObjectId;
+  /** PSR entity-scope routing: the tuple the parent selected (school/grade/subject)
+   *  and the staff who own it. Drives assignment + escalation + reporting. */
+  routing?: {
+    scope: Record<string, string>;
+    owners: Record<string, string>;
+  };
   /** How the requester contacted the school (PSR mode of contact). */
   modeOfContact?:
     | "telephone"
@@ -634,6 +640,11 @@ const TicketSchema: Schema = new Schema(
       ref: "Ticket",
       index: true,
       sparse: true,
+      default: undefined,
+    },
+    // PSR entity-scope routing snapshot (school/grade/subject tuple + resolved owners).
+    routing: {
+      type: Schema.Types.Mixed,
       default: undefined,
     },
     modeOfContact: {

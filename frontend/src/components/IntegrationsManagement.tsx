@@ -57,6 +57,16 @@ const IntegrationsManagement: React.FC = () => {
       permission: 'INTEGRATION_SMS_VIEW',
       status: 'coming-soon',
       badge: 'Coming Soon'
+    },
+    {
+      id: 'tata-voice',
+      title: 'TATA Voice (Click-to-Call)',
+      description: 'Configure SmartFlo credentials to call customers back directly from the IVR inbox.',
+      icon: <PhoneIcon className="w-8 h-8" />,
+      path: '/integrations/tata-voice',
+      permission: 'PROJECT_MANAGE_SETTINGS',
+      status: 'available',
+      badge: 'Active'
     }
   ];
 

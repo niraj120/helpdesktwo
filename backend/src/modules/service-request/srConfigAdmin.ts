@@ -48,7 +48,17 @@ export interface SrConfigPatch {
   };
   email?: { enabled?: boolean; tatHours?: number; level2Hours?: number };
   emailJunk?: { senders?: string[] };
-  ivr?: { enabled?: boolean };
+  ivr?: {
+    enabled?: boolean;
+    parentLookup?: {
+      enabled?: boolean;
+      tableId?: string;
+      mobileColumns?: string[];
+      nameColumn?: string;
+      schoolColumn?: string;
+      studentCountColumn?: string;
+    };
+  };
   crm?: any;
   classifyChannels?: any[];
   psrDetail?: any;

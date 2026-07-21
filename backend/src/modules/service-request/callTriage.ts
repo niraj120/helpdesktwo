@@ -7,10 +7,16 @@ import mongoose from "mongoose";
 import { CallIntake, RequesterType } from "../../models/CallIntake";
 import { IvrIngestLog } from "../../models/IvrIngestLog";
 import { User } from "../../models/User";
+import { Project } from "../../models/Project";
+import PsrTable from "../../models/psr/PsrTable";
 import { createServiceRequest } from "./createServiceRequest";
 import { SrError } from "./serviceRequestService";
 import { applyProjectScope, ProjectScope } from "../../utils/projectScope";
-import { assignMissedCall } from "./services/ivrAgentAssignment";
+import {
+  assignMissedCall,
+  assignAnsweredCall,
+} from "./services/ivrAgentAssignment";
+import { correlateOutboundWebhook } from "./services/clickToCall";
 
 const oid = (id: string) => new mongoose.Types.ObjectId(id);
 
@@ -42,18 +48,119 @@ export interface IngestCallInput {
   receivedAt?: string | Date;
 }
 
-/** Match a caller mobile to an existing user/parent in the project. */
-async function matchCaller(projectId: string, mobile: string) {
+export interface CallerMatch {
+  /** Set only when the match resolves to a helpdesk User. */
+  userId?: mongoose.Types.ObjectId;
+  registered: boolean;
+  callerName?: string;
+  schoolName?: string;
+  studentCount?: number;
+  source: "psr" | "user";
+}
+
+/** Read the project's PSR parent-lookup config (psr_tbl_* + column mapping). */
+async function getParentLookupConfig(projectId: string): Promise<
+  | {
+      tableId: string;
+      mobileColumns: string[];
+      nameColumn?: string;
+      schoolColumn?: string;
+      studentCountColumn?: string;
+    }
+  | null
+> {
+  const project: any = await Project.findById(projectId)
+    .select("configuration.sr.intake.ivr.parentLookup configuration.sr.ivr.parentLookup")
+    .lean();
+  const cfg =
+    project?.configuration?.sr?.intake?.ivr?.parentLookup ??
+    project?.configuration?.sr?.ivr?.parentLookup;
+  if (!cfg?.enabled || !cfg?.tableId) return null;
+  const mobileColumns = Array.isArray(cfg.mobileColumns)
+    ? cfg.mobileColumns.filter(Boolean)
+    : [];
+  if (!mobileColumns.length) return null;
+  return {
+    tableId: String(cfg.tableId),
+    mobileColumns,
+    nameColumn: cfg.nameColumn || undefined,
+    schoolColumn: cfg.schoolColumn || undefined,
+    studentCountColumn: cfg.studentCountColumn || undefined,
+  };
+}
+
+/** Match against the PSR-builder parent table (psr_tbl_*), if configured. */
+async function matchCallerInPsrTable(
+  projectId: string,
+  norm: string,
+): Promise<CallerMatch | null> {
+  const cfg = await getParentLookupConfig(projectId);
+  if (!cfg) return null;
+
+  const table: any = await PsrTable.findById(cfg.tableId).lean();
+  if (!table?.targetCollection) return null;
+
+  const col = mongoose.connection.collection(table.targetCollection);
+  const rx = new RegExp(`${norm}$`);
+  const row = await col.findOne({
+    $or: cfg.mobileColumns.map((c) => ({ [c]: rx })),
+  } as any);
+  if (!row) return null;
+
+  const count = cfg.studentCountColumn
+    ? Number(row[cfg.studentCountColumn])
+    : undefined;
+  return {
+    registered: true,
+    source: "psr",
+    callerName: cfg.nameColumn ? s(row[cfg.nameColumn]) : undefined,
+    schoolName: cfg.schoolColumn ? s(row[cfg.schoolColumn]) : undefined,
+    studentCount: Number.isFinite(count) ? count : undefined,
+  };
+}
+
+/**
+ * Match a caller mobile to a registered parent. Prefers the PSR-builder parent
+ * table (where registered parents actually live); falls back to the User
+ * collection. Returns enriched details (name/school) for populating the call.
+ */
+async function matchCaller(
+  projectId: string,
+  mobile: string,
+): Promise<CallerMatch | null> {
   if (!mobile) return null;
   const norm = mobile.replace(/\D/g, "").slice(-10); // last 10 digits
   if (!norm) return null;
+
+  // 1) PSR parent table (config-driven).
+  try {
+    const psr = await matchCallerInPsrTable(projectId, norm);
+    if (psr) return psr;
+  } catch (e) {
+    console.error("[ivr] PSR parent lookup failed:", e);
+  }
+
+  // 2) Fall back to a helpdesk User record.
   const rx = new RegExp(`${norm}$`);
-  return User.findOne({
+  const user: any = await User.findOne({
     $or: [{ mobile: rx }, { parentMobile: rx }, { phone: rx }],
     projects: projectId,
   })
-    .select("_id")
+    .select("_id firstName lastName name schoolName")
     .lean();
+  if (!user) return null;
+
+  const fullName =
+    s(user.name) ||
+    [s(user.firstName), s(user.lastName)].filter(Boolean).join(" ") ||
+    undefined;
+  return {
+    userId: user._id,
+    registered: true,
+    source: "user",
+    callerName: fullName,
+    schoolName: s(user.schoolName),
+  };
 }
 
 export async function ingestCall(input: IngestCallInput) {
@@ -68,9 +175,9 @@ export async function ingestCall(input: IngestCallInput) {
     provider: input.provider || "manual",
     uuid: input.uuid,
     callToNumber: input.callToNumber,
-    callerName: input.callerName,
+    callerName: input.callerName || matched?.callerName,
     callerMobile: input.callerMobile,
-    schoolName: input.schoolName,
+    schoolName: input.schoolName || matched?.schoolName,
     callType: input.callType || "answered",
     direction: input.direction,
     startStamp: input.startStamp ? new Date(input.startStamp) : undefined,
@@ -92,7 +199,8 @@ export async function ingestCall(input: IngestCallInput) {
       : undefined,
     receivedAt: input.receivedAt ? new Date(input.receivedAt) : new Date(),
     registered: !!matched,
-    studentUserId: matched ? (matched._id as any) : undefined,
+    studentUserId: matched?.userId,
+    studentCount: matched?.studentCount,
     requesterType: matched ? "existing_parent" : undefined,
     callStatus: "new",
     status: "open",
@@ -104,6 +212,13 @@ export async function ingestCall(input: IngestCallInput) {
       await assignMissedCall(call);
     } catch (e) {
       console.error("[ivr] round-robin assign failed:", e);
+    }
+  } else if (call.callType === "answered" && !call.assignedTo) {
+    // Answered calls land in the picking agent's own list.
+    try {
+      await assignAnsweredCall(call);
+    } catch (e) {
+      console.error("[ivr] answered-call assign failed:", e);
     }
   }
   return call;
@@ -249,7 +364,13 @@ function resolveAgent(payload: any) {
       s(payload?.answered_agent_name) ||
       s(payload?.agent_name) ||
       s(fromArray?.name),
-    number: s(payload?.answered_agent_number) || s(fromArray?.number),
+    // Click-to-Call payloads use `answer_agent_number` (no "ed"); inbound uses
+    // `answered_agent_number`. Accept both.
+    number:
+      s(payload?.answered_agent_number) ||
+      s(payload?.answer_agent_number) ||
+      s(payload?.agent_number) ||
+      s(fromArray?.number),
   };
 }
 
@@ -341,8 +462,11 @@ export async function ingestSmartflowWebhook(input: {
       rawPayload: payload,
       originalProviderCallStatus: providerCallStatus,
       receivedAt: dt(payload.start_stamp) || new Date(),
+      callerName: matched?.callerName,
+      schoolName: matched?.schoolName,
+      studentCount: matched?.studentCount,
       registered: !!matched,
-      studentUserId: matched ? (matched._id as any) : undefined,
+      studentUserId: matched?.userId,
       requesterType: matched ? "existing_parent" : undefined,
       callStatus: "new",
       status: "open",
@@ -353,12 +477,40 @@ export async function ingestSmartflowWebhook(input: {
   log.callIntakeId = call._id as any;
   await log.save();
 
+  // If this webhook is the outcome of one of OUR Click-to-Call originates,
+  // stitch its terminal status back onto the CallIntake that spawned it. TATA
+  // echoes our correlation token as custom_identifier; ref_id is the fallback.
+  const customIdentifier = firstString(
+    payload.custom_identifier,
+    payload.customIdentifier,
+  );
+  const refId = firstString(payload.ref_id, payload.refId);
+  if (customIdentifier || refId) {
+    try {
+      await correlateOutboundWebhook({
+        customIdentifier,
+        refId,
+        status: call.callType === "missed" ? "missed" : "answered",
+        message: providerCallStatus,
+      });
+    } catch (e) {
+      console.error("[ivr] outbound correlation failed:", e);
+    }
+  }
+
   // Missed calls are round-robined to IVR agents (once, on first sight).
   if (call.callType === "missed" && !call.assignmentStatus) {
     try {
       await assignMissedCall(call);
     } catch (e) {
       console.error("[ivr] round-robin assign failed:", e);
+    }
+  } else if (call.callType === "answered" && !call.assignedTo) {
+    // Answered calls land in the picking agent's own list.
+    try {
+      await assignAnsweredCall(call);
+    } catch (e) {
+      console.error("[ivr] answered-call assign failed:", e);
     }
   }
   return { ignored: false, call, logId: log._id };
@@ -370,6 +522,8 @@ export interface ListCallParams {
   registered?: string; // "true" | "false" | all
   callStatus?: string; // new | assigned | converted | all
   search?: string;
+  /** Restrict to calls assigned to this user (the "My calls" tab). */
+  assignedTo?: string;
   page?: number;
   limit?: number;
   scope?: ProjectScope;
@@ -389,6 +543,7 @@ export async function listCalls(params: ListCallParams) {
   if (params.registered === "false") q.registered = false;
   if (params.callStatus && params.callStatus !== "all")
     q.callStatus = params.callStatus;
+  if (params.assignedTo) q.assignedTo = params.assignedTo;
   if (params.search) {
     const rx = new RegExp(
       params.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),

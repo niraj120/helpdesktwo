@@ -76,6 +76,22 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
     centerId: "",
   });
 
+  // When on, search the cold GCS archive (older than the hot-retention window)
+  // instead of the live collection. Requires a start + end date.
+  const [showArchive, setShowArchive] = useState(false);
+
+  // Archival controls (retention days + enable + manual run). Bucket status is
+  // read-only (env-configured); the rest are DB-backed and editable here.
+  const [archiveCfg, setArchiveCfg] = useState<{
+    bucketConfigured: boolean;
+    enabled: boolean;
+    retentionDays: number;
+  }>({ bucketConfigured: false, enabled: false, retentionDays: 90 });
+  const [showArchivePanel, setShowArchivePanel] = useState(false);
+  const [savingArchiveCfg, setSavingArchiveCfg] = useState(false);
+  const [archivingNow, setArchivingNow] = useState(false);
+  const [archiveMsg, setArchiveMsg] = useState<string | null>(null);
+
   // Separate local state for text inputs (debounced before updating filters)
   const [searchInput, setSearchInput] = useState("");
   const [entityInput, setEntityInput] = useState("");
@@ -109,7 +125,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
 
   useEffect(() => {
     fetchActivityLogs();
-  }, [page, filters]);
+  }, [page, filters, showArchive]);
 
   // Resolve the effective projectId: prop (portal context) takes priority over localStorage
   const resolveProjectId = (): string | null => {
@@ -142,6 +158,36 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
     try {
       setLoading(true);
       const token = localStorage.getItem("authToken");
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+
+      // Archive (cold) search — a date range is mandatory since GCS is
+      // partitioned by day and there is no full-collection scan.
+      if (showArchive) {
+        if (!filters.startDate || !filters.endDate) {
+          setLogs([]);
+          setTotal(0);
+          setDateError("Archive search needs both a start and end date.");
+          setLoading(false);
+          return;
+        }
+        setDateError("");
+        const params = buildFilterParams({ limit: "1000" });
+        const response = await fetch(
+          `${API_CONFIG.API_URL}/activity-logs/archive?${params}`,
+          { headers },
+        );
+        if (response.ok) {
+          const data = await response.json();
+          setLogs(data.data || []);
+          setTotal((data.data || []).length);
+        }
+        setLoading(false);
+        return;
+      }
+
       const params = buildFilterParams({
         page: page.toString(),
         limit: limit.toString(),
@@ -149,12 +195,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
 
       const response = await fetch(
         `${API_CONFIG.API_URL}/activity-logs?${params}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        },
+        { headers },
       );
 
       if (response.ok) {
@@ -166,6 +207,80 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
       console.error("Error fetching activity logs:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const authHeaders = () => ({
+    Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+    "Content-Type": "application/json",
+  });
+
+  const loadArchiveSettings = async () => {
+    try {
+      const r = await fetch(`${API_CONFIG.API_URL}/activity-logs/archive-settings`, {
+        headers: authHeaders(),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        if (d?.data) setArchiveCfg(d.data);
+      }
+    } catch {
+      /* non-fatal — panel just shows defaults */
+    }
+  };
+  useEffect(() => {
+    loadArchiveSettings();
+  }, []);
+
+  const saveArchiveSettings = async () => {
+    setSavingArchiveCfg(true);
+    setArchiveMsg(null);
+    try {
+      const r = await fetch(`${API_CONFIG.API_URL}/activity-logs/archive-settings`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          enabled: archiveCfg.enabled,
+          retentionDays: archiveCfg.retentionDays,
+        }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setArchiveMsg("Archive settings saved.");
+        if (d?.data) setArchiveCfg((c) => ({ ...c, ...d.data }));
+      } else {
+        setArchiveMsg(d?.message || "Failed to save.");
+      }
+    } catch {
+      setArchiveMsg("Failed to save.");
+    } finally {
+      setSavingArchiveCfg(false);
+    }
+  };
+
+  const runArchiveNow = async () => {
+    setArchivingNow(true);
+    setArchiveMsg(null);
+    try {
+      const r = await fetch(`${API_CONFIG.API_URL}/activity-logs/archive/run`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        const res = d?.data || {};
+        setArchiveMsg(
+          res.skippedReason
+            ? `Nothing archived: ${res.skippedReason}.`
+            : `Archived ${res.archived || 0} row(s) in ${res.batches || 0} batch(es).`,
+        );
+      } else {
+        setArchiveMsg(d?.message || "Archival run failed.");
+      }
+    } catch {
+      setArchiveMsg("Archival run failed.");
+    } finally {
+      setArchivingNow(false);
     }
   };
 
@@ -325,7 +440,14 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
 
   const formatDisplayText = (text: string) => {
     if (!text) return text;
-    return text.replace(/ticket/gi, "query").replace(/Ticket/g, "Query");
+    // Relabel "ticket" → "query" for this deployment, but only as a WHOLE word.
+    // Word boundaries stop it mangling entity names like "TicketTemplate" that
+    // the system-wide audit log now emits (canonical model names).
+    return text
+      .replace(/\bTickets\b/g, "Queries")
+      .replace(/\btickets\b/g, "queries")
+      .replace(/\bTicket\b/g, "Query")
+      .replace(/\bticket\b/g, "query");
   };
 
   const getActionColor = (action: string) => {
@@ -334,8 +456,75 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
       update: "#3b82f6",
       edit: "#3b82f6",
       delete: "#ef4444",
+      access_denied: "#f59e0b",
+      impersonate: "#a855f7",
+      impersonate_end: "#a855f7",
     };
     return colors[action] || "#6b7280";
+  };
+
+  // --- Human-friendly rendering for the "Changes Made" diff ---------------
+  // Maps raw config keys to readable labels; unmapped keys get de-camelCased.
+  const FIELD_LABEL_MAP: Record<string, string> = {
+    configuration: "",
+    settings: "",
+    sr: "Service Request",
+    isr: "Internal Service Request",
+    psr: "Parent Service Request",
+    ivr: "IVR",
+    crm: "CRM",
+    sla: "SLA",
+    ticketNumberSettings: "Ticket Numbering",
+    ticketAssignmentSettings: "Ticket Assignment",
+    ticketSubmissionSettings: "Ticket Submission",
+    offlineModuleSettings: "Offline Module",
+    offlineTicketNumbering: "Offline Ticket Numbering",
+    formSchemas: "Form Schemas",
+    parentLookup: "Parent Lookup",
+    whatsappWidget: "WhatsApp Widget",
+    securitySettings: "Security",
+    loginSettings: "Login",
+    knowledgeBaseSettings: "Knowledge Base",
+    customizationSettings: "Customization",
+    branding: "Branding",
+    modules: "Modules",
+    numbering: "Numbering",
+    reopen: "Reopen",
+    prefix: "Prefix",
+    retentionDays: "Retention Days",
+  };
+
+  const humanizeSegment = (seg: string): string => {
+    if (seg in FIELD_LABEL_MAP) return FIELD_LABEL_MAP[seg];
+    if (/^\d+$/.test(seg)) return `#${Number(seg) + 1}`; // array index → 1-based
+    return seg
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
+  };
+
+  const humanizeFieldPath = (path: string): string =>
+    String(path)
+      .split(".")
+      .map(humanizeSegment)
+      .filter(Boolean)
+      .join(" › ");
+
+  const formatChangeValue = (v: any): string => {
+    if (v === undefined) return "—";
+    if (v === null) return "(empty)";
+    if (typeof v === "string") {
+      const m = v.match(/^\[omitted: (\d+) chars/);
+      if (m) return `(large content · ${(Number(m[1]) / 1024).toFixed(1)} KB)`;
+      return v === "" ? '""' : v;
+    }
+    if (typeof v === "boolean") return v ? "Yes" : "No";
+    if (typeof v === "number") return String(v);
+    if (Array.isArray(v)) return v.length ? JSON.stringify(v) : "(empty list)";
+    if (typeof v === "object")
+      return Object.keys(v).length ? JSON.stringify(v) : "(empty)";
+    return String(v);
   };
 
   const totalPages = Math.ceil(total / limit);
@@ -478,8 +667,133 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
           >
             {exportLoading === "pdf" ? "Exporting..." : "⬇ PDF"}
           </button>
+          <button
+            onClick={() => setShowArchivePanel((v) => !v)}
+            style={{
+              padding: "8px 14px",
+              backgroundColor: showArchivePanel ? "#e0e7ff" : "#eef2ff",
+              color: "#3730a3",
+              border: "1px solid #c7d2fe",
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: 500,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            🗄 Archive
+          </button>
         </div>
       </div>
+
+      {/* Archive settings panel */}
+      {showArchivePanel && (
+        <div
+          style={{
+            backgroundColor: "white",
+            borderRadius: "8px",
+            padding: "20px",
+            marginBottom: "16px",
+            border: "1px solid #e5e7eb",
+          }}
+        >
+          <div style={{ fontSize: 15, fontWeight: 600, color: "#0f172a", marginBottom: 4 }}>
+            Audit Archival
+          </div>
+          <div style={{ fontSize: 13, color: "#64748b", marginBottom: 14 }}>
+            Move audit records older than the retention window to cloud storage so
+            the live database stays light. Archived records remain searchable via
+            the “Search archive” filter.
+          </div>
+
+          {!archiveCfg.bucketConfigured && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "#92400e",
+                background: "#fffbeb",
+                border: "1px solid #fde68a",
+                borderRadius: 6,
+                padding: "8px 12px",
+                marginBottom: 12,
+              }}
+            >
+              Cloud storage bucket is not configured on the server, so archival
+              cannot run yet. Retention can still be set.
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-end" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, fontWeight: 500 }}>
+              Archive records older than (days)
+              <input
+                type="number"
+                min={1}
+                value={archiveCfg.retentionDays}
+                onChange={(e) =>
+                  setArchiveCfg((c) => ({ ...c, retentionDays: Number(e.target.value) }))
+                }
+                style={{
+                  width: 140,
+                  padding: "8px 12px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  fontSize: 14,
+                }}
+              />
+            </label>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 500, cursor: "pointer", paddingBottom: 8 }}>
+              <input
+                type="checkbox"
+                checked={archiveCfg.enabled}
+                disabled={!archiveCfg.bucketConfigured}
+                onChange={(e) => setArchiveCfg((c) => ({ ...c, enabled: e.target.checked }))}
+              />
+              Auto-archive daily
+            </label>
+
+            <button
+              onClick={saveArchiveSettings}
+              disabled={savingArchiveCfg}
+              style={{
+                padding: "8px 16px",
+                background: savingArchiveCfg ? "#a5b4fc" : "#4f46e5",
+                color: "#fff",
+                border: "none",
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: savingArchiveCfg ? "default" : "pointer",
+              }}
+            >
+              {savingArchiveCfg ? "Saving…" : "Save"}
+            </button>
+
+            <button
+              onClick={runArchiveNow}
+              disabled={archivingNow || !archiveCfg.bucketConfigured}
+              title="Run an archival pass now using the current settings"
+              style={{
+                padding: "8px 16px",
+                background: "#ecfeff",
+                color: "#0e7490",
+                border: "1px solid #a5f3fc",
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: archivingNow || !archiveCfg.bucketConfigured ? "not-allowed" : "pointer",
+              }}
+            >
+              {archivingNow ? "Archiving…" : "Archive now"}
+            </button>
+          </div>
+
+          {archiveMsg && (
+            <div style={{ marginTop: 12, fontSize: 13, color: "#047857" }}>{archiveMsg}</div>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       <div
@@ -663,6 +977,31 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
                 {dateError}
               </p>
             )}
+          </div>
+
+          {/* Archive (cold storage) toggle */}
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: "13px",
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+              title="Search records moved to long-term GCS archive. Requires a date range."
+            >
+              <input
+                type="checkbox"
+                checked={showArchive}
+                onChange={(e) => {
+                  setShowArchive(e.target.checked);
+                  setPage(1);
+                }}
+              />
+              Search archive (older records)
+            </label>
           </div>
 
           {/* Center filter — shown only when centerOptions available (portal context) */}
@@ -951,7 +1290,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
                       }}
                     >
                       <div style={{ fontWeight: 500, color: "#1f2937" }}>
-                        {formatDisplayText(log.entity)}
+                        {formatDisplayText(humanizeSegment(log.entity))}
                       </div>
                       {log.entityName && (
                         <div style={{ fontSize: "12px", color: "#6b7280" }}>
@@ -1198,7 +1537,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
                   Entity
                 </div>
                 <div style={{ fontSize: "14px", color: "#1f2937" }}>
-                  {formatDisplayText(selectedLog.entity)}
+                  {formatDisplayText(humanizeSegment(selectedLog.entity))}
                   {selectedLog.entityId && (
                     <span style={{ color: "#6b7280" }}>
                       {" "}
@@ -1273,7 +1612,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
                             marginBottom: "4px",
                           }}
                         >
-                          {change.field}
+                          {humanizeFieldPath(change.field)}
                         </div>
                         <div
                           style={{
@@ -1281,14 +1620,15 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
                             gap: "8px",
                             alignItems: "center",
                             fontSize: "13px",
+                            flexWrap: "wrap",
                           }}
                         >
-                          <span style={{ color: "#ef4444" }}>
-                            {JSON.stringify(change.oldValue)}
+                          <span style={{ color: "#ef4444", wordBreak: "break-word" }}>
+                            {formatChangeValue(change.oldValue)}
                           </span>
                           <span style={{ color: "#6b7280" }}>→</span>
-                          <span style={{ color: "#10b981" }}>
-                            {JSON.stringify(change.newValue)}
+                          <span style={{ color: "#10b981", wordBreak: "break-word" }}>
+                            {formatChangeValue(change.newValue)}
                           </span>
                         </div>
                       </div>

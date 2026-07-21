@@ -8,7 +8,6 @@ import { Center } from "../models/Center";
 import { hrmsService } from "../services/hrmsService";
 import { resolveRoleFromHRMS } from "../services/roleMappingService";
 import mongoose from "mongoose";
-import { logActivity } from "../utils/logger";
 import { validatePasswordPolicy } from "../utils/passwordPolicyUtils";
 import ExcelJS from "exceljs";
 import multer from "multer";
@@ -518,6 +517,7 @@ export const createUser = async (
       payrollType: payrollType || null,
       company: company || null,
       isIvrAgent: !!isIvrAgent,
+      tataAgentNumber: req.body.tataAgentNumber || undefined,
     };
 
     // Store departmentRef if provided (ObjectId from dropdown)
@@ -682,42 +682,6 @@ export const createUser = async (
     delete userResponse.resetPasswordOTP;
     delete userResponse.resetPasswordOTPExpires;
 
-    // Log activity
-    try {
-      const currentUser = (req as any).user;
-      if (currentUser) {
-        const projectNames =
-          user.projects &&
-          Array.isArray(user.projects) &&
-          user.projects.length > 0
-            ? (user.projects as any[]).map((p) => p.name || p).join(", ")
-            : "No projects";
-        const projectIds =
-          user.projects &&
-          Array.isArray(user.projects) &&
-          user.projects.length > 0
-            ? (user.projects as any[])[0]._id || (user.projects as any[])[0]
-            : undefined;
-
-        await logActivity({
-          userId: currentUser.userId,
-          userName:
-            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
-          userEmail: currentUser.email,
-          action: "create",
-          entity: "user",
-          entityId: user._id.toString(),
-          entityName: `${user.firstName} ${user.lastName}`,
-          projectId: projectIds?.toString(),
-          projectName: projectNames,
-          description: `User ${user.email} created with role ${(user.role as any)?.name || "N/A"}`,
-          req,
-          metadata: { employeeCode: user.employeeCode, syncFromHRMS },
-        });
-      }
-    } catch (logError) {
-      console.error("Failed to log activity:", logError);
-    }
 
     res.status(201).json({
       success: true,
@@ -900,6 +864,8 @@ export const updateUser = async (
     if (company !== undefined) (user as any).company = company || null;
     if (req.body.isIvrAgent !== undefined)
       (user as any).isIvrAgent = !!req.body.isIvrAgent;
+    if (req.body.tataAgentNumber !== undefined)
+      (user as any).tataAgentNumber = req.body.tataAgentNumber || undefined;
 
     // Handle hierarchy mapping when reportingManager changes
     if (reportingManager !== undefined) {
@@ -979,59 +945,6 @@ export const updateUser = async (
     delete userResponse.resetPasswordOTP;
     delete userResponse.resetPasswordOTPExpires;
 
-    // Log activity
-    try {
-      const currentUser = (req as any).user;
-      if (currentUser) {
-        const projectNames =
-          user.projects &&
-          Array.isArray(user.projects) &&
-          user.projects.length > 0
-            ? (user.projects as any[]).map((p) => p.name || p).join(", ")
-            : "No projects";
-        const projectIds =
-          user.projects &&
-          Array.isArray(user.projects) &&
-          user.projects.length > 0
-            ? (user.projects as any[])[0]._id || (user.projects as any[])[0]
-            : undefined;
-
-        // Track changes
-        const changes = [];
-        if (firstName !== undefined)
-          changes.push({
-            field: "firstName",
-            oldValue: user.firstName,
-            newValue: firstName,
-          });
-        if (lastName !== undefined)
-          changes.push({
-            field: "lastName",
-            oldValue: user.lastName,
-            newValue: lastName,
-          });
-        if (role !== undefined)
-          changes.push({ field: "role", oldValue: user.role, newValue: role });
-
-        await logActivity({
-          userId: currentUser.userId,
-          userName:
-            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
-          userEmail: currentUser.email,
-          action: "update",
-          entity: "user",
-          entityId: user._id.toString(),
-          entityName: `${user.firstName} ${user.lastName}`,
-          projectId: projectIds?.toString(),
-          projectName: projectNames,
-          changes: changes.length > 0 ? changes : undefined,
-          description: `User ${user.email} updated`,
-          req,
-        });
-      }
-    } catch (logError) {
-      console.error("Failed to log activity:", logError);
-    }
 
     res.json({
       success: true,
@@ -1079,36 +992,7 @@ export const deleteUser = async (
       }
     }
 
-    // Store user data before deletion for logging
-    const deletedUserData = {
-      id: user._id.toString(),
-      name: `${user.firstName} ${user.lastName}`,
-      email: user.email,
-      projects: user.projects,
-    };
-
     await User.findByIdAndDelete(id);
-
-    // Log activity
-    try {
-      const currentUser = (req as any).user;
-      if (currentUser) {
-        await logActivity({
-          userId: currentUser.userId,
-          userName:
-            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
-          userEmail: currentUser.email,
-          action: "delete",
-          entity: "user",
-          entityId: deletedUserData.id,
-          entityName: deletedUserData.name,
-          description: `User ${deletedUserData.email} deleted`,
-          req,
-        });
-      }
-    } catch (logError) {
-      console.error("Failed to log activity:", logError);
-    }
 
     res.json({
       success: true,
@@ -2576,24 +2460,6 @@ export const bulkCreateUsers = async (
     const created = results.filter((r) => r.status === "created").length;
     const failed = results.filter((r) => r.status === "failed").length;
 
-    // Log activity
-    try {
-      const currentUser = (req as any).user;
-      if (currentUser) {
-        await logActivity({
-          userId: currentUser.userId,
-          userName:
-            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
-          userEmail: currentUser.email,
-          action: "create",
-          entity: "user",
-          description: `Bulk created ${created} users (${failed} failed) from Excel upload`,
-          metadata: { created, failed, totalRows: results.length },
-        });
-      }
-    } catch (logErr) {
-      console.error("Failed to log bulk create activity:", logErr);
-    }
 
     res.json({
       success: true,

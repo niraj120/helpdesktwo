@@ -40,6 +40,13 @@ router.post(
   c.testLeadCrmConfig,
 );
 
+// Test PSR entity-scope routing: resolve owners for a { school, grade, subject } tuple
+router.post(
+  "/config/test-psr-routing",
+  checkPermission("SR_CONFIG_MANAGE"),
+  c.testPsrRouting,
+);
+
 // Recompute open SR TATs against the working calendar (#13)
 router.post(
   "/recompute-tat",

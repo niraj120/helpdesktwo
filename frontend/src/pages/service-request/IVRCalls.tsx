@@ -113,6 +113,7 @@ const IVRCalls: React.FC<{
   const [projectId, setProjectId] = useState(currentProjectId || "");
   const [callType, setCallType] = useState("all");
   const [registered, setRegistered] = useState("all");
+  const [mine, setMine] = useState(false);
   const [rows, setRows] = useState<Call[]>([]);
   const knownRowIdsRef = useRef<Set<string>>(new Set());
   const hasLoadedRowsRef = useRef(false);
@@ -186,6 +187,7 @@ const IVRCalls: React.FC<{
         projectId: projectId || undefined,
         callType,
         registered,
+        assignedTo: mine ? "me" : undefined,
       });
       const items = r.items || [];
       rememberRows(items, options?.silent);
@@ -194,7 +196,7 @@ const IVRCalls: React.FC<{
       console.error(e);
       setRows([]);
     }
-  }, [callType, projectId, registered, rememberRows]);
+  }, [callType, projectId, registered, mine, rememberRows]);
   useEffect(() => {
     load();
   }, [load]);
@@ -334,6 +336,28 @@ const IVRCalls: React.FC<{
     }
   };
 
+  const [calling, setCalling] = useState<string | null>(null);
+  const clickToCall = async (call: Call) => {
+    if (!call.callerMobile) {
+      setMsg("No caller number to dial.");
+      return;
+    }
+    setCalling(call._id);
+    try {
+      const r = await serviceRequestApi.ivr.clickToCall(call._id);
+      setMsg(
+        r?.data?.message
+          ? `Calling — ${r.data.message}. Your phone will ring first.`
+          : "Call initiated. Your phone will ring first, then the caller.",
+      );
+      load();
+    } catch (e: any) {
+      setMsg(e?.response?.data?.message || "Click-to-call failed.");
+    } finally {
+      setCalling(null);
+    }
+  };
+
   const ingest = async () => {
     if (!projectId || !ingestForm.callerMobile) {
       setMsg("Select a project and enter a caller mobile.");
@@ -413,6 +437,10 @@ const IVRCalls: React.FC<{
               {t.l}
             </button>
           ))}
+          <span style={{ width: 1, background: "#e5e7eb", margin: "0 4px" }} />
+          <button style={tab(mine)} onClick={() => setMine((v) => !v)}>
+            My calls
+          </button>
           {!hideProjectSelector && (
             <select style={{ ...ctrl, marginLeft: "auto" }} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
               <option value="">All projects</option>
@@ -655,6 +683,14 @@ const IVRCalls: React.FC<{
             </div>
             <input style={{ ...ctrl, width: "100%", marginTop: 10 }} placeholder="Remark / on-call notes (optional)" value={remark} onChange={(e) => setRemark(e.target.value)} />
             <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
+              <button
+                onClick={() => clickToCall(selected)}
+                disabled={calling === selected._id || !selected.callerMobile}
+                style={srButton("primary")}
+                title="Ring your phone, then dial the caller via TATA"
+              >
+                {calling === selected._id ? "Calling…" : "📞 Call back"}
+              </button>
               {canConvert && (
                 <>
                   <button onClick={convert} style={srButton("primary")}>

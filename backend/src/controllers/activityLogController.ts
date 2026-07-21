@@ -2,6 +2,121 @@ import { Request, Response } from "express";
 import ActivityLog from "../models/ActivityLog";
 import { User } from "../models/User";
 import { AuthRequest } from "../middleware/auth";
+import {
+  readArchive,
+  isBucketConfigured,
+  runAuditArchival,
+  getEffectiveArchiveSettings,
+} from "../services/auditArchiveService";
+import {
+  AuditArchiveSettings,
+  getAuditArchiveSettings,
+} from "../models/AuditArchiveSettings";
+
+/**
+ * Read archived (cold, GCS-backed) activity logs for a date range. Used by the
+ * UI's "search archive" toggle for rows older than the hot-retention window.
+ */
+export const getArchivedActivityLogs = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    if (!isBucketConfigured()) {
+      res.json({ success: true, archived: false, data: [], message: "Archive storage is not configured." });
+      return;
+    }
+    const { startDate, endDate, entity, userEmail, limit } = req.query as any;
+    if (!startDate || !endDate) {
+      res.status(400).json({ success: false, message: "startDate and endDate are required" });
+      return;
+    }
+    const data = await readArchive({
+      start: new Date(String(startDate)),
+      end: new Date(String(endDate)),
+      entity: entity ? String(entity) : undefined,
+      userEmail: userEmail ? String(userEmail) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+    res.json({ success: true, archived: true, data, total: data.length });
+  } catch (err) {
+    console.error("[activity-log] archive read error:", err);
+    res.status(500).json({ success: false, message: "Failed to read archive" });
+  }
+};
+
+/** Current archival settings for the UI (bucket status + toggle + retention). */
+export const getArchiveSettings = async (
+  _req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const eff = await getEffectiveArchiveSettings();
+    const s = await getAuditArchiveSettings();
+    res.json({
+      success: true,
+      data: {
+        bucketConfigured: eff.bucketConfigured,
+        enabled: s.enabled,
+        retentionDays: s.retentionDays,
+        updatedAt: s.updatedAt,
+      },
+    });
+  } catch (err) {
+    console.error("[activity-log] get archive settings error:", err);
+    res.status(500).json({ success: false, message: "Failed to load settings" });
+  }
+};
+
+/** Update the archival toggle + retention window (bucket stays env-only). */
+export const updateArchiveSettings = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { enabled, retentionDays } = req.body || {};
+    const s = await getAuditArchiveSettings();
+    if (typeof enabled === "boolean") s.enabled = enabled;
+    if (retentionDays !== undefined) {
+      const n = Number(retentionDays);
+      if (!Number.isFinite(n) || n < 1) {
+        res.status(400).json({ success: false, message: "retentionDays must be a positive number" });
+        return;
+      }
+      s.retentionDays = Math.floor(n);
+    }
+    if (enabled === true && !isBucketConfigured()) {
+      res.status(400).json({
+        success: false,
+        message: "Cannot enable archival: no GCS bucket is configured (AUDIT_ARCHIVE_BUCKET).",
+      });
+      return;
+    }
+    s.updatedBy = (req.user?.userId as any) || null;
+    await s.save();
+    res.json({ success: true, data: { enabled: s.enabled, retentionDays: s.retentionDays } });
+  } catch (err) {
+    console.error("[activity-log] update archive settings error:", err);
+    res.status(500).json({ success: false, message: "Failed to save settings" });
+  }
+};
+
+/** Trigger an archival pass on demand (respects the current settings). */
+export const runArchiveNow = async (
+  _req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const result = await runAuditArchival();
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error("[activity-log] manual archive error:", err);
+    res.status(500).json({ success: false, message: "Archival run failed" });
+  }
+};
+
+// Keep the imported model referenced for side-effect registration.
+void AuditArchiveSettings;
 
 // Get all activity logs with filtering and pagination
 export const getAllActivityLogs = async (

@@ -8,7 +8,6 @@ import { Priority } from "../models/master-data/Priority";
 import SLARule from "../models/sla-module/SLARule";
 import { HierarchyConfig } from "../models/HierarchyConfig";
 import { AuthRequest } from "../middleware/auth";
-import { logActivity } from "../utils/logger";
 import { cache, CACHE_KEYS, CACHE_TTL, invalidateCache } from "../utils/cache";
 import { GCSService } from "../services/gcsService";
 
@@ -372,29 +371,6 @@ export const createProject = async (req: Request, res: Response) => {
       `✅ Created new project: ${project.name} (${project.projectId})`,
     );
 
-    // Log activity
-    try {
-      const currentUser = (req as any).user;
-      if (currentUser) {
-        await logActivity({
-          userId: currentUser.userId,
-          userName:
-            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
-          userEmail: currentUser.email,
-          action: "create",
-          entity: "project",
-          entityId: project._id.toString(),
-          entityName: project.name,
-          projectId: project._id.toString(),
-          projectName: project.name,
-          description: `Project ${project.name} (${project.code}) created`,
-          req,
-          metadata: { projectId: project.projectId, code: project.code },
-        });
-      }
-    } catch (logError) {
-      console.error("Failed to log activity:", logError);
-    }
 
     return res.status(201).json({
       success: true,
@@ -630,37 +606,6 @@ export const updateProject = async (req: Request, res: Response) => {
       invalidateCache.projectBranding(project.code.toLowerCase());
     }
 
-    // Log activity
-    try {
-      const currentUser = (req as any).user;
-      if (currentUser) {
-        const changes = Object.keys(updateData)
-          .filter((key) => !["updatedBy", "updatedAt"].includes(key))
-          .map((key) => ({
-            field: key,
-            oldValue: "previous value",
-            newValue: updateData[key],
-          }));
-
-        await logActivity({
-          userId: currentUser.userId,
-          userName:
-            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
-          userEmail: currentUser.email,
-          action: "update",
-          entity: "project",
-          entityId: project._id.toString(),
-          entityName: project.name,
-          projectId: project._id.toString(),
-          projectName: project.name,
-          changes: changes.length > 0 ? changes : undefined,
-          description: `Project ${project.name} updated`,
-          req,
-        });
-      }
-    } catch (logError) {
-      console.error("Failed to log activity:", logError);
-    }
 
     return res.json({
       success: true,
@@ -708,30 +653,6 @@ export const deleteProject = async (req: Request, res: Response) => {
       `🗑️ Deleted project: ${deletedProjectData.name} (${deletedProjectData.projectId})`,
     );
 
-    // Log activity
-    try {
-      const currentUser = (req as any).user;
-      if (currentUser) {
-        await logActivity({
-          userId: currentUser.userId,
-          userName:
-            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
-          userEmail: currentUser.email,
-          action: "delete",
-          entity: "project",
-          entityId: deletedProjectData.id,
-          entityName: deletedProjectData.name,
-          description: `Project ${deletedProjectData.name} (${deletedProjectData.code}) deleted`,
-          req,
-          metadata: {
-            projectId: deletedProjectData.projectId,
-            code: deletedProjectData.code,
-          },
-        });
-      }
-    } catch (logError) {
-      console.error("Failed to log activity:", logError);
-    }
 
     return res.json({
       success: true,

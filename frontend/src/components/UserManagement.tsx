@@ -8,6 +8,7 @@ import React, {
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "./DashboardLayout";
+import MDMConfigModal from "./MDMConfigModal";
 import { getText } from "../utils/language";
 import { mdmUserSyncApi } from "../services/mdmUserSync";
 import { usePermissions } from "../hooks/usePermissions";
@@ -294,6 +295,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
     payrollType: "" as "" | "internal" | "external",
     company: "",
     isIvrAgent: false,
+    tataAgentNumber: "",
   });
 
   // Filtered data based on primary project selection - memoized to prevent recalculation
@@ -488,6 +490,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
   // Export state
   const [exporting, setExporting] = useState(false);
   const [syncingMdm, setSyncingMdm] = useState(false);
+  // MDM auto-sync schedule config (per-source), opened from the toolbar.
+  const [showMdmSchedule, setShowMdmSchedule] = useState(false);
 
   const handleMdmSync = async () => {
     if (
@@ -1176,6 +1180,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
       payrollType: "" as "" | "internal" | "external",
       company: "",
       isIvrAgent: false,
+      tataAgentNumber: "",
     });
 
     // Fetch reporting managers for the default project (if any)
@@ -1272,6 +1277,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
           ? user.company._id
           : (user.company as unknown as string) || "",
       isIvrAgent: !!(user as any).isIvrAgent,
+      tataAgentNumber: (user as any).tataAgentNumber || "",
     });
 
     // Fetch centers for the primary project
@@ -1397,6 +1403,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
         payrollType: formData.payrollType || undefined,
         company: formData.company || undefined,
         isIvrAgent: formData.isIvrAgent,
+        tataAgentNumber: formData.tataAgentNumber || undefined,
       };
 
       if (!editingUser && formData.password) {
@@ -2494,11 +2501,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
       {/* Actions Bar */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns:
-            isTabletViewport || isMobileViewport ? "1fr" : "1fr auto",
+          display: "flex",
+          flexDirection: "column",
           gap: "16px",
-          alignItems: "start",
+          alignItems: "stretch",
           marginBottom: "16px",
           background: "#ffffff",
           borderRadius: "16px",
@@ -2516,7 +2522,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               ? "1fr"
               : "repeat(auto-fit, minmax(190px, 1fr))",
             gap: "12px",
-            alignItems: "center",
+            alignItems: "end",
           }}
         >
           {/* Search */}
@@ -2582,6 +2588,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
           </div>
 
           {/* Project Filter - parent filter */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0 }}>
+          <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+            {getText("Project", "प्रकल्प", "प्रकल्प")}
+          </label>
           <select
             value={
               allProjectsSelected
@@ -2638,8 +2648,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               </option>
             ))}
           </select>
+          </div>
 
           {/* Role Filter (depends on selected project) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0 }}>
+          <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+            {getText("Role", "भूमिका", "भूमिका")}
+          </label>
           <select
             value={
               allRolesSelected
@@ -2696,8 +2711,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               </option>
             ))}
           </select>
+          </div>
 
           {/* Status Filter (depends on selected project) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0 }}>
+          <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+            {getText("Status", "स्थिती", "स्थिती")}
+          </label>
           <select
             value={
               allStatusesSelected
@@ -2759,8 +2779,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               {getText("Inactive", "निष्क्रिय", "निष्क्रिय")}
             </option>
           </select>
+          </div>
 
           {/* Center Filter (depends on selected project) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0 }}>
+          <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+            {getText("Center", "केंद्र", "केंद्र")}
+          </label>
           <select
             value={
               allCentersSelected
@@ -2821,8 +2846,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               </option>
             ))}
           </select>
+          </div>
 
           {/* Company Filter */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0 }}>
+          <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+            {getText("Company", "कंपनी", "कंपनी")}
+          </label>
           <select
             value={filterCompany}
             onChange={(e) => setFilterCompany(e.target.value)}
@@ -2863,6 +2893,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               </option>
             ))}
           </select>
+          </div>
 
           <div
             style={{
@@ -2906,9 +2937,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
           </div>
         </div>
 
-        {/* Buttons Section */}
+        {/* Buttons Section (kept on top; filters span full width below) */}
         <div
           style={{
+            order: -1,
             display: "flex",
             gap: "12px",
             flexShrink: 0,
@@ -3049,6 +3081,32 @@ const UserManagement: React.FC<UserManagementProps> = ({
               {syncingMdm
                 ? getText("Syncing…", "सिंक हो रहा है…", "सिंक होत आहे…")
                 : getText("Sync from MDM", "MDM से सिंक", "MDM वरून सिंक")}
+            </button>
+          )}
+          {hasPermission("USER_IMPORT") && (
+            <button
+              type="button"
+              onClick={() => setShowMdmSchedule(true)}
+              title={getText(
+                "Configure automatic MDM→user sync schedule per source (runs on the server, no manual click needed)",
+                "",
+                "",
+              )}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "10px 16px",
+                borderRadius: 8,
+                border: "1.5px solid #e2e8f0",
+                background: "#fff",
+                color: "#334155",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: "pointer",
+              }}
+            >
+              ⏱ {getText("Schedule", "शेड्यूल", "वेळापत्रक")}
             </button>
           )}
           {hasPermission("USER_VIEW_ALL") && (
@@ -5365,6 +5423,57 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 />
               </div>
 
+              {formData.isIvrAgent && (
+                <div style={{ marginTop: "16px" }}>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "14px",
+                      fontWeight: "500",
+                      color: "#334155",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    {getText(
+                      "SmartFlo Agent Number",
+                      "स्मार्टफ्लो एजेंट नंबर",
+                      "स्मार्टफ्लो एजंट नंबर",
+                    )}
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.tataAgentNumber}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        tataAgentNumber: e.target.value,
+                      })
+                    }
+                    placeholder={getText(
+                      "TATA agent number rung on click-to-call (e.g. 919528961698)",
+                      "क्लिक-टू-कॉल पर टाटा एजेंट नंबर",
+                      "क्लिक-टू-कॉलवर टाटा एजंट नंबर",
+                    )}
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "6px",
+                      fontSize: "14px",
+                    }}
+                  />
+                  <div
+                    style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}
+                  >
+                    {getText(
+                      "Required for outbound Click-to-Call and answered-call auto-assignment.",
+                      "आउटबाउंड क्लिक-टू-कॉल के लिए आवश्यक।",
+                      "आउटबाउंड क्लिक-टू-कॉलसाठी आवश्यक.",
+                    )}
+                  </div>
+                </div>
+              )}
+
               {!editingUser && (
                 <div style={{ marginTop: "16px" }}>
                   <label
@@ -6221,6 +6330,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
           </div>
         </div>
       )}
+
+      {/* MDM auto-sync schedule (per-source userSync config) */}
+      <MDMConfigModal
+        isOpen={showMdmSchedule}
+        onClose={() => setShowMdmSchedule(false)}
+        canManage={hasPermission("USER_IMPORT")}
+      />
 
       {/* Bulk Upload Modal */}
       {showBulkUploadModal && (

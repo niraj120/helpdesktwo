@@ -15,6 +15,13 @@ router.use(checkPermission("IVR_AGENT_MANAGE"));
 router.get("/digits", c.getDigitConfig);
 router.put("/digits", c.setDigitConfig);
 
+// DID registry (multiple DIDs → dedicated agent(s)).
+// MUST be registered before the "/:userId" routes so "/dids" isn't captured
+// by the ":userId" param.
+router.get("/dids", c.listDids);
+router.put("/dids", c.upsertDid);
+router.delete("/dids/:didId", c.deleteDid);
+
 // Agents + mapping
 router.get("/", c.listAgents);
 router.put("/:userId", c.setAgentMapping);

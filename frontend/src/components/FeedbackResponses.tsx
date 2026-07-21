@@ -32,7 +32,7 @@ interface FeedbackResponse {
     _id: string;
     ticketNumber: string;
     subject: string;
-  };
+  } | null;
   formId: {
     _id: string;
     name: string;
@@ -362,8 +362,8 @@ const FeedbackResponses: React.FC = () => {
       });
 
       return [
-        r.ticketId.ticketNumber,
-        r.ticketId.subject,
+        r.ticketId?.ticketNumber ?? "",
+        r.ticketId?.subject ?? "",
         `${r.studentId.firstName} ${r.studentId.lastName}`,
         r.studentId.email,
         r.overallRating ?? "",
@@ -1497,7 +1497,7 @@ const FeedbackResponses: React.FC = () => {
                               borderRadius: 6,
                             }}
                           >
-                            #{response.ticketId.ticketNumber}
+                            #{response.ticketId?.ticketNumber ?? "N/A"}
                           </span>
                           <span
                             style={{
@@ -1511,7 +1511,7 @@ const FeedbackResponses: React.FC = () => {
                               maxWidth: 320,
                             }}
                           >
-                            {response.ticketId.subject}
+                            {response.ticketId?.subject ?? "(ticket deleted)"}
                           </span>
                           {response.formId?.name && (
                             <span
@@ -1683,8 +1683,8 @@ const FeedbackResponses: React.FC = () => {
                       fontFamily: FONT,
                     }}
                   >
-                    Ticket #{selectedResponse.ticketId.ticketNumber} ·{" "}
-                    {selectedResponse.ticketId.subject}
+                    Ticket #{selectedResponse.ticketId?.ticketNumber ?? "N/A"} ·{" "}
+                    {selectedResponse.ticketId?.subject ?? "(ticket deleted)"}
                   </p>
                   <div
                     style={{

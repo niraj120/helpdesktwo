@@ -27,7 +27,6 @@ import {
   sendTicketAssignedEmail,
   sendTicketCommentAddedEmail,
 } from "../utils/emailService";
-import { logActivity } from "../utils/logger";
 import { buildStudentPortalUrl } from "../utils/projectUrl";
 import { config } from "../config";
 import { initializeSLATracking } from "../services/slaHelperService";
@@ -1101,27 +1100,6 @@ export const submitTicket = async (req: Request, res: Response) => {
       }
     })();
 
-    // Log activity (non-blocking - fire and forget)
-    (async () => {
-      try {
-        await logActivity({
-          userId: studentUserId.toString(),
-          userName: studentName || "Student",
-          userEmail: studentEmail || "unknown@student.com",
-          action: "create",
-          entity: "ticket",
-          entityId: ticket._id.toString(),
-          entityName: ticket.subject,
-          projectId: projectId,
-          projectName: project.name,
-          description: `Ticket ${ticket.ticketNumber} created via online submission`,
-          req,
-          metadata: { ticketNumber: ticket.ticketNumber, source: "online" },
-        });
-      } catch (logError) {
-        console.error("Failed to log activity:", logError);
-      }
-    })();
 
     // Send email notifications to student (non-blocking - fire and forget)
     if (studentEmail) {
@@ -4068,30 +4046,6 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       // Don't fail the status update if feedback fails
     }
 
-    // Log activity
-    if (user) {
-      try {
-        const projectData = await Project.findById(ticket.metadata?.projectId);
-        await logActivity({
-          userId: user.userId,
-          userName:
-            user.name ||
-            `${user.firstName || ""} ${user.lastName || ""}`.trim(),
-          userEmail: user.email,
-          action: "update",
-          entity: "ticket",
-          entityId: ticket._id.toString(),
-          entityName: ticket.subject,
-          projectId: ticket.metadata?.projectId,
-          projectName: projectData?.name,
-          changes: [{ field: "status", oldValue: oldStatus, newValue: status }],
-          description: `Ticket ${ticket.ticketNumber} status changed from ${oldStatus} to ${status}`,
-          req,
-        });
-      } catch (logError) {
-        console.error("Failed to log activity:", logError);
-      }
-    }
 
     // Notification engine: ticket_status_changed → notify only the assignee and ticket creator
     (() => {
@@ -4238,32 +4192,6 @@ export const updateTicketCategory = async (req: Request, res: Response) => {
 
     await ticket.save();
 
-    // Log activity
-    if (user) {
-      try {
-        const projectData = await Project.findById(ticket.metadata?.projectId);
-        await logActivity({
-          userId: user.userId,
-          userName:
-            user.name ||
-            `${user.firstName || ""} ${user.lastName || ""}`.trim(),
-          userEmail: user.email,
-          action: "update",
-          entity: "ticket",
-          entityId: ticket._id.toString(),
-          entityName: ticket.subject,
-          projectId: ticket.metadata?.projectId,
-          projectName: projectData?.name,
-          changes: [
-            { field: "category", oldValue: oldCategory, newValue: category },
-          ],
-          description: `Ticket ${ticket.ticketNumber} category changed from ${oldCategory} to ${category}`,
-          req,
-        });
-      } catch (logError) {
-        console.error("Failed to log activity:", logError);
-      }
-    }
 
     return res.status(200).json({
       success: true,
@@ -4349,36 +4277,6 @@ export const updateTicketCategoryHierarchy = async (
 
     await ticket.save();
 
-    // Log activity
-    if (user) {
-      try {
-        const projectData = await Project.findById(ticket.metadata?.projectId);
-        await logActivity({
-          userId: user.userId,
-          userName:
-            user.name ||
-            `${user.firstName || ""} ${user.lastName || ""}`.trim(),
-          userEmail: user.email,
-          action: "update",
-          entity: "ticket",
-          entityId: ticket._id.toString(),
-          entityName: ticket.subject,
-          projectId: ticket.metadata?.projectId,
-          projectName: projectData?.name,
-          changes: [
-            {
-              field: "categoryHierarchy",
-              oldValue: oldHierarchy,
-              newValue: categoryHierarchy.displayPath,
-            },
-          ],
-          description: `Ticket ${ticket.ticketNumber} category hierarchy changed from "${oldHierarchy}" to "${categoryHierarchy.displayPath || "Updated"}"`,
-          req,
-        });
-      } catch (logError) {
-        console.error("Failed to log activity:", logError);
-      }
-    }
 
     return res.status(200).json({
       success: true,
@@ -4454,32 +4352,6 @@ export const updateTicketPriority = async (req: Request, res: Response) => {
 
     await ticket.save();
 
-    // Log activity
-    if (user) {
-      try {
-        const projectData = await Project.findById(ticket.metadata?.projectId);
-        await logActivity({
-          userId: user.userId,
-          userName:
-            user.name ||
-            `${user.firstName || ""} ${user.lastName || ""}`.trim(),
-          userEmail: user.email,
-          action: "update",
-          entity: "ticket",
-          entityId: ticket._id.toString(),
-          entityName: ticket.subject,
-          projectId: ticket.metadata?.projectId,
-          projectName: projectData?.name,
-          changes: [
-            { field: "priority", oldValue: oldPriority, newValue: priority },
-          ],
-          description: `Ticket ${ticket.ticketNumber} priority changed from ${oldPriority} to ${priority}`,
-          req,
-        });
-      } catch (logError) {
-        console.error("Failed to log activity:", logError);
-      }
-    }
 
     return res.status(200).json({
       success: true,
@@ -4963,38 +4835,7 @@ export const assignTicket = async (req: Request, res: Response) => {
 
     await ticket.save();
 
-    // Log activity
-    const agentName = `${agent.firstName} ${agent.lastName}`;
     const projectInfo = ticket.metadata?.projectId as any;
-
-    await logActivity({
-      userId: currentUser._id.toString(),
-      userName: `${currentUser.firstName} ${currentUser.lastName}`,
-      userEmail: currentUser.email,
-      action: "update",
-      entity: "ticket",
-      entityId: ticket._id.toString(),
-      entityName: `Ticket #${ticket.ticketNumber}`,
-      changes: [
-        {
-          field: "assignedTo",
-          oldValue: oldAssignedTo ? oldAssignedTo.toString() : "Unassigned",
-          newValue: agentName,
-        },
-      ],
-      description: `Assigned ticket #${ticket.ticketNumber} to ${agentName}`,
-      req,
-      projectId: projectInfo?._id?.toString(),
-      projectName: projectInfo?.name,
-      role: (currentUser.role as any)?.name,
-      metadata: {
-        ticketId: ticket._id.toString(),
-        ticketNumber: ticket.ticketNumber,
-        agentId: agent._id.toString(),
-        agentName: agentName,
-        agentEmail: agent.email,
-      },
-    });
 
     // Check feedback triggers for agent assignment (non-blocking)
     (async () => {
@@ -7480,31 +7321,6 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       );
     }
 
-    // Log activity
-    try {
-      const projectData = await Project.findById(projectId);
-      await logActivity({
-        userId: agent.userId,
-        userName: `${agent.firstName || ""} ${agent.lastName || ""}`.trim(),
-        userEmail: agent.email,
-        action: "create",
-        entity: "ticket",
-        entityId: ticket._id.toString(),
-        entityName: ticket.subject,
-        projectId: projectId,
-        projectName: projectData?.name,
-        description: `Offline ticket ${ticketNumber} created on behalf of ${student.firstName} ${student.lastName}`,
-        req,
-        metadata: {
-          ticketNumber,
-          source: "offline",
-          studentId,
-          resolvedAtCreation: resolvedAtCreation === "true",
-        },
-      });
-    } catch (logError) {
-      console.error("Failed to log activity:", logError);
-    }
 
     // Send email notifications (async, don't wait)
     if (student.email) {
@@ -8104,16 +7920,6 @@ export const pauseSLA = async (req: Request, res: Response) => {
 
     await ticket.save();
 
-    // Log activity
-    await logActivity({
-      action: "update",
-      entity: "Ticket",
-      entityId: ticket._id.toString(),
-      userId,
-      userName,
-      userEmail,
-      description: `SLA paused for ticket ${ticket.ticketNumber}`,
-    });
 
     return res.status(200).json({
       success: true,
@@ -8176,16 +7982,6 @@ export const resumeSLA = async (req: Request, res: Response) => {
 
     await ticket.save();
 
-    // Log activity
-    await logActivity({
-      action: "update",
-      entity: "Ticket",
-      entityId: ticket._id.toString(),
-      userId,
-      userName,
-      userEmail,
-      description: `SLA resumed for ticket ${ticket.ticketNumber}`,
-    });
 
     return res.status(200).json({
       success: true,
@@ -8247,26 +8043,7 @@ export const bulkDeleteTickets = async (req: Request, res: Response) => {
       });
     }
 
-    // Fetch tickets to log activity (limit fields for performance)
-    const tickets = await Ticket.find(
-      { _id: { $in: validIds } },
-      { ticketNumber: 1 },
-    ).lean();
-
     const result = await Ticket.deleteMany({ _id: { $in: validIds } });
-
-    // Log activity for each deleted ticket
-    for (const t of tickets) {
-      await logActivity({
-        action: "delete",
-        entity: "Ticket",
-        entityId: (t._id as any).toString(),
-        userId,
-        userName,
-        userEmail,
-        description: `Ticket ${t.ticketNumber} deleted in bulk by ${userEmail}`,
-      });
-    }
 
     return res.status(200).json({
       success: true,

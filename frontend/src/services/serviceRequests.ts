@@ -105,6 +105,11 @@ export const serviceRequestApi = {
     api
       .post(`${base}/config/test-crm`, { projectId, leadSync, payload })
       .then((r) => r.data),
+  // Test PSR entity-scope routing: resolve owners for a scope tuple
+  testPsrRouting: (projectId: string, scope: Record<string, string>) =>
+    api
+      .post(`${base}/config/test-psr-routing`, { projectId, scope })
+      .then((r) => r.data),
 
   // Recompute open SR TATs (#13)
   recomputeTat: (projectId: string) =>
@@ -154,6 +159,9 @@ export const serviceRequestApi = {
       api.post(`/ivr/calls/${id}/converted`, body).then((r) => r.data),
     resolveOnCall: (id: string, body: any) =>
       api.post(`/ivr/calls/${id}/resolve-on-call`, body).then((r) => r.data),
+    // Outbound Click-to-Call: rings the agent, then dials the caller back.
+    clickToCall: (id: string, body?: { destinationNumber?: string }) =>
+      api.post(`/ivr/calls/${id}/click-to-call`, body || {}).then((r) => r.data),
   },
 
   // Leads (admission enquiries)

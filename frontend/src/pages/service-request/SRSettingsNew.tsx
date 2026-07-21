@@ -213,9 +213,57 @@ interface SrMessages {
   responseDefault: string;
 }
 
+/** PSR entity-scope routing (school/grade/subject → teacher/HOD/principal). */
+interface RoutingDimensionCfg {
+  key: string;
+  label: string;
+  /** Portal form field id that supplies this dimension's value at submit. */
+  fieldId?: string;
+}
+interface RoutingCfg {
+  enabled: boolean;
+  dimensions: RoutingDimensionCfg[];
+  ownerMap: {
+    tableId?: string;
+    /** dimension key → owner-map table column. */
+    scopeColumns: Record<string, string>;
+    /** role key (e.g. SUBJECT_TEACHER) → owner-map table column holding the holder id. */
+    roleColumns: Record<string, string>;
+    primaryRole?: string;
+    holderResolution: { by: "employeeCode" | "email" | "userId" };
+  };
+  fallback: { mode: "category" | "role" | "user" | "none"; roleId?: string; userId?: string };
+}
+const DEFAULT_ROUTING: RoutingCfg = {
+  enabled: false,
+  dimensions: [],
+  ownerMap: { scopeColumns: {}, roleColumns: {}, holderResolution: { by: "employeeCode" } },
+  fallback: { mode: "category" },
+};
+function normalizeRouting(r: any): RoutingCfg {
+  if (!r || typeof r !== "object") return { ...DEFAULT_ROUTING };
+  return {
+    enabled: !!r.enabled,
+    dimensions: Array.isArray(r.dimensions) ? r.dimensions : [],
+    ownerMap: {
+      tableId: r.ownerMap?.tableId || undefined,
+      scopeColumns: r.ownerMap?.scopeColumns || {},
+      roleColumns: r.ownerMap?.roleColumns || {},
+      primaryRole: r.ownerMap?.primaryRole || undefined,
+      holderResolution: { by: r.ownerMap?.holderResolution?.by || "employeeCode" },
+    },
+    fallback: {
+      mode: r.fallback?.mode || "category",
+      roleId: r.fallback?.roleId || undefined,
+      userId: r.fallback?.userId || undefined,
+    },
+  };
+}
+
 interface SimpleConfig {
   psrEnabled: boolean;
   isrEnabled: boolean;
+  routing: RoutingCfg;
   numbering: {
     PSR: SrNumberingConfig;
     ISR: SrNumberingConfig;
@@ -237,6 +285,14 @@ interface SimpleConfig {
   others: ChannelConfig;
   studentPortal: ChannelConfig;
   isr: ChannelConfig;
+  ivrParentLookup: {
+    enabled: boolean;
+    tableId: string;
+    mobileColumns: string[];
+    nameColumn: string;
+    schoolColumn: string;
+    studentCountColumn: string;
+  };
 }
 
 interface SrFormSchema {
@@ -738,6 +794,7 @@ function fromBackend(cfg: any, forms: SrFormSchema[] = []): SimpleConfig {
   return {
     psrEnabled: !!cfg?.psr?.enabled,
     isrEnabled: !!cfg?.isr?.enabled,
+    routing: normalizeRouting(cfg?.psr?.workflow?.routing),
     numbering: {
       PSR: {
         prefix: cfg?.numbering?.PSR?.prefix || "PSR",
@@ -803,6 +860,16 @@ function fromBackend(cfg: any, forms: SrFormSchema[] = []): SimpleConfig {
       mkField("Subject",     "text",     true),
       mkField("Description", "textarea",  false),
     ]) },
+    ivrParentLookup: {
+      enabled: cfg?.ivr?.parentLookup?.enabled === true,
+      tableId: cfg?.ivr?.parentLookup?.tableId || "",
+      mobileColumns: Array.isArray(cfg?.ivr?.parentLookup?.mobileColumns)
+        ? cfg.ivr.parentLookup.mobileColumns
+        : [],
+      nameColumn: cfg?.ivr?.parentLookup?.nameColumn || "",
+      schoolColumn: cfg?.ivr?.parentLookup?.schoolColumn || "",
+      studentCountColumn: cfg?.ivr?.parentLookup?.studentCountColumn || "",
+    },
   };
 }
 
@@ -828,8 +895,19 @@ function toBackendPatch(s: SimpleConfig, existing: any): any {
         .map((l) => l.trim().toLowerCase())
         .filter(Boolean),
     },
-    psr: { ...existing?.psr, enabled: s.psrEnabled, intake: { ...(existing?.psr?.intake||{}), lookup: { ...(existing?.psr?.intake?.lookup||{}), source: sf?.psrTableId ? "psr_builder" : "auto", psrBuilderTableId: sf?.psrTableId||undefined } } },
+    psr: { ...existing?.psr, enabled: s.psrEnabled, intake: { ...(existing?.psr?.intake||{}), lookup: { ...(existing?.psr?.intake?.lookup||{}), source: sf?.psrTableId ? "psr_builder" : "auto", psrBuilderTableId: sf?.psrTableId||undefined } }, workflow: { ...(existing?.psr?.workflow||{}), routing: s.routing } },
     isr: { ...existing?.isr, enabled: s.isrEnabled },
+    ivr: {
+      ...(existing?.ivr || {}),
+      parentLookup: {
+        enabled: s.ivrParentLookup.enabled,
+        tableId: s.ivrParentLookup.tableId || "",
+        mobileColumns: s.ivrParentLookup.mobileColumns.filter(Boolean),
+        nameColumn: s.ivrParentLookup.nameColumn || "",
+        schoolColumn: s.ivrParentLookup.schoolColumn || "",
+        studentCountColumn: s.ivrParentLookup.studentCountColumn || "",
+      },
+    },
     crm: {
       ...(existing?.crm || {}),
       leadSync: {
@@ -881,6 +959,104 @@ const FIELD_TYPES = [
   { value: "email",    icon: "✉",  label: "Email" },
   { value: "date",     icon: "📅", label: "Date" },
 ] as const;
+
+function IvrParentLookupSection({ value, tables, onChange }: {
+  value: SimpleConfig["ivrParentLookup"];
+  tables: any[];
+  onChange: (v: SimpleConfig["ivrParentLookup"]) => void;
+}) {
+  const cols: string[] = ((tables.find((t) => String(t._id) === String(value.tableId))?.columns) || [])
+    .map((c: any) => c.as)
+    .filter(Boolean);
+  const toggleMobile = (col: string) => {
+    const has = value.mobileColumns.includes(col);
+    onChange({
+      ...value,
+      mobileColumns: has ? value.mobileColumns.filter((c) => c !== col) : [...value.mobileColumns, col],
+    });
+  };
+  const colSelect = (key: "nameColumn" | "schoolColumn" | "studentCountColumn", label: string) => (
+    <label className="flex flex-col gap-1 text-xs">
+      <span className="text-gray-600">{label}</span>
+      <select
+        className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+        value={value[key]}
+        onChange={(e) => onChange({ ...value, [key]: e.target.value })}
+      >
+        <option value="">— none —</option>
+        {cols.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+    </label>
+  );
+  return (
+    <>
+      <div className="flex items-center gap-2 px-1">
+        <span className="h-px flex-1 bg-gray-200" />
+        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">IVR Caller Lookup</p>
+        <span className="h-px flex-1 bg-gray-200" />
+      </div>
+      <p className="text-xs text-gray-500 px-1">
+        Identify inbound IVR callers against a PSR-builder parent table by their
+        mobile number, and auto-populate name / school on the call.
+      </p>
+      <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-800">
+          <input
+            type="checkbox"
+            checked={value.enabled}
+            onChange={(e) => onChange({ ...value, enabled: e.target.checked })}
+          />
+          Match callers against a PSR parent table
+        </label>
+
+        {value.enabled && (
+          <div className="space-y-3 pl-1">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-gray-600">Parent table</span>
+              <select
+                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+                value={value.tableId}
+                onChange={(e) => onChange({ ...value, tableId: e.target.value, mobileColumns: [], nameColumn: "", schoolColumn: "", studentCountColumn: "" })}
+              >
+                <option value="">— select table —</option>
+                {tables.map((t) => (
+                  <option key={t._id} value={t._id}>
+                    {t.name}{t.rowCount ? ` · ${t.rowCount.toLocaleString()} rows` : ""}
+                  </option>
+                ))}
+              </select>
+              {!tables.length && (
+                <span className="text-[10px] text-indigo-500">No tables yet — build one in Integrations → PSR Builder first.</span>
+              )}
+            </label>
+
+            {value.tableId && (
+              <>
+                <div className="text-xs text-gray-600">
+                  Mobile column(s) — a caller matches if the last 10 digits equal any of these:
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {cols.length === 0 && <span className="text-[11px] text-gray-400">This table has no columns.</span>}
+                  {cols.map((c) => (
+                    <label key={c} className={`flex items-center gap-1.5 rounded border px-2 py-1 text-xs cursor-pointer ${value.mobileColumns.includes(c) ? "border-indigo-400 bg-indigo-50" : "border-gray-300"}`}>
+                      <input type="checkbox" checked={value.mobileColumns.includes(c)} onChange={() => toggleMobile(c)} />
+                      {c}
+                    </label>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {colSelect("nameColumn", "Name column")}
+                  {colSelect("schoolColumn", "School column")}
+                  {colSelect("studentCountColumn", "Student-count column")}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
 
 function FieldRow({ field, fields, tables, masters, projectId, onChange, onDelete, canDelete }: {
   field: ChannelField; fields: ChannelField[]; tables: any[]; masters: Master[]; projectId: string; onChange: (f: ChannelField) => void; onDelete: () => void; canDelete: boolean;
@@ -1860,6 +2036,438 @@ function ChannelSection({ title, icon, desc, config, tables, masters, projectId,
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+/**
+ * PSR entity-scope routing config: declare routing dimensions (school/grade/subject)
+ * and map an owner table (mirrored from MDM) so a scope tuple resolves to the
+ * subject teacher / HOD / principal. Drives L1 assignment + escalation (Phase C).
+ */
+const ROUTING_ROLE_PRESETS = ["SUBJECT_TEACHER", "HOD", "PRINCIPAL", "CLUSTER_HEAD"];
+
+const PsrRoutingSection: React.FC<{
+  value: RoutingCfg;
+  onChange: (r: RoutingCfg) => void;
+  tables: any[];
+  roles: any[];
+  portalFields: ChannelField[];
+  projectId: string;
+}> = ({ value, onChange, tables, roles, portalFields, projectId }) => {
+  const [test, setTest] = useState<Record<string, string>>({});
+  const [testRes, setTestRes] = useState<any>(null);
+  const [testing, setTesting] = useState(false);
+
+  const table = tables.find((t) => String(t._id) === String(value.ownerMap.tableId));
+  const columns: string[] = (table?.columns || [])
+    .map((c: any) => c.as)
+    .filter(Boolean);
+
+  const patch = (p: Partial<RoutingCfg>) => onChange({ ...value, ...p });
+  const patchOwner = (p: Partial<RoutingCfg["ownerMap"]>) =>
+    onChange({ ...value, ownerMap: { ...value.ownerMap, ...p } });
+  const patchFallback = (p: Partial<RoutingCfg["fallback"]>) =>
+    onChange({ ...value, fallback: { ...value.fallback, ...p } });
+
+  // Dimensions
+  const setDim = (i: number, p: Partial<RoutingDimensionCfg>) => {
+    const d = [...value.dimensions];
+    d[i] = { ...d[i], ...p };
+    patch({ dimensions: d });
+  };
+  const addDim = () =>
+    patch({ dimensions: [...value.dimensions, { key: "", label: "" }] });
+  const delDim = (i: number) => {
+    const removed = value.dimensions[i];
+    const d = value.dimensions.filter((_, x) => x !== i);
+    const sc = { ...value.ownerMap.scopeColumns };
+    if (removed?.key) delete sc[removed.key];
+    onChange({ ...value, dimensions: d, ownerMap: { ...value.ownerMap, scopeColumns: sc } });
+  };
+  const setScopeCol = (key: string, col: string) =>
+    patchOwner({ scopeColumns: { ...value.ownerMap.scopeColumns, [key]: col } });
+
+  // Role columns (Record<roleKey, column>), edited as an ordered list.
+  const roleRows = Object.entries(value.ownerMap.roleColumns) as [string, string][];
+  const commitRoles = (rows: [string, string][], primary?: string) => {
+    const rc: Record<string, string> = {};
+    rows.forEach(([k, c]) => {
+      if (k) rc[k] = c;
+    });
+    patchOwner({
+      roleColumns: rc,
+      primaryRole: primary !== undefined ? primary : value.ownerMap.primaryRole,
+    });
+  };
+  const setRoleKey = (i: number, key: string) => {
+    const rows = roleRows.map((r, x) => (x === i ? ([key, r[1]] as [string, string]) : r));
+    commitRoles(rows);
+  };
+  const setRoleCol = (i: number, col: string) => {
+    const rows = roleRows.map((r, x) => (x === i ? ([r[0], col] as [string, string]) : r));
+    commitRoles(rows);
+  };
+  const addRole = (preset?: string) => {
+    const key = preset && !value.ownerMap.roleColumns[preset] ? preset : "";
+    commitRoles([...roleRows, [key, ""]]);
+  };
+  const delRole = (i: number) => {
+    const removed = roleRows[i];
+    const rows = roleRows.filter((_, x) => x !== i);
+    const primary =
+      value.ownerMap.primaryRole === removed?.[0] ? undefined : value.ownerMap.primaryRole;
+    commitRoles(rows, primary);
+  };
+
+  const dropdownFields = portalFields.filter(
+    (f) => f.type === "dropdown" || f.type === "search",
+  );
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestRes(null);
+    try {
+      const r = await serviceRequestApi.testPsrRouting(projectId, test);
+      setTestRes(r?.data || r);
+    } catch (e: any) {
+      setTestRes({ error: e?.response?.data?.message || "Test failed" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const sel = "rounded-md border border-gray-300 px-2 py-1 text-xs";
+  const inp = "rounded-md border border-gray-300 px-2 py-1 text-xs";
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-gray-800">
+            Entity Routing (school / grade / subject → teacher)
+          </p>
+          <p className="text-xs text-gray-500">
+            Route PSRs to the owning staff using the parent's selected combination,
+            resolved from an MDM-mirrored table. Escalation (teacher → HOD → principal)
+            uses the same map.
+          </p>
+        </div>
+        <Toggle
+          checked={value.enabled}
+          onChange={(v) => patch({ enabled: v })}
+          label={value.enabled ? "On" : "Off"}
+        />
+      </div>
+
+      {value.enabled && (
+        <div className="mt-4 space-y-5">
+          {/* Owner map table + holder resolution */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-600">
+                Owner-map table (mirrored from MDM)
+              </span>
+              <select
+                className={sel}
+                value={value.ownerMap.tableId || ""}
+                onChange={(e) => patchOwner({ tableId: e.target.value || undefined })}
+              >
+                <option value="">— select PSR Builder table —</option>
+                {tables.map((t) => (
+                  <option key={t._id} value={t._id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-600">
+                Owner column holds a…
+              </span>
+              <select
+                className={sel}
+                value={value.ownerMap.holderResolution.by}
+                onChange={(e) =>
+                  patchOwner({ holderResolution: { by: e.target.value as any } })
+                }
+              >
+                <option value="employeeCode">Employee code</option>
+                <option value="email">Email</option>
+                <option value="userId">Helpdesk User ID</option>
+              </select>
+            </label>
+          </div>
+
+          {/* Dimensions */}
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-700">
+                Routing dimensions
+              </span>
+              <button
+                type="button"
+                className="text-xs font-medium text-indigo-600 hover:underline"
+                onClick={addDim}
+              >
+                + Add dimension
+              </button>
+            </div>
+            {!value.dimensions.length && (
+              <p className="text-xs text-gray-400">
+                Add the fields that decide the owner, e.g. School, Grade, Subject.
+              </p>
+            )}
+            <div className="space-y-2">
+              {value.dimensions.map((d, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-1 items-center gap-2 rounded-md border border-gray-100 bg-gray-50 p-2 sm:grid-cols-[1fr_1fr_1fr_1fr_auto]"
+                >
+                  <input
+                    className={inp}
+                    placeholder="Label (School)"
+                    value={d.label}
+                    onChange={(e) => setDim(i, { label: e.target.value })}
+                  />
+                  <input
+                    className={inp}
+                    placeholder="key (school)"
+                    value={d.key}
+                    onChange={(e) =>
+                      setDim(i, { key: e.target.value.trim().toLowerCase().replace(/\s+/g, "_") })
+                    }
+                  />
+                  <select
+                    className={sel}
+                    value={d.fieldId || ""}
+                    onChange={(e) => setDim(i, { fieldId: e.target.value || undefined })}
+                    title="Form field the parent picks this from"
+                  >
+                    <option value="">— form field —</option>
+                    {dropdownFields.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className={sel}
+                    value={value.ownerMap.scopeColumns[d.key] || ""}
+                    onChange={(e) => setScopeCol(d.key, e.target.value)}
+                    disabled={!d.key || !columns.length}
+                    title="Column in the owner-map table to match on"
+                  >
+                    <option value="">— map column —</option>
+                    {columns.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="text-xs text-red-500 hover:underline"
+                    onClick={() => delDim(i)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Role columns */}
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-700">
+                Owner roles (ladder)
+              </span>
+              <div className="flex gap-2">
+                {ROUTING_ROLE_PRESETS.filter(
+                  (p) => !value.ownerMap.roleColumns[p],
+                ).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className="text-xs font-medium text-indigo-600 hover:underline"
+                    onClick={() => addRole(p)}
+                  >
+                    + {p}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="text-xs font-medium text-indigo-600 hover:underline"
+                  onClick={() => addRole()}
+                >
+                  + Custom
+                </button>
+              </div>
+            </div>
+            {!roleRows.length && (
+              <p className="text-xs text-gray-400">
+                Map each ladder role to the column holding that person's id. Mark the
+                primary (L1) owner.
+              </p>
+            )}
+            <div className="space-y-2">
+              {roleRows.map(([k, c], i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-1 items-center gap-2 rounded-md border border-gray-100 bg-gray-50 p-2 sm:grid-cols-[1fr_1fr_auto_auto]"
+                >
+                  <input
+                    className={inp}
+                    placeholder="ROLE_KEY (SUBJECT_TEACHER)"
+                    value={k}
+                    onChange={(e) =>
+                      setRoleKey(i, e.target.value.trim().toUpperCase().replace(/\s+/g, "_"))
+                    }
+                  />
+                  <select
+                    className={sel}
+                    value={c}
+                    onChange={(e) => setRoleCol(i, e.target.value)}
+                    disabled={!columns.length}
+                  >
+                    <option value="">— holder column —</option>
+                    {columns.map((col) => (
+                      <option key={col} value={col}>
+                        {col}
+                      </option>
+                    ))}
+                  </select>
+                  <label className="flex items-center gap-1 text-xs text-gray-600">
+                    <input
+                      type="radio"
+                      name="primaryRole"
+                      checked={value.ownerMap.primaryRole === k}
+                      onChange={() => patchOwner({ primaryRole: k })}
+                      disabled={!k}
+                    />
+                    Primary
+                  </label>
+                  <button
+                    type="button"
+                    className="text-xs text-red-500 hover:underline"
+                    onClick={() => delRole(i)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Fallback */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-600">
+                When no owner matches
+              </span>
+              <select
+                className={sel}
+                value={value.fallback.mode}
+                onChange={(e) => patchFallback({ mode: e.target.value as any })}
+              >
+                <option value="category">Fall back to category assignment</option>
+                <option value="role">Assign to a role</option>
+                <option value="user">Assign to a user</option>
+                <option value="none">Leave unassigned</option>
+              </select>
+            </label>
+            {value.fallback.mode === "role" && (
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-gray-600">Fallback role</span>
+                <select
+                  className={sel}
+                  value={value.fallback.roleId || ""}
+                  onChange={(e) => patchFallback({ roleId: e.target.value || undefined })}
+                >
+                  <option value="">— select role —</option>
+                  {roles.map((r) => (
+                    <option key={r._id} value={r._id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {value.fallback.mode === "user" && (
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-gray-600">
+                  Fallback user id
+                </span>
+                <input
+                  className={inp}
+                  placeholder="Helpdesk User ID"
+                  value={value.fallback.userId || ""}
+                  onChange={(e) => patchFallback({ userId: e.target.value || undefined })}
+                />
+              </label>
+            )}
+          </div>
+
+          {/* Test */}
+          <div className="rounded-md border border-indigo-100 bg-indigo-50/40 p-3">
+            <p className="mb-2 text-xs font-semibold text-indigo-700">
+              Test resolution
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              {value.dimensions
+                .filter((d) => d.key)
+                .map((d) => (
+                  <label key={d.key} className="flex flex-col gap-1">
+                    <span className="text-[11px] text-gray-500">{d.label || d.key}</span>
+                    <input
+                      className={inp}
+                      value={test[d.key] || ""}
+                      onChange={(e) => setTest({ ...test, [d.key]: e.target.value })}
+                      placeholder={d.key}
+                    />
+                  </label>
+                ))}
+              <button
+                type="button"
+                className="rounded-md bg-indigo-600 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+                onClick={runTest}
+                disabled={testing || !value.dimensions.some((d) => d.key)}
+              >
+                {testing ? "Testing…" : "Resolve"}
+              </button>
+            </div>
+            {testRes && (
+              <div className="mt-2 text-xs">
+                {testRes.error ? (
+                  <span className="text-red-600">{testRes.error}</span>
+                ) : (
+                  <div className="space-y-1">
+                    <div>
+                      {testRes.matched ? (
+                        <span className="font-medium text-green-700">✓ Matched a row</span>
+                      ) : (
+                        <span className="font-medium text-amber-600">
+                          No matching row
+                        </span>
+                      )}
+                    </div>
+                    {testRes.owners &&
+                      Object.entries(testRes.owners).map(([rk, uid]) => (
+                        <div key={rk} className="text-gray-600">
+                          {rk}: {uid ? String(uid) : "—"}{" "}
+                          <span className="text-gray-400">
+                            (holder: {String(testRes.holders?.[rk] ?? "—")})
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+};
+
 const SRSettingsNew: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1867,6 +2475,7 @@ const SRSettingsNew: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [backendCfg, setBackendCfg] = useState<any>(null);
   const [cfg, setCfg] = useState<SimpleConfig>({
     psrEnabled: false, isrEnabled: false,
+    routing: { ...DEFAULT_ROUTING },
     numbering: {
       PSR: {
         prefix: "PSR",
@@ -1917,6 +2526,14 @@ const SRSettingsNew: React.FC<{ projectId: string }> = ({ projectId }) => {
       mkField("Subject",     "text",     true),
       mkField("Description", "textarea",  false),
     ]},
+    ivrParentLookup: {
+      enabled: false,
+      tableId: "",
+      mobileColumns: [],
+      nameColumn: "",
+      schoolColumn: "",
+      studentCountColumn: "",
+    },
   });
   const [tables, setTables] = useState<any[]>([]);
   const [masters, setMasters] = useState<Master[]>([]);
@@ -2347,6 +2964,21 @@ const SRSettingsNew: React.FC<{ projectId: string }> = ({ projectId }) => {
       <ChannelSection title="Student / Parent Self-Service Form" icon="🎓"
         desc="Student or parent fills this form directly on the portal URL"
         config={cfg.studentPortal} tables={tables} masters={masters} projectId={projectId} onChange={set("studentPortal")} />
+
+      {/* IVR caller identification against a PSR parent table */}
+      <IvrParentLookupSection value={cfg.ivrParentLookup} tables={tables} onChange={set("ivrParentLookup")} />
+
+      {/* PSR entity-scope routing (school/grade/subject → teacher/HOD/principal) */}
+      {cfg.psrEnabled && (
+        <PsrRoutingSection
+          value={cfg.routing}
+          onChange={(routing) => setCfg((c) => ({ ...c, routing }))}
+          tables={tables}
+          roles={roles}
+          portalFields={cfg.studentPortal.fields}
+          projectId={projectId}
+        />
+      )}
 
       {/* Phone preview: docked to the right whitespace on wide screens, inline below the form otherwise. */}
       {cfg.studentPortal.enabled && (

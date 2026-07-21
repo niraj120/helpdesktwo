@@ -12,6 +12,10 @@ import compression from "compression";
 import { createServer } from "http";
 import { Server } from "socket.io";
 
+// Register the global audit plugin BEFORE any model compiles, so every schema
+// is audited automatically (mongoose.plugin only affects later-created schemas).
+import "./bootstrap/auditBootstrap";
+
 // Import all models FIRST to ensure they're registered before controllers use them
 import "./models/Category";
 import "./models/HierarchyConfig";
@@ -62,6 +66,7 @@ import { connectDB } from "./config/database";
 import { ensureWebPushConfiguredAsync } from "./services/webPushService";
 import { errorHandler } from "./middleware/errorHandler";
 import { notFound } from "./middleware/notFound";
+import { auditContext } from "./middleware/auditContext";
 import authRoutes from "./routes/auth";
 import projectAuthRoutes from "./routes/projectAuth";
 import studentAuthRoutes from "./routes/studentAuth";
@@ -168,6 +173,8 @@ import { emailPollingService } from "./services/emailPollingService";
 import { emailProcessingWorker } from "./services/emailProcessingWorker";
 import { autoEscalationService } from "./services/autoEscalationService";
 import { srWipScheduler } from "./modules/service-request/services/srWipScheduler";
+import { startAuditArchivalScheduler } from "./services/auditArchiveService";
+import { flushAudit } from "./plugins/auditWriter";
 import { registerPhase1Handlers } from "./services/widgetHandlers/phase1Handlers";
 import { registerPhase2Handlers } from "./services/widgetHandlers/phase2Handlers";
 import { registerPhase3Handlers } from "./services/widgetHandlers/phase3Handlers";
@@ -345,6 +352,10 @@ if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
 }
 
+// Bind the per-request audit context (AsyncLocalStorage) before any route, so
+// the global mongoose audit plugin can attribute every mutation to the actor.
+app.use(auditContext);
+
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/auth/project", projectAuthRoutes); // Agent login via /api/auth/project/:customUrlPath/login
@@ -443,6 +454,10 @@ app.use("/api/email-config", emailConfigRoutes);
 
 // Email Activity Routes (real-time polling status)
 app.use("/api/email-activity", emailActivityRoutes);
+
+// Activity (audit) Log Routes — imported above but the mount was missing,
+// which 404'd the whole audit-log UI.
+app.use("/api/activity-logs", activityLogRoutes);
 
 // Project Email Configuration Routes (for project-specific email settings)
 app.use("/api/projects", projectEmailConfigRoutes);
@@ -600,6 +615,9 @@ httpServer.listen(PORT, async () => {
     // Start SR WIP committed-date reminder scheduler (inert until SR enabled)
     srWipScheduler.start();
 
+    // Start audit-log GCS archival scheduler (inert unless AUDIT_ARCHIVE_ENABLED)
+    startAuditArchivalScheduler();
+
     // Start attendance sync scheduler (per-project AFT cron jobs)
     console.log("ðŸ“… Starting Attendance Sync Scheduler...");
     await attendanceScheduler.start();
@@ -685,7 +703,7 @@ if (!isDevelopment) {
     console.log("🔄 SIGTERM received, shutting down gracefully");
     stopStalenessWatchdog();
     stopPsrTableScheduler();
-    stopPsrWorker().finally(() => {
+    Promise.all([stopPsrWorker(), flushAudit()]).finally(() => {
       httpServer.close(() => {
         console.log("✅ Server closed");
         process.exit(0);
@@ -697,7 +715,7 @@ if (!isDevelopment) {
     console.log("🔄 SIGINT received, shutting down gracefully");
     stopStalenessWatchdog();
     stopPsrTableScheduler();
-    stopPsrWorker().finally(() => {
+    Promise.all([stopPsrWorker(), flushAudit()]).finally(() => {
       httpServer.close(() => {
         console.log("✅ Server closed");
         process.exit(0);

@@ -186,6 +186,9 @@ const WebhookFailureLogs = lazy(() => import("./pages/WebhookFailureLogs"));
 
 // Integrations & Email
 const EmailConfigPage = lazy(() => import("./pages/EmailConfigPage"));
+const TataVoiceConfigPage = lazy(
+  () => import("./pages/integrations/TataVoiceConfigPage"),
+);
 const PublicApiKeysPage = lazy(() => import("./pages/PublicApiKeysPage"));
 const WhatsAppWidgetSettings = lazy(
   () => import("./pages/WhatsAppWidgetSettings"),
@@ -1000,6 +1003,16 @@ function App() {
             element={
               <ProtectedRoute permission={PERMISSIONS.MDM_VIEW}>
                 <PSRPipelinesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* TATA Voice — Click-to-Call credentials */}
+          <Route
+            path="/integrations/tata-voice"
+            element={
+              <ProtectedRoute permission="PROJECT_MANAGE_SETTINGS">
+                <TataVoiceConfigPage />
               </ProtectedRoute>
             }
           />

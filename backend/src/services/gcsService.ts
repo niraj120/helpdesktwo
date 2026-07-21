@@ -66,6 +66,13 @@ if (useLocalStorage) {
 const bucketName = process.env.GCS_BUCKET_NAME || "helpdesk-knowledge-base";
 const bucket = storage ? storage.bucket(bucketName) : null;
 
+// Shared GCS handles so other features (e.g. audit-log archival) can reuse the
+// same bucket + credentials under their own folder prefix, instead of wiring a
+// second bucket/key. Null when GCS isn't configured (local-storage fallback).
+export const gcsBucket = bucket;
+export const gcsBucketName = bucketName;
+export const isGcsConfigured = (): boolean => !!bucket;
+
 export class GCSService {
   /**
    * Upload PDF to Google Cloud Storage (GCS Required)

@@ -35,6 +35,7 @@ import {
   updateSrConfigForProject,
 } from "../srConfigAdmin";
 import { buildLeadCrmPayload } from "../services/leadCrmSync";
+import { resolveScopeOwners } from "../psrRoutingResolver";
 
 function actorId(req: AuthRequest): string {
   const id = req.user?.userId;
@@ -869,6 +870,37 @@ export const updateConfig = async (req: AuthRequest, res: Response) => {
     if (!projectId) throw new SrError("projectId is required", 400);
     const data = await updateSrConfigForProject(projectId, patch, actorId(req));
     res.json({ success: true, data });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/**
+ * Test PSR entity-scope routing: given a scope tuple (e.g. { school, grade, subject }),
+ * resolve the owning staff from the configured owner-map table. Lets admins verify
+ * their column mapping before it drives live assignment (Phase A).
+ */
+export const testPsrRouting = async (req: AuthRequest, res: Response) => {
+  try {
+    const projectId = String(req.body?.projectId || req.query.projectId || "");
+    if (!projectId) throw new SrError("projectId is required", 400);
+    const scope = (req.body?.scope || {}) as Record<string, string>;
+    if (!scope || typeof scope !== "object" || !Object.keys(scope).length) {
+      throw new SrError("scope object is required (e.g. { school, grade, subject })", 400);
+    }
+    const cfg: any = await getSrConfigForProject(projectId);
+    const routing = cfg?.psr?.workflow?.routing;
+    const result = await resolveScopeOwners(routing, scope, projectId);
+    res.json({
+      success: true,
+      data: {
+        routingEnabled: !!routing?.enabled,
+        matched: !!result.matchedRow,
+        holders: result.holders,
+        owners: result.owners,
+        matchedRow: result.matchedRow,
+      },
+    });
   } catch (err) {
     fail(res, err);
   }

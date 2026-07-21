@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { AssetCategory } from '../models/AssetCategory';
 import { Project } from '../models/Project';
 import { AuthRequest } from '../middleware/auth';
-import { logActivity } from '../utils/logger';
 
 // Get all asset categories across all projects (for debugging/admin)
 export const getAllAssetCategories = async (req: AuthRequest, res: Response) => {
@@ -139,20 +138,6 @@ export const createAssetCategory = async (req: AuthRequest, res: Response) => {
 
     await assetCategory.save();
 
-    await logActivity({
-      userId: userId || '',
-      userName: userName || '',
-      userEmail: userEmail || '',
-      action: 'create',
-      entity: 'AssetCategory',
-      entityId: assetCategory._id.toString(),
-      entityName: name,
-      projectId: projectId,
-      projectName: project.name,
-      description: `Asset category ${name} created`,
-      req,
-    });
-
     console.log(`✅ Asset category created: ${name} (${categoryCode}) for project ${project.name}`);
 
     return res.status(201).json({
@@ -225,19 +210,6 @@ export const updateAssetCategory = async (req: AuthRequest, res: Response) => {
 
     await assetCategory.save();
 
-    await logActivity({
-      userId: userId || '',
-      userName: userName || '',
-      userEmail: userEmail || '',
-      action: 'update',
-      entity: 'AssetCategory',
-      entityId: assetCategory._id.toString(),
-      entityName: assetCategory.name,
-      projectId: projectId,
-      description: `Asset category ${assetCategory.name} updated`,
-      req,
-    });
-
     console.log(`✅ Asset category updated: ${assetCategory.name}`);
 
     return res.json({
@@ -284,19 +256,6 @@ export const deleteAssetCategory = async (req: AuthRequest, res: Response) => {
     }
 
     await AssetCategory.findByIdAndDelete(id);
-
-    await logActivity({
-      userId: userId || '',
-      userName: userName || '',
-      userEmail: userEmail || '',
-      action: 'delete',
-      entity: 'AssetCategory',
-      entityId: id,
-      entityName: assetCategory.name,
-      projectId: assetCategory.projectId.toString(),
-      description: `Asset category ${assetCategory.name} deleted`,
-      req,
-    });
 
     console.log(`✅ Asset category deleted: ${assetCategory.name}`);
 

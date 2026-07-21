@@ -23,6 +23,11 @@ import {
   getWhatsappWidgetConfig,
   updateWhatsappWidgetSettings,
 } from "../controllers/projectController";
+import {
+  getTataVoiceConfig,
+  updateTataVoiceConfig,
+} from "../controllers/tataVoiceConfigController";
+import { requireProjectAccess } from "../middleware/requireProjectAccess";
 import { listConfigsByProject } from "../controllers/ticket-module/categoryAssignmentController";
 import { listEscalationConfigsByProject } from "../controllers/ticket-module/categoryEscalationController";
 import { authMiddleware } from "../middleware/auth";
@@ -111,6 +116,23 @@ router.put(
   authMiddleware,
   checkPermission(OFFLINE_SETTINGS_SAVE_PERMS),
   updateOfflineSettings,
+);
+
+// TATA SmartFlo voice (Click-to-Call) credentials — admin-only, project-scoped
+// (Super Admin bypasses scope; others limited to their assigned projects).
+router.get(
+  "/:id/tata-voice",
+  authMiddleware,
+  checkPermission("PROJECT_MANAGE_SETTINGS"),
+  requireProjectAccess(),
+  getTataVoiceConfig,
+);
+router.put(
+  "/:id/tata-voice",
+  authMiddleware,
+  checkPermission("PROJECT_MANAGE_SETTINGS"),
+  requireProjectAccess(),
+  updateTataVoiceConfig,
 );
 
 // Form Fields Management

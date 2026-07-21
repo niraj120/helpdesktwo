@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { Category } from '../models/Category';
 import { Project } from '../models/Project';
 import { AuthRequest } from '../middleware/auth';
-import { logActivity } from '../utils/logger';
 import { cache, CACHE_KEYS, CACHE_TTL, invalidateCache } from '../utils/cache';
 
 // Get all categories across all projects (for debugging/admin)
@@ -190,27 +189,6 @@ export const createCategory = async (req: AuthRequest, res: Response) => {
       await project.save();
     }
     
-    // Log activity
-    try {
-      const currentUser = req.user;
-      if (currentUser) {
-        await logActivity({
-          userId: currentUser.userId,
-          userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
-          userEmail: currentUser.email,
-          action: 'create',
-          entity: 'category',
-          entityId: category._id.toString(),
-          entityName: category.name,
-          projectId: projectId,
-          projectName: project.name,
-          description: `Category ${category.name} created in project ${project.name}`,
-          req
-        });
-      }
-    } catch (logError) {
-      console.error('Failed to log activity:', logError);
-    }
 
     return res.status(201).json({
       success: true,
@@ -305,33 +283,6 @@ export const updateCategory = async (req: AuthRequest, res: Response) => {
       }
     }
     
-    // Log activity
-    try {
-      const currentUser = req.user;
-      if (currentUser) {
-        const projectData = await Project.findById(category.projectId);
-        const changes = [];
-        if (name && name !== oldName) changes.push({ field: 'name', oldValue: oldName, newValue: name });
-        if (color !== undefined) changes.push({ field: 'color', oldValue: 'previous', newValue: color });
-        
-        await logActivity({
-          userId: currentUser.userId,
-          userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
-          userEmail: currentUser.email,
-          action: 'update',
-          entity: 'category',
-          entityId: category._id.toString(),
-          entityName: category.name,
-          projectId: category.projectId.toString(),
-          projectName: projectData?.name,
-          changes: changes.length > 0 ? changes : undefined,
-          description: `Category ${category.name} updated`,
-          req
-        });
-      }
-    } catch (logError) {
-      console.error('Failed to log activity:', logError);
-    }
 
     return res.json({
       success: true,
@@ -379,28 +330,6 @@ export const deleteCategory = async (req: AuthRequest, res: Response) => {
       }
     }
     
-    // Log activity
-    try {
-      const currentUser = req.user;
-      if (currentUser) {
-        const projectData = await Project.findById(projectId);
-        await logActivity({
-          userId: currentUser.userId,
-          userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
-          userEmail: currentUser.email,
-          action: 'delete',
-          entity: 'category',
-          entityId: category._id.toString(),
-          entityName: categoryName,
-          projectId: projectId.toString(),
-          projectName: projectData?.name,
-          description: `Category ${categoryName} deleted (soft delete)`,
-          req
-        });
-      }
-    } catch (logError) {
-      console.error('Failed to log activity:', logError);
-    }
 
     return res.json({
       success: true,
