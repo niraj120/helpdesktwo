@@ -13,11 +13,19 @@ import {
   stopImpersonation,
 } from '../controllers/authController';
 import { refreshPermissions } from '../controllers/permissionController';
+import { redeemBbpHandoff } from '../controllers/bbpHandoffController';
 import { auth, authMiddleware } from '../middleware/auth';
 import { authRateLimiter } from '../middleware/authRateLimiter';
 import { requirePermission } from '../middleware/permissions';
 
 const router = Router();
+
+// @desc    Exchange a BBP handoff token for a real Helpdesk session
+// @route   POST /api/auth/handoff/redeem
+// @access  Public — the short-lived handoff token IS the credential.
+//          POST-only on purpose: a GET would be prefetched by browsers and
+//          link scanners. Rate-limited because it is publicly reachable.
+router.post('/handoff/redeem', authRateLimiter, redeemBbpHandoff);
 
 // @desc    Login user
 // @route   POST /api/auth/login

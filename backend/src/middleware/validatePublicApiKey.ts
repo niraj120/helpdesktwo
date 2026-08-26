@@ -4,12 +4,16 @@ import { PublicApiKey } from "../models/PublicApiKey";
 
 export interface PublicApiRequest extends Request {
   publicApiProjectId?: string; // Validated project ObjectId string
+  publicApiKeyId?: string; // _id of the PublicApiKey record that authenticated
 }
 
 // In-memory cache of validated keys → projectId. The webview makes several
 // calls with the same key; caching skips the (expensive) bcrypt compare on
 // every repeat. Short TTL so revocation takes effect quickly.
-const KEY_CACHE = new Map<string, { projectId: string; exp: number }>();
+const KEY_CACHE = new Map<
+  string,
+  { projectId: string; keyId: string; exp: number }
+>();
 const KEY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
@@ -51,14 +55,18 @@ export const validatePublicApiKey = async (
       return;
     }
     req.publicApiProjectId = cached.projectId;
+    req.publicApiKeyId = cached.keyId;
     next();
     return;
   }
 
-  // ── 2. Narrow by keyPrefix (first 8 chars) so we bcrypt-compare only the
+  // ── 2. Narrow by keyPrefix so we bcrypt-compare only the
   //       candidate(s) for this key, not every active key. bcrypt.compare is
   //       ~200ms each — comparing against all keys made every /v1 call slow.
-  const prefix = apiKey.slice(0, 8);
+  // keyPrefix is stored as rawKey.slice(0, 12) at creation — slice the same
+  // length here, or the narrowing never matches and every call falls back to
+  // bcrypt-comparing every active key in the system.
+  const prefix = apiKey.slice(0, 12);
   let candidates = await PublicApiKey.find({ isActive: true, keyPrefix: prefix })
     .select("keyHash projectId")
     .lean();
@@ -80,10 +88,12 @@ export const validatePublicApiKey = async (
   }
 
   let matchedProjectId: string | null = null;
+  let matchedKeyId: string | null = null;
   for (const record of candidates) {
     const match = await bcrypt.compare(apiKey, record.keyHash);
     if (match) {
       matchedProjectId = record.projectId.toString();
+      matchedKeyId = (record as any)._id.toString();
       break;
     }
   }
@@ -111,10 +121,12 @@ export const validatePublicApiKey = async (
   // Cache the validated key so repeat calls skip bcrypt.
   KEY_CACHE.set(apiKey, {
     projectId: matchedProjectId,
+    keyId: matchedKeyId!,
     exp: Date.now() + KEY_CACHE_TTL_MS,
   });
 
   // ── 4. Attach validated project ID to request ────────────────────
   req.publicApiProjectId = matchedProjectId;
+  req.publicApiKeyId = matchedKeyId!;
   next();
 };

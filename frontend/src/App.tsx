@@ -36,6 +36,7 @@ import { isStudentSession } from "./utils/authToken";
 
 // Authentication & Portal
 const SsoCallback = lazy(() => import("./pages/SsoCallback"));
+const PartnerLogin = lazy(() => import("./pages/PartnerLogin"));
 const ProjectLogin = lazy(() => import("./pages/ProjectLogin"));
 const ProjectPortalLogin = lazy(() => import("./pages/ProjectPortalLogin"));
 const ProjectForgotPassword = lazy(
@@ -267,6 +268,13 @@ function App() {
             element={<ForgotPassword />}
           />
           <Route path="/:customUrlPath/eula" element={<EULA />} />
+          {/* Partner (BBP) login handoff — opened with a short-lived token that
+              this page trades for a real session. No auth guard: the token is
+              the credential. */}
+          <Route
+            path="/:customUrlPath/partner-login"
+            element={<PartnerLogin />}
+          />
 
           {/* Public ticket submission and KB - conditionally show authenticated vs public view */}
           <Route

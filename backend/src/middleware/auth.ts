@@ -53,6 +53,21 @@ export const authMiddleware = async (
 
     const decoded = jwt.verify(token, config.jwt.secret) as any;
 
+    // Several short-lived, single-purpose tokens are signed with this same
+    // secret — parent self-service sessions (`scope`), the 2FA step-up token
+    // (`purpose: "2fa"`), the password-setup token (`type: "password-setup"`),
+    // and any partner handoff credential. jwt.verify() accepts all of them, so
+    // without this check a token minted for one narrow hop would authenticate
+    // every API route. A real session carries a userId and none of these
+    // markers.
+    if (decoded?.scope || decoded?.purpose || decoded?.type || !decoded?.userId) {
+      res.status(401).json({
+        message: "This token cannot be used to access the API.",
+        code: "INVALID_TOKEN_TYPE",
+      });
+      return;
+    }
+
     // Cache key includes tokenVersion so the cache is auto-invalidated when
     // permissions change (tokenVersion increments on role/permission updates).
     const authCacheKey = `auth:processed:${decoded.userId}:${decoded.tokenVersion || 0}`;

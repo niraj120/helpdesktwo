@@ -24,6 +24,7 @@ import {
   replyToMySr,
   createParentSession,
 } from "../controllers/publicServiceRequestController";
+import { createBbpLoginUrl } from "../controllers/bbpHandoffController";
 
 // Multer instance (memory storage) used only for the LMS form endpoint
 const lmsUpload = multer({
@@ -63,6 +64,17 @@ const makeRateLimit = (max: number) =>
       message: "Too many requests. Please slow down.",
     },
   });
+
+// POST /v1/auth/login-url — 60 req/min
+// Server-to-server ONLY. The partner backend (BBP) asks for a one-time login
+// URL for one of its users; the returned URL is opened in the user's browser.
+// The pub_ API key must never reach the browser.
+router.post(
+  "/auth/login-url",
+  makeRateLimit(60),
+  validatePublicApiKey,
+  createBbpLoginUrl,
+);
 
 // GET /v1/users/lookup — 60 req/min
 router.get(

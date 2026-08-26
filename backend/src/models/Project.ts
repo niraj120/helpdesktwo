@@ -358,6 +358,13 @@ export interface IProject extends Document {
     estimatedResponseTime?: string; // e.g. "Within 4 hours"
     duplicateTicketWindowMinutes?: number; // default 5
     projectCode?: string; // Override code for ticket number prefix
+    /**
+     * Role given to a user pushed in through POST /v1/users when no
+     * RoleMappingRule matches their HRMS attributes. Set this for partner
+     * projects whose users are staff — without it they fall back to STUDENT
+     * and land in the requester portal with no module access.
+     */
+    defaultUserRoleCode?: string;
     /** Custom fields the API consumer must/can submit when creating a ticket */
     customFields?: Array<{
       key: string; // machine-readable field key, e.g. "course_name"
@@ -881,6 +888,8 @@ const projectSchema = new Schema<IProject>(
       estimatedResponseTime: { type: String, default: "Within 4 hours" },
       duplicateTicketWindowMinutes: { type: Number, default: 5 },
       projectCode: { type: String, trim: true, uppercase: true },
+      // Fallback role for users pushed via POST /v1/users. See the interface.
+      defaultUserRoleCode: { type: String, trim: true, uppercase: true },
       customFields: [
         {
           key: { type: String, required: true, trim: true },

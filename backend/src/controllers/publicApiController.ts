@@ -11,6 +11,7 @@ import { HierarchyConfig } from "../models/HierarchyConfig";
 import { Priority } from "../models/master-data/Priority";
 import { GCSService } from "../services/gcsService";
 import { normaliseMobile } from "../utils/normaliseMobile";
+import { resolveRoleFromHRMS } from "../services/roleMappingService";
 import { geoCache, TTL } from "../utils/geoCache";
 import { PublicApiRequest } from "../middleware/validatePublicApiKey";
 import { initializeSLATracking } from "../services/slaHelperService";
@@ -1758,6 +1759,11 @@ export const createPublicUser = async (
     mobile: rawMobile,
     firstName,
     lastName,
+    // HRMS attributes. A partner pushing staff sends these; they drive role
+    // resolution through the project's RoleMappingRule set.
+    employeeCode,
+    department,
+    designation,
   } = req.body as Record<string, string>;
 
   const errors: { field: string; message: string }[] = [];
@@ -1773,8 +1779,75 @@ export const createPublicUser = async (
     ]);
   }
 
+  // A brand-new user needs a role, or they land in the portal with zero
+  // permissions and cannot do anything. Resolution order, most specific first:
+  //
+  //   1. the project's RoleMappingRule set, matched on the HRMS attributes the
+  //      partner sent (department / designation / employee code)
+  //   2. the project's configured publicApiSettings.defaultUserRoleCode
+  //   3. STUDENT — the historical behaviour, kept so existing consumers that
+  //      push learners are unaffected
+  //
+  // The partner never names a role: a role in the request body would let anyone
+  // holding the API key grant themselves anything.
+  let roleId: mongoose.Types.ObjectId | null = null;
+  let roleSource: "mapping_rule" | "project_default" | "fallback_student" | "none" =
+    "none";
+
+  if (employeeCode || department || designation) {
+    roleId = await resolveRoleFromHRMS(projectId, {
+      hrmsCode: employeeCode,
+      department,
+      designation,
+    });
+    if (roleId) roleSource = "mapping_rule";
+  }
+
+  if (!roleId) {
+    const proj = await Project.findById(projectId)
+      .select("publicApiSettings.defaultUserRoleCode")
+      .lean();
+    const defaultCode = (proj as any)?.publicApiSettings?.defaultUserRoleCode;
+    if (defaultCode) {
+      const defaultRole = await Role.findOne({
+        code: defaultCode,
+        $or: [{ projectId }, { projectId: { $exists: false } }, { projectId: null }],
+      })
+        .select("_id")
+        .lean();
+      if (defaultRole) {
+        roleId = (defaultRole as any)._id;
+        roleSource = "project_default";
+      } else {
+        console.warn(
+          `⚠️ /v1/users: publicApiSettings.defaultUserRoleCode="${defaultCode}" matches no role in project ${project_id}.`,
+        );
+      }
+    }
+  }
+
+  if (!roleId) {
+    const studentRole = await Role.findOne({ code: "STUDENT" })
+      .select("_id")
+      .lean();
+    if (studentRole) {
+      roleId = (studentRole as any)._id;
+      roleSource = "fallback_student";
+      console.warn(
+        `⚠️ /v1/users: no role mapping for ${emailNorm} in project ${project_id} — defaulting to STUDENT. ` +
+          `Staff users need a RoleMappingRule or publicApiSettings.defaultUserRoleCode.`,
+      );
+    }
+  }
+
   const update: Record<string, unknown> = {
-    $setOnInsert: { createdAt: new Date() },
+    $setOnInsert: {
+      createdAt: new Date(),
+      isActive: true,
+      requirePasswordSetup: true,
+      registrationSource: "online",
+      ...(roleId ? { role: roleId } : {}),
+    },
     $addToSet: { projects: projectId },
   };
 
@@ -1782,6 +1855,11 @@ export const createPublicUser = async (
   if (firstName) setFields.firstName = firstName.trim();
   if (lastName) setFields.lastName = lastName.trim();
   if (normMobile) setFields.mobile = normMobile;
+  // Keep the HRMS attributes on the user — they are what a later re-sync or a
+  // rule change re-resolves against.
+  if (employeeCode) setFields.employeeCode = employeeCode.trim();
+  if (department) setFields.department = department.trim();
+  if (designation) setFields.designation = designation.trim();
   if (Object.keys(setFields).length) update.$set = setFields;
 
   const user = await User.findOneAndUpdate({ email: emailNorm }, update, {
@@ -1795,12 +1873,18 @@ export const createPublicUser = async (
   res.status(201).json({
     status: "success",
     project_id,
+    // role_source tells the caller how the role was decided — "fallback_student"
+    // on a staff push means the project still needs a mapping rule or default.
+    role_source: roleSource,
     user: {
       user_id: u._id.toString(),
       email: u.email,
       first_name: u.firstName ?? null,
       last_name: u.lastName ?? null,
       mobile: u.mobile ?? null,
+      employee_code: u.employeeCode ?? null,
+      department: u.department ?? null,
+      designation: u.designation ?? null,
     },
   });
 };
