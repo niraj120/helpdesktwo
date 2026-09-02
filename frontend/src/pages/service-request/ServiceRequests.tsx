@@ -535,6 +535,59 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     }
   }, [visibleScopes, viewScope]);
 
+  // Which request types this project has switched on (SR Settings → step 1).
+  // null = unknown / all-projects view, so every type stays selectable.
+  const [enabledTypes, setEnabledTypes] = useState<Array<"PSR" | "ISR"> | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!projectId) {
+      setEnabledTypes(null);
+      return;
+    }
+    let cancelled = false;
+    serviceRequestApi
+      .getConfig(projectId)
+      .then((res: any) => {
+        if (cancelled) return;
+        const cfg = res?.data || {};
+        const list: Array<"PSR" | "ISR"> = [];
+        if (cfg?.psr?.enabled) list.push("PSR");
+        if (cfg?.isr?.enabled) list.push("ISR");
+        // Nothing configured yet — leave the filter unrestricted.
+        setEnabledTypes(list.length ? list : null);
+      })
+      .catch(() => {
+        if (!cancelled) setEnabledTypes(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  // With a single type enabled there is nothing to filter between: pin the
+  // filter to it so the list never mixes in the disabled type.
+  const soleType =
+    enabledTypes && enabledTypes.length === 1 ? enabledTypes[0] : null;
+  const requestTypeOptions = useMemo(
+    () =>
+      enabledTypes && enabledTypes.length < 2
+        ? REQUEST_TYPE_OPTIONS.filter((option) =>
+            enabledTypes.includes(option.value as "PSR" | "ISR"),
+          )
+        : REQUEST_TYPE_OPTIONS,
+    [enabledTypes],
+  );
+
+  useEffect(() => {
+    if (!soleType) return;
+    setFilters((prev) =>
+      prev.interactionType === soleType
+        ? prev
+        : { ...prev, interactionType: soleType },
+    );
+  }, [soleType]);
+
   const filterValue = (key: keyof SrFilters, value: string) => {
     setPage(1);
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -635,7 +688,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     filters.interactionType && filters.interactionType !== "all"
       ? {
           key: "interactionType",
-          label: `Type: ${optionLabel(REQUEST_TYPE_OPTIONS, filters.interactionType)}`,
+          label: `Type: ${optionLabel(requestTypeOptions, filters.interactionType)}`,
         }
       : undefined,
     filters.wipFrom
@@ -958,6 +1011,8 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
           </div>
         )}
 
+        {/* Only worth showing when the project actually runs both types. */}
+        {!soleType && (
         <div
           style={{
             ...srStyles.card,
@@ -1019,6 +1074,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
             })}
           </div>
         </div>
+        )}
 
         {/* Status counters (click to filter) */}
         <div
@@ -1241,7 +1297,8 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                 {dateControl("WIP to", "wipTo")}
                 {selectControl("Source", "source", SOURCE_OPTIONS)}
                 {selectControl("Channel", "classification", CHANNEL_OPTIONS)}
-                {selectControl("Request type", "interactionType", REQUEST_TYPE_OPTIONS)}
+                {!soleType &&
+                  selectControl("Request type", "interactionType", requestTypeOptions)}
                 {selectControl("Linked ISR", "linkedIsrState", LINKED_ISR_OPTIONS)}
                 {dateControl("Updated from", "updatedFrom")}
                 {dateControl("Updated to", "updatedTo")}

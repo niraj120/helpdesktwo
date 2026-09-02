@@ -1072,9 +1072,13 @@ function FieldRow({ field, fields, tables, masters, projectId, onChange, onDelet
       label: candidate.label,
       value: fieldNameForDependency(candidate),
     }));
-  // Only fetch hierarchy config when this field uses the Category Master data source
+  // Only fetch hierarchy config when this field uses the Category Master data source.
+  // Pass the field's own scope — each scope (normal/PSR/ISR) has its own level tree,
+  // so without this the panel always showed the "normal" levels.
   const { config: hierConfig, loading: hierLoading } = useHierarchyConfig(
-    field.dataSource === "category" ? projectId : ""
+    field.dataSource === "category" ? projectId : "",
+    undefined,
+    field.categoryScope || "normal"
   );
 
   return (
