@@ -7,10 +7,10 @@
 
 import request from 'supertest';
 import mongoose from 'mongoose';
-import app from '../src/server';
-import User from '../src/models/User';
+import { app } from '../src/server';
+import { User } from '../src/models/User';
 import ConsentRecord, { ConsentPurpose, ConsentStatus } from '../src/models/dpdp/ConsentRecord';
-import DataAccessLog from '../src/models/dpdp/DataAccessLog';
+import DataAccessLog, { DataAccessResult } from '../src/models/dpdp/DataAccessLog';
 import DeletionRequest from '../src/models/dpdp/DeletionRequest';
 
 describe('DPDP Act 2023 Compliance Tests', () => {
@@ -232,7 +232,7 @@ describe('DPDP Act 2023 Compliance Tests', () => {
       if (log) {
         // Try to modify log
         await expect(async () => {
-          log.result = 'SUCCESS';
+          log.result = DataAccessResult.SUCCESS;
           await log.save();
         }).rejects.toThrow();
       }

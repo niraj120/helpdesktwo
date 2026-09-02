@@ -4,7 +4,13 @@ import { Ticket } from '../src/models/Ticket';
 
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://34.14.157.13:27017/sac_helpdesk';
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+  console.error(
+    "MONGODB_URI is not set. Export it (or put it in backend/.env) before running this script."
+  );
+  process.exit(1);
+}
 
 async function checkSpecificTicket() {
   try {

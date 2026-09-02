@@ -11,7 +11,7 @@ Automatically use production MongoDB when accessing `helpdesk.hubblehox.ai`, oth
 MONGODB_LOCAL_URI=mongodb://localhost:27017/sac_helpdesk
 
 # Production MongoDB (remote)
-MONGODB_PRODUCTION_URI=mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin
+MONGODB_PRODUCTION_URI=mongodb://<user>:<password>@<db-host>:27017/sac_helpdesk?authSource=admin
 ```
 
 ### 2. Conditional Logic (src/config/database.ts)
@@ -52,7 +52,7 @@ The application automatically detects which MongoDB to use:
 ```
 NODE_ENV=development
 MONGODB_LOCAL_URI=mongodb://localhost:27017/sac_helpdesk
-MONGODB_PRODUCTION_URI=mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin
+MONGODB_PRODUCTION_URI=mongodb://<user>:<password>@<db-host>:27017/sac_helpdesk?authSource=admin
 PRODUCTION_FRONTEND_URL=https://helpdesk.hubblehox.ai
 ```
 → Will use **LOCAL MongoDB** because NODE_ENV is development
@@ -61,7 +61,7 @@ PRODUCTION_FRONTEND_URL=https://helpdesk.hubblehox.ai
 ```
 NODE_ENV=production
 MONGODB_LOCAL_URI=mongodb://localhost:27017/sac_helpdesk
-MONGODB_PRODUCTION_URI=mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin
+MONGODB_PRODUCTION_URI=mongodb://<user>:<password>@<db-host>:27017/sac_helpdesk?authSource=admin
 PRODUCTION_FRONTEND_URL=https://helpdesk.hubblehox.ai
 ```
 → Will use **PRODUCTION MongoDB** because NODE_ENV is production OR domain is helpdesk.hubblehox.ai
@@ -96,7 +96,7 @@ NODE_ENV=development npm run dev
 ```bash
 NODE_ENV=production npm start
 # Should log: 🔐 Using PRODUCTION MongoDB
-# Connects to: mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin
+# Connects to: mongodb://<user>:<password>@<db-host>:27017/sac_helpdesk?authSource=admin
 ```
 
 ## Security Notes

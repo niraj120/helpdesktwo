@@ -1,6 +1,14 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 
+const MONGO_URI = process.env.MONGODB_URI;
+if (!MONGO_URI) {
+  console.error(
+    "MONGODB_URI is not set. Export it (or put it in backend/.env) before running this script."
+  );
+  process.exit(1);
+}
+
 const countrySchema = new mongoose.Schema({
   key: String,
   value: String,
@@ -32,7 +40,7 @@ const City = mongoose.model('City', citySchema);
 
 async function migrateToObjectIds() {
   try {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://34.14.157.13:27017/sac_helpdesk');
+    await mongoose.connect(MONGO_URI);
     console.log('✅ Connected to MongoDB\n');
 
     // Step 1: Migrate States - add countryId based on country name

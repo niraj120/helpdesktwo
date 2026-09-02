@@ -1,5 +1,14 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
-mongoose.connect('mongodb://helpdesk-internal-prod:hElpDesKProD_2026@35.200.131.128:27017/sac_helpdesk?authSource=admin', {serverSelectionTimeoutMS: 10000}).then(async () => {
+
+const MONGO_URI = process.env.MONGODB_URI;
+if (!MONGO_URI) {
+  console.error(
+    "MONGODB_URI is not set. Export it (or put it in backend/.env) before running this script."
+  );
+  process.exit(1);
+}
+mongoose.connect(MONGO_URI, {serverSelectionTimeoutMS: 10000}).then(async () => {
   const db = mongoose.connection.db;
 
   // 1. Mark original 'Please ignore' entry as 'completed' (ticket already created)

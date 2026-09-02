@@ -1,5 +1,12 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
-const uri = 'mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin';
+const uri = process.env.MONGODB_URI;
+if (!uri) {
+  console.error(
+    "MONGODB_URI is not set. Export it (or put it in backend/.env) before running this script."
+  );
+  process.exit(1);
+}
 
 mongoose.connect(uri).then(async () => {
   const db = mongoose.connection.db;

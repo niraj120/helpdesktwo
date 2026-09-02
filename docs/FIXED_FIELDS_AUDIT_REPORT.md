@@ -16,7 +16,7 @@ Implemented a robust fixed fields system where **Name, Email, and Phone** are al
 ### Problem Identified
 ```env
 # ❌ BEFORE - Pointed to unreachable production server
-MONGODB_URI=mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin
+MONGODB_URI=mongodb://<user>:<password>@<db-host>:27017/sac_helpdesk?authSource=admin
 ```
 
 **Root Cause:** `.env` was configured to use production MongoDB server (34.14.157.13:27017) which was timing out due to network/firewall restrictions.
@@ -340,7 +340,7 @@ Replaced `ts-node` with `tsx` for **3x faster TypeScript compilation**.
 ```bash
 # Production .env should have:
 NODE_ENV=production
-MONGODB_URI=mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin
+MONGODB_URI=mongodb://<user>:<password>@<db-host>:27017/sac_helpdesk?authSource=admin
 ```
 
 ### Deployment Steps

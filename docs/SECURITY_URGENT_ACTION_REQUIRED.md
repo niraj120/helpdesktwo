@@ -8,7 +8,7 @@
 **Actions Required**:
 ```bash
 # 1. Connect to MongoDB and change the password
-mongo --host 34.14.157.13:27017 -u helpdesk-dev -p hELpDEsK-DeV2025 --authenticationDatabase admin
+mongo --host 34.14.157.13:27017 -u <user> -p <password> --authenticationDatabase admin
 
 # In MongoDB shell:
 use admin
@@ -19,7 +19,7 @@ db.changeUserPassword("helpdesk-dev", "NEW_SECURE_PASSWORD_HERE")
 MONGODB_URI=mongodb://helpdesk-dev:NEW_SECURE_PASSWORD@34.14.157.13:27017/sac_helpdesk?authSource=admin
 ```
 
-**Why**: The old password `hELpDEsK-DeV2025` was committed to git and is visible in repository history. Anyone with access to your repository can access your database.
+**Why**: The old password the old one was committed to git and is visible in repository history. Anyone with access to your repository can access your database.
 
 ---
 

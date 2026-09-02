@@ -2,14 +2,23 @@
 # This script exports data from production MongoDB and imports it to local MongoDB
 
 param(
-    [string]$ServerIP = "34.14.157.13",
+    [string]$ServerIP = $env:MONGO_HOST,
     [string]$DBName = "sac_helpdesk",
     [string]$Username = "helpdesk-dev",
-    [string]$Password = "hELpDEsK-DeV2025",
+    [string]$Password = $env:MONGO_PASSWORD,
     [string]$BackupDir = ".\mongodb-backup",
     [string]$SSHUser = "",
     [string]$SSHHost = ""
 )
+
+if (-not $Password) {
+    Write-Error "Password not supplied. Set $env:MONGO_PASSWORD or pass -Password."
+    exit 1
+}
+if (-not $ServerIP) {
+    Write-Error "Server not supplied. Set $env:MONGO_HOST or pass -ServerIP."
+    exit 1
+}
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "MongoDB Production to Local Replication" -ForegroundColor Cyan

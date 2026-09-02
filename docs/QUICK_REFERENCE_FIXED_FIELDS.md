@@ -14,7 +14,7 @@ Implemented a system where **Name, Email, and Phone** are ALWAYS present for onl
 **Solution:** Updated `.env` to use local MongoDB:
 ```env
 # BEFORE (broken):
-MONGODB_URI=mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin
+MONGODB_URI=mongodb://<user>:<password>@<db-host>:27017/sac_helpdesk?authSource=admin
 
 # AFTER (working):
 MONGODB_URI=mongodb://localhost:27017/sac_helpdesk
@@ -82,7 +82,7 @@ MONGODB_URI=mongodb://localhost:27017/sac_helpdesk
 1. **Update .env on server:**
    ```env
    NODE_ENV=production
-   MONGODB_URI=mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin
+   MONGODB_URI=mongodb://<user>:<password>@<db-host>:27017/sac_helpdesk?authSource=admin
    ```
 
 2. **Deploy backend:**

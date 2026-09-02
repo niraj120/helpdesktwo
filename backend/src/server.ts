@@ -759,4 +759,4 @@ if (!isDevelopment) {
   });
 }
 
-export { io };
+export { io, app };

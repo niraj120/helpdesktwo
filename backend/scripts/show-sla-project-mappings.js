@@ -1,3 +1,4 @@
+require('dotenv').config();
 /**
  * Script to show all projects and their SLA rule mappings
  * This helps you see which SLA rules are mapped to which projects
@@ -8,7 +9,13 @@
 const mongoose = require('mongoose');
 
 // MongoDB connection string
-const MONGO_URI = 'mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin';
+const MONGO_URI = process.env.MONGODB_URI;
+if (!MONGO_URI) {
+  console.error(
+    "MONGODB_URI is not set. Export it (or put it in backend/.env) before running this script."
+  );
+  process.exit(1);
+}
 
 async function showSLAProjectMappings() {
   try {

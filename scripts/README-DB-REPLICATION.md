@@ -48,7 +48,7 @@ If you have a backup file or someone provided a dump:
 
 ```bash
 # Export
-mongodump --uri="mongodb://helpdesk-dev:hELpDEsK-DeV2025@localhost:27017/sac_helpdesk?authSource=admin" --out=/tmp/db-backup
+mongodump --uri="mongodb://<user>:<password>@localhost:27017/sac_helpdesk?authSource=admin" --out=/tmp/db-backup
 
 # Compress
 cd /tmp

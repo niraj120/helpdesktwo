@@ -16,7 +16,7 @@ chmod +x server-export-db.sh
 ./server-export-db.sh
 
 Or manually:
-mongodump --uri="mongodb://helpdesk-dev:hELpDEsK-DeV2025@localhost:27017/sac_helpdesk?authSource=admin" --out=/tmp/mongodb-backup
+mongodump --uri="mongodb://<user>:<password>@localhost:27017/sac_helpdesk?authSource=admin" --out=/tmp/mongodb-backup
 cd /tmp && tar -czf sac_helpdesk-backup.tar.gz mongodb-backup/
 
 Then share the file: /tmp/sac_helpdesk-backup-*.tar.gz

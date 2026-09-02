@@ -1,3 +1,4 @@
+require('dotenv').config();
 /**
  * Script to fix SLA Rule project mappings
  * This updates SLA rules to map to the correct project IDs
@@ -10,7 +11,13 @@
 const mongoose = require('mongoose');
 
 // MongoDB connection string
-const MONGO_URI = 'mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin';
+const MONGO_URI = process.env.MONGODB_URI;
+if (!MONGO_URI) {
+  console.error(
+    "MONGODB_URI is not set. Export it (or put it in backend/.env) before running this script."
+  );
+  process.exit(1);
+}
 
 // Replace these with your actual project IDs
 const OLD_PROJECT_ID = '6923190ff823462759296988'; // The wrong project ID in SLA rules

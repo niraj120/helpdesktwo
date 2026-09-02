@@ -25,7 +25,7 @@ MONGODB_PRODUCTION_URI=mongodb://user:password@server:27017/db
 Example:
 ```env
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-MONGODB_PRODUCTION_URI=mongodb://helpdesk-dev:hELpDEsK-DeV2025@34.14.157.13:27017/sac_helpdesk?authSource=admin
+MONGODB_PRODUCTION_URI=mongodb://<user>:<password>@<db-host>:27017/sac_helpdesk?authSource=admin
 ```
 
 ## Workflow for Clean Code

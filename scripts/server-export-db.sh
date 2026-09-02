@@ -10,7 +10,12 @@ echo "========================================"
 echo ""
 
 DB_NAME="sac_helpdesk"
-MONGO_URI="mongodb://helpdesk-dev:hELpDEsK-DeV2025@localhost:27017/${DB_NAME}?authSource=admin"
+# Credentials come from the environment. Export MONGO_URI before running, e.g.
+#   export MONGO_URI="mongodb://<user>:<password>@localhost:27017/sac_helpdesk?authSource=admin"
+if [ -z "${MONGO_URI:-}" ]; then
+  echo "ERROR: MONGO_URI is not set. Export it before running this script." >&2
+  exit 1
+fi
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 BACKUP_DIR="/tmp/mongodb-backup-${TIMESTAMP}"
 BACKUP_FILE="/tmp/sac_helpdesk-backup-${TIMESTAMP}.tar.gz"
