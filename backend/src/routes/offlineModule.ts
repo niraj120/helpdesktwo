@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
+import { requireProjectAccess } from '../middleware/requireProjectAccess';
 import {
   registerStudent,
   createOfflineTicket,
@@ -13,8 +14,11 @@ import { PERMISSION_CODES } from '../constants/permissions';
 
 const router = Router();
 
-// All routes require authentication
+// All routes are project-scoped walk-in operations. Require authentication AND
+// access to the project in the URL (an agent must not register students or
+// raise tickets under a project they aren't assigned to).
 router.use(authMiddleware);
+const ownsProject = requireProjectAccess('projectId');
 
 /**
  * @route   GET /api/offline-module/:projectId/settings
@@ -24,6 +28,7 @@ router.use(authMiddleware);
 router.get(
   '/:projectId/settings',
   requirePermission(PERMISSION_CODES.OFFLINE_MODULE_ACCESS),
+  ownsProject,
   getOfflineModuleSettings
 );
 
@@ -35,6 +40,7 @@ router.get(
 router.post(
   '/:projectId/register-student',
   requirePermission(PERMISSION_CODES.OFFLINE_STUDENT_REGISTER),
+  ownsProject,
   registerStudent
 );
 
@@ -46,6 +52,7 @@ router.post(
 router.post(
   '/:projectId/create-ticket',
   requirePermission(PERMISSION_CODES.OFFLINE_TICKET_CREATE),
+  ownsProject,
   createOfflineTicket
 );
 
@@ -57,6 +64,7 @@ router.post(
 router.get(
   '/:projectId/students',
   requirePermission(PERMISSION_CODES.OFFLINE_STUDENT_VIEW),
+  ownsProject,
   viewStudentRecords
 );
 
@@ -68,6 +76,7 @@ router.get(
 router.put(
   '/:projectId/students/:studentId',
   requirePermission(PERMISSION_CODES.OFFLINE_STUDENT_EDIT),
+  ownsProject,
   editStudentRecord
 );
 
@@ -78,6 +87,7 @@ router.put(
  */
 router.get(
   '/:projectId/centers',
+  ownsProject,
   getCenters
 );
 

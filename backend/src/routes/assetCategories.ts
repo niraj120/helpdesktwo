@@ -9,6 +9,7 @@ import {
 import { authMiddleware } from "../middleware/auth";
 import { requirePermission } from "../middleware/permissions";
 import { enforceAssetProjectScope } from "../middleware/projectScope";
+import { requireProjectAccess } from "../middleware/requireProjectAccess";
 
 const router = express.Router();
 
@@ -25,6 +26,7 @@ router.get("/project/:projectId", getAssetCategoriesByProject);
 router.post(
   "/project/:projectId",
   requirePermission("MASTER_DATA_MANAGE_ASSET_CATEGORIES"),
+  requireProjectAccess("projectId"),
   createAssetCategory,
 );
 

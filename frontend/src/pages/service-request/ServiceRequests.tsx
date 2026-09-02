@@ -11,9 +11,9 @@ import { SR, srStyles, srButton } from "../../utils/srTheme";
 import { useProjectContext } from "../../contexts/ProjectContext";
 import { PERMISSIONS } from "../../constants/permissions";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useProjectStatuses } from "../../hooks/useProjectStatuses";
 import {
   serviceRequestApi,
-  SR_STATUS_META,
   priorityMeta,
   compactAge,
 } from "../../services/serviceRequests";
@@ -208,12 +208,13 @@ const formatDate = (value?: string) =>
 const optionLabel = (options: SelectOption[], value: string) =>
   options.find((o) => o.value === value)?.label || value;
 
-const StatusChip: React.FC<{ status: number }> = ({ status }) => {
-  const m = SR_STATUS_META[status] || {
-    label: String(status),
-    color: "#374151",
-    bg: "#f3f4f6",
-  };
+// Label/colour come from the project's status master (SLA & Escalation).
+const StatusChip: React.FC<{ status: number; projectId?: string }> = ({
+  status,
+  projectId,
+}) => {
+  const { metaFor } = useProjectStatuses(projectId);
+  const m = metaFor(status);
   return (
     <span
       style={{
@@ -267,8 +268,10 @@ const PriorityChip: React.FC<{ value?: string }> = ({ value }) => {
 const LinkedIsrCell: React.FC<{
   row: SrRow;
   onOpen: (id: string) => void;
-}> = ({ row, onOpen }) => {
+  projectId?: string;
+}> = ({ row, onOpen, projectId }) => {
   const [open, setOpen] = useState(false);
+  const { metaFor } = useProjectStatuses(projectId);
   const total = row.linkedIsr?.total || 0;
   const done = row.linkedIsr?.done || 0;
   const pending = Math.max(0, total - done);
@@ -395,11 +398,7 @@ const LinkedIsrCell: React.FC<{
                 {done}/{total} resolved
               </div>
               {(row.linkedIsrs || []).map((isr) => {
-                const m = SR_STATUS_META[isr.status] || {
-                  label: String(isr.status),
-                  color: "#374151",
-                  bg: "#f3f4f6",
-                };
+                const m = metaFor(isr.status);
                 return (
                   <div
                     key={isr._id}
@@ -498,6 +497,9 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     : viewMode === "single" && currentProjectId
       ? currentProjectId
       : undefined;
+  // Status chips, stat cards and the status filter all read the project's
+  // status master (SLA & Escalation).
+  const { statuses: projectStatuses } = useProjectStatuses(projectId);
   const detailPath = (id: string) =>
     isProjectPortal
       ? `${location.pathname.replace(/\/service-requests(?:\/[^/]+)?$/, "")}/service-requests/${id}`
@@ -674,13 +676,9 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
 
   useEffect(() => {
     let mounted = true;
-    const fallbackStatuses = [
-      { value: "all", label: "All statuses" },
-      ...Object.entries(SR_STATUS_META).map(([code, meta]) => ({
-        value: code,
-        label: meta.label,
-      })),
-    ];
+    // No built-in status list: if the master has none, the filter offers "All"
+    // only rather than inventing statuses this project may not use.
+    const fallbackStatuses = [{ value: "all", label: "All statuses" }];
 
     serviceRequestApi
       .activePriorities(projectId)
@@ -817,11 +815,11 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
 
   const statCards = [
     { key: "all", label: "All Requests", color: "#2563EB", bg: "#eff6ff" },
-    ...Object.entries(SR_STATUS_META).map(([code, m]) => ({
-      key: code,
-      label: m.label,
-      color: m.color,
-      bg: m.bg,
+    ...projectStatuses.map((s) => ({
+      key: String(s.code),
+      label: s.label,
+      color: s.color,
+      bg: s.bg,
     })),
   ];
 
@@ -1229,15 +1227,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                   >
                     {(statusOptions.length
                       ? statusOptions
-                      : [
-                          { value: "all", label: "All statuses" },
-                          ...Object.entries(SR_STATUS_META).map(
-                            ([code, meta]) => ({
-                              value: code,
-                              label: meta.label,
-                            }),
-                          ),
-                        ]
+                      : [{ value: "all", label: "All statuses" }]
                     ).map((option) => (
                       <option key={`status-${option.value}`} value={option.value}>
                         {option.label}
@@ -1528,13 +1518,14 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                       <PriorityChip value={r.priority} />
                     </td>
                     <td style={td}>
-                      <StatusChip status={r.status} />
+                      <StatusChip status={r.status} projectId={projectId} />
                     </td>
                     <td style={td}>{r.modeOfContact || "—"}</td>
                     <td style={td}>
                       <LinkedIsrCell
                         row={r}
                         onOpen={(id) => navigate(detailPath(id))}
+                        projectId={projectId}
                       />
                     </td>
                     <td style={td}>{name(r.assignedTo)}</td>

@@ -8,6 +8,7 @@ import {
 } from '../controllers/whatsappConfigController';
 import { authMiddleware } from '../middleware/auth';
 import { checkPermission } from '../middleware/permissions';
+import { requireProjectAccess } from '../middleware/requireProjectAccess';
 
 const router = express.Router();
 
@@ -28,6 +29,7 @@ router.get(
     '/:projectId',
     authMiddleware,
     checkPermission('PROJECT_MANAGE_SETTINGS'),
+    requireProjectAccess('projectId'),
     getWhatsAppConfig
 );
 
@@ -36,6 +38,7 @@ router.put(
     '/:projectId/settings',
     authMiddleware,
     checkPermission('PROJECT_MANAGE_SETTINGS'),
+    requireProjectAccess('projectId'),
     updateWhatsAppSettings
 );
 
@@ -44,6 +47,7 @@ router.put(
     '/:projectId/triggers/:triggerName',
     authMiddleware,
     checkPermission('PROJECT_MANAGE_SETTINGS'),
+    requireProjectAccess('projectId'),
     updateWhatsAppTrigger
 );
 
@@ -52,6 +56,7 @@ router.post(
     '/:projectId/triggers/:triggerName/test',
     authMiddleware,
     checkPermission('PROJECT_MANAGE_SETTINGS'),
+    requireProjectAccess('projectId'),
     testWhatsAppTrigger
 );
 

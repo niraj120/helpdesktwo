@@ -1,20 +1,25 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   CheckIcon,
   ChevronDownIcon,
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/solid";
-import { SR_STATUS_META } from "../../services/serviceRequests";
+import { useProjectStatuses } from "../../hooks/useProjectStatuses";
 import { SR } from "../../utils/srTheme";
 
+/**
+ * One step of the bar = one row of the project's status master, the same list
+ * SLA & Escalation drives off. Nothing about the ladder is defined here: the
+ * codes, names, order, colours and which status ends the ticket all come from
+ * that master, so adding or renaming a status there changes this bar with no
+ * code change.
+ */
 interface Step {
   code: number;
   label: string;
-  enabled: boolean;
+  color?: string;
+  isClosed: boolean;
 }
-
-/** Setback statuses — Re-open / Re-open WIP. Reaching these = work bounced. */
-const SETBACK_CODES = new Set([6, 7]);
 
 /** Light → deep emerald. Completed steps deepen as the work progresses. */
 const GREENS = ["#6ee7b7", "#34d399", "#10b981", "#059669", "#047857", "#065f46"];
@@ -42,30 +47,49 @@ const KEYFRAMES = `
 
 const SrStatusProgress: React.FC<{
   ticket: any;
-  steps?: Step[];
+  projectId?: string;
   defaultOpen?: boolean;
-}> = ({ ticket, steps = [], defaultOpen = true }) => {
+}> = ({ ticket, projectId, defaultOpen = true }) => {
   const [open, setOpen] = useState(defaultOpen);
-  const visible = steps.filter((s) => s.enabled);
+  // Statuses come from the project's status master (SLA & Escalation), already
+  // filtered to active and sorted by displayOrder by the API.
+  const { statuses } = useProjectStatuses(projectId);
+  const visible: Step[] = useMemo(
+    () =>
+      statuses.map((s) => ({
+        code: s.code,
+        label: s.label,
+        color: s.color,
+        isClosed: s.isClosed,
+      })),
+    [statuses],
+  );
+
   const status = Number(ticket?.status);
   const total = visible.length;
 
+  // No status master for this project → nothing to draw. Never fall back to a
+  // built-in ladder; the master is the only source.
   if (!total) return null;
 
   const currentIndex = Math.max(
     0,
     visible.findIndex((s) => Number(s.code) === status),
   );
+  const current = visible[currentIndex];
 
   const breached = !!(
     ticket?.roleLevelSLA?.breachedAt || ticket?.ticketLevelSLA?.breachedAt
   );
-  const closed = !!(ticket?.closedAt || ticket?.resolvedAt) || status === 5;
-  // Current stage is "failing" if work bounced (re-open) or SLA breached while open.
-  const failed = (SETBACK_CODES.has(status) || (breached && !closed)) && !closed;
+  // "Closed" is whatever the master marks as closing the ticket.
+  const closed = !!ticket?.closedAt || !!current?.isClosed;
+  const failed = breached && !closed;
 
   const pct = total > 1 ? Math.round((currentIndex / (total - 1)) * 100) : 100;
-  const headColor = failed ? RED : closed ? GREENS[5] : GREENS[2];
+  // Colours follow the master too, so a recoloured status recolours the bar.
+  const headColor = failed
+    ? RED
+    : current?.color || (closed ? GREENS[5] : GREENS[2]);
 
   return (
     <div
@@ -120,7 +144,7 @@ const SrStatusProgress: React.FC<{
             }}
           >
             {failed && <ExclamationTriangleIcon style={{ width: 18, height: 18 }} />}
-            {SR_STATUS_META[status]?.label || status}
+            {current?.label || status}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
@@ -191,11 +215,9 @@ const SrStatusProgress: React.FC<{
             const dotColor = isFail
               ? RED
               : done
-                ? greenFor(i, total)
+                ? step.color || greenFor(i, total)
                 : active
-                  ? closed
-                    ? GREENS[5]
-                    : GREENS[2]
+                  ? step.color || (closed ? GREENS[5] : GREENS[2])
                   : "#e5e7eb";
             const textColor = isFail
               ? RED

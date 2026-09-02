@@ -10,14 +10,21 @@ import {
 } from "../controllers/feedbackFormController";
 import { auth } from "../middleware/auth";
 import { checkPermission } from "../middleware/permissions";
+import {
+  requireProjectAccess,
+  requireResourceProject,
+} from "../middleware/requireProjectAccess";
+import { FeedbackForm } from "../models/FeedbackForm";
 
 const router = express.Router();
+const ownsForm = requireResourceProject(FeedbackForm, "id");
 
-// Create feedback form (Admin)
+// Create feedback form (Admin) — projectId in the body.
 router.post(
   "/",
   auth,
   checkPermission("FEEDBACK_FORM_CREATE"),
+  requireProjectAccess("projectId"),
   createFeedbackForm,
 );
 
@@ -35,6 +42,7 @@ router.put(
   "/:id",
   auth,
   checkPermission("FEEDBACK_FORM_EDIT"),
+  ownsForm,
   updateFeedbackForm,
 );
 
@@ -43,6 +51,7 @@ router.patch(
   "/:id/toggle-active",
   auth,
   checkPermission("FEEDBACK_FORM_EDIT"),
+  ownsForm,
   toggleFeedbackFormActive,
 );
 
@@ -51,6 +60,7 @@ router.delete(
   "/:id",
   auth,
   checkPermission("FEEDBACK_FORM_DELETE"),
+  ownsForm,
   deleteFeedbackForm,
 );
 

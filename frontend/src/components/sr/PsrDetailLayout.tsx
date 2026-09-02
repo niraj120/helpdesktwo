@@ -287,7 +287,7 @@ const PsrDetailLayout: React.FC<{
       {detail.statusProgress?.enabled && (
         <SrStatusProgress
           ticket={ticket}
-          steps={detail.statusProgress.steps}
+          projectId={projectId}
           defaultOpen={detail.statusProgress.defaultOpen}
         />
       )}

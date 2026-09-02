@@ -50,6 +50,15 @@ export interface IUser extends Document {
   resetPasswordAttempts?: number;
   resetPasswordLockedUntil?: Date;
 
+  // Keycloak SSO — immutable subject (the `sub` claim). Set once a user is
+  // linked to their Keycloak account; thereafter login resolves the local user
+  // by this value, NOT by mutable email/mobile. Null until linked (migration).
+  // MULTI-TENANT: `sub` is unique only WITHIN a realm. The portal allows a
+  // per-project realm override, so the real identity is the pair
+  // (keycloakIssuer, keycloakSubject) — see the compound index below.
+  keycloakSubject?: string;
+  keycloakIssuer?: string; // Keycloak realm issuer URL the `sub` belongs to.
+
   // Token invalidation (incremented when role/permissions change)
   tokenVersion?: number;
 
@@ -179,6 +188,18 @@ const userSchema = new Schema<IUser>(
       default: "manual",
     },
     // HRMS Integration fields
+    // Keycloak SSO immutable subject (`sub`) + its realm issuer. Uniqueness is
+    // enforced on the (issuer, subject) PAIR via a partial compound index below,
+    // not here — because `sub` is only unique within a realm and the portal
+    // supports per-project realms.
+    keycloakSubject: {
+      type: String,
+      trim: true,
+    },
+    keycloakIssuer: {
+      type: String,
+      trim: true,
+    },
     hrmsId: {
       type: Number,
       sparse: true,
@@ -346,6 +367,16 @@ userSchema.index({ role: 1 });
 userSchema.index({ isActive: 1 });
 userSchema.index({ projects: 1 });
 userSchema.index({ department: 1 });
+// Keycloak identity is the (issuer, subject) pair — unique only among users that
+// have actually been linked (partial index skips the null-subject majority).
+// `sub` alone is NOT globally unique across realms in a multi-tenant portal.
+userSchema.index(
+  { keycloakIssuer: 1, keycloakSubject: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { keycloakSubject: { $type: "string" } },
+  },
+);
 userSchema.index({ hrmsId: 1 });
 
 export const User = mongoose.model<IUser>("User", userSchema);

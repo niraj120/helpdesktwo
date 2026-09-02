@@ -19,6 +19,17 @@ export async function getSrConfigForProject(projectId: string) {
 
 export interface SrConfigPatch {
   enabled?: boolean;
+  numbering?: Partial<
+    Record<
+      "PSR" | "ISR",
+      {
+        prefix?: string;
+        format?: string;
+        resetPeriod?: string;
+        startingNumber?: number;
+      }
+    >
+  >;
   psr?: { enabled?: boolean; intake?: any; workflow?: any };
   isr?: {
     enabled?: boolean;
@@ -82,6 +93,28 @@ export async function updateSrConfigForProject(
   const sr: any = cfg.sr || (cfg.sr = {});
 
   if (patch.enabled !== undefined) sr.enabled = !!patch.enabled;
+  // Per-interaction-type ticket numbering. Merged per type so a patch carrying
+  // only PSR does not wipe ISR. generateSrTicketNumber() reads sr.numbering
+  // first and only falls back to the project-wide ticketNumberSettings when
+  // this is absent — without persisting it here, SR tickets silently took the
+  // generic project prefix.
+  if (patch.numbering) {
+    const current = sr.numbering || {};
+    const merged: any = { ...current };
+    for (const type of ["PSR", "ISR"] as const) {
+      const incoming = (patch.numbering as any)[type];
+      if (!incoming) continue;
+      const next = { ...(current[type] || {}), ...incoming };
+      if (next.startingNumber !== undefined) {
+        const n = Number(next.startingNumber);
+        next.startingNumber = Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+      }
+      if (typeof next.prefix === "string") next.prefix = next.prefix.trim();
+      if (typeof next.format === "string") next.format = next.format.trim();
+      merged[type] = next;
+    }
+    sr.numbering = merged;
+  }
   if (patch.psr) sr.psr = { ...(sr.psr || {}), ...patch.psr };
   if (patch.isr) sr.isr = { ...(sr.isr || {}), ...patch.isr };
   if (patch.wip) sr.wip = { ...(sr.wip || {}), ...patch.wip };

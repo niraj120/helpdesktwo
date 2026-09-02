@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { authMiddleware } from "../middleware/auth";
 import { requirePermission } from "../middleware/permissions";
+import { requireProjectAccess } from "../middleware/requireProjectAccess";
 import {
   getHierarchyConfig,
   saveHierarchyConfig,
@@ -35,6 +36,7 @@ router.post(
   "/:projectId",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  requireProjectAccess("projectId"),
   saveHierarchyConfig,
 );
 
@@ -72,6 +74,7 @@ router.post(
   "/:projectId/categories",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  requireProjectAccess("projectId"),
   createHierarchyCategory,
 );
 
@@ -84,6 +87,7 @@ router.post(
   "/:projectId/categories/replicate-scope",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  requireProjectAccess("projectId"),
   replicateCategoryScope,
 );
 
@@ -96,6 +100,7 @@ router.post(
   "/:projectId/categories/bulk",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  requireProjectAccess("projectId"),
   bulkUploadCategories,
 );
 
@@ -119,6 +124,7 @@ router.put(
   "/:projectId/categories/:categoryId",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  requireProjectAccess("projectId"),
   updateHierarchyCategory,
 );
 
@@ -131,6 +137,7 @@ router.delete(
   "/:projectId/categories/:categoryId",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  requireProjectAccess("projectId"),
   deleteHierarchyCategory,
 );
 

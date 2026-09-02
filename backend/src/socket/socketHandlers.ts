@@ -1,85 +1,156 @@
 import { Server, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
 import config from "../config";
+import { User } from "../models/User";
+import { Ticket } from "../models/Ticket";
+
+/**
+ * Per-socket project scope, resolved once at connection time from the DB.
+ * Mirrors utils/projectScope.ts (union of User.projects + Role.projects), so a
+ * socket can only join rooms for projects the user can actually access.
+ */
+interface SocketScope {
+  all: boolean; // super-admin → every project
+  projectIds: Set<string>;
+}
+
+async function resolveSocketScope(userId: string): Promise<SocketScope | null> {
+  const user = await User.findById(userId)
+    .select("projects")
+    .populate({ path: "role", select: "code name projects" })
+    .lean();
+  if (!user) return null;
+
+  const role: any = (user as any).role;
+  const isSuper =
+    role?.code === "SUPER_ADMIN" || role?.name === "Super Admin";
+  if (isSuper) return { all: true, projectIds: new Set() };
+
+  const ids = new Set<string>();
+  ((user as any).projects || []).forEach(
+    (p: any) => p && ids.add(String(p._id || p)),
+  );
+  (role?.projects || []).forEach(
+    (p: any) => p && ids.add(String(p._id || p)),
+  );
+  return { all: false, projectIds: ids };
+}
+
+function getScope(socket: Socket): SocketScope {
+  return (
+    (socket.data.scope as SocketScope) || { all: false, projectIds: new Set() }
+  );
+}
+
+function canAccessProject(socket: Socket, projectId: string): boolean {
+  const scope = getScope(socket);
+  return scope.all || scope.projectIds.has(String(projectId));
+}
+
+/** Deny a room join without tearing down the connection. */
+function denyJoin(socket: Socket, room: string, reason: string) {
+  console.warn(
+    `⛔ Socket ${socket.id} (user=${socket.data.userId}) denied join ${room}: ${reason}`,
+  );
+  socket.emit("room-join-denied", { room, reason });
+}
 
 export const setupSocketHandlers = (io: Server) => {
-  // Authenticate socket connections via token in handshake
-  io.use((socket: Socket, next) => {
+  // Authenticate EVERY socket connection. A missing or invalid token is
+  // rejected outright — previously invalid tokens were allowed to connect
+  // "without userId", which let anonymous clients join project rooms.
+  io.use(async (socket: Socket, next) => {
     const token =
       socket.handshake.auth?.token || (socket.handshake.query?.token as string);
-    if (!token) {
-      // Allow unauthenticated connections for legacy/public rooms — just no user room
-      return next();
-    }
+    if (!token) return next(new Error("UNAUTHORIZED: no token"));
+
+    let decoded: any;
     try {
-      const decoded = jwt.verify(token, config.jwt.secret) as any;
-      socket.data.userId = decoded.userId || decoded.id;
-      next();
+      decoded = jwt.verify(token, config.jwt.secret);
     } catch {
-      // Invalid token — still allow connection but without userId
-      next();
+      return next(new Error("UNAUTHORIZED: invalid token"));
     }
+
+    const userId = decoded.userId || decoded.id;
+    if (!userId) return next(new Error("UNAUTHORIZED: no user in token"));
+
+    const scope = await resolveSocketScope(userId);
+    if (!scope) return next(new Error("UNAUTHORIZED: user not found"));
+
+    socket.data.userId = String(userId);
+    socket.data.scope = scope;
+    next();
   });
 
   io.on("connection", (socket: Socket) => {
     console.log(
-      `✅ Socket connected: ${socket.id} userId=${socket.data.userId || "anon"}`,
+      `✅ Socket connected: ${socket.id} userId=${socket.data.userId}`,
     );
 
-    // Auto-join personal user room so backend can push targeted notifications
-    if (socket.data.userId) {
-      socket.join(`user-${socket.data.userId}`);
-    }
+    // Personal notification room — always safe, it's the user's own id.
+    socket.join(`user-${socket.data.userId}`);
 
-    // Join a broad project-scoped ticket-list room (all watchers of that project's list)
+    // Broad project ticket-list room — only for projects the user can access.
     socket.on("join-project-tickets", (projectId: string) => {
+      if (!projectId) return;
+      if (!canAccessProject(socket, projectId)) {
+        return denyJoin(socket, `project-tickets-${projectId}`, "no project access");
+      }
       socket.join(`project-tickets-${projectId}`);
-      console.log(`Socket ${socket.id} joined project-tickets-${projectId}`);
     });
 
     socket.on("leave-project-tickets", (projectId: string) => {
       socket.leave(`project-tickets-${projectId}`);
     });
 
-    // Join the generic "all-tickets" room (users watching the global list)
+    // Global cross-project ticket list. This room receives EVERY project's
+    // ticket events, so only users who can see all projects (super-admin) may
+    // join. Multi-project non-admins should join their per-project rooms
+    // instead (frontend follow-up).
     socket.on("join-all-tickets", () => {
+      if (!getScope(socket).all) {
+        return denyJoin(socket, "all-tickets", "not permitted (cross-project)");
+      }
       socket.join("all-tickets");
-      console.log(`Socket ${socket.id} joined all-tickets room`);
     });
 
     socket.on("leave-all-tickets", () => {
       socket.leave("all-tickets");
     });
 
-    // Join a room for ticket updates
-    socket.on("join-ticket", (ticketId: string) => {
-      socket.join(`ticket-${ticketId}`);
-      console.log(`Socket ${socket.id} joined ticket room: ticket-${ticketId}`);
+    // Single-ticket room — authorize against the ticket's OWN project, loaded
+    // from the DB. Never trust the client's notion of which project it's in.
+    socket.on("join-ticket", async (ticketId: string) => {
+      if (!ticketId) return;
+      try {
+        const ticket = await Ticket.findById(ticketId).select("project").lean();
+        if (!ticket) return denyJoin(socket, `ticket-${ticketId}`, "not found");
+        if (!canAccessProject(socket, String((ticket as any).project))) {
+          return denyJoin(socket, `ticket-${ticketId}`, "no project access");
+        }
+        socket.join(`ticket-${ticketId}`);
+      } catch (e) {
+        denyJoin(socket, `ticket-${ticketId}`, "lookup failed");
+      }
     });
 
-    // Leave a ticket room
     socket.on("leave-ticket", (ticketId: string) => {
       socket.leave(`ticket-${ticketId}`);
-      console.log(`Socket ${socket.id} left ticket room: ticket-${ticketId}`);
     });
 
-    // Join a room for project config updates (hierarchy config changes)
+    // Project config room — project-scoped, same guard as ticket-list.
     socket.on("join-project-config", (projectId: string) => {
+      if (!projectId) return;
+      if (!canAccessProject(socket, projectId)) {
+        return denyJoin(socket, `project-config-${projectId}`, "no project access");
+      }
       socket.join(`project-config-${projectId}`);
-      console.log(
-        `Socket ${socket.id} joined project config room: project-config-${projectId}`,
-      );
     });
 
-    // Leave a project config room
     socket.on("leave-project-config", (projectId: string) => {
       socket.leave(`project-config-${projectId}`);
-      console.log(
-        `Socket ${socket.id} left project config room: project-config-${projectId}`,
-      );
     });
 
-    // Handle disconnection
     socket.on("disconnect", () => {
       console.log(`❌ Socket disconnected: ${socket.id}`);
     });

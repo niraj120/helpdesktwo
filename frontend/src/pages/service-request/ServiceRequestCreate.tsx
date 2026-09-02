@@ -822,12 +822,19 @@ const ServiceRequestCreate: React.FC<{
   }, [activeSrForm]);
 
   // ── Custom channel fields (from SR Settings → per-channel form builder) ──
+  // ISR is picked straight from the type step, so there is no classify channel
+  // to key off. Its form is stored under the "isr" key, not the "others" flow
+  // fallback — without this the ISR form built in SR Settings never renders.
+  const customFieldsKey =
+    linkedParentTicketId || interactionType === "ISR"
+      ? "isr"
+      : (channel?.key ?? flow);
   const customChannelFields = useMemo(
-    () => ((config?.customChannelFields ?? {})[channel?.key ?? flow] ?? []) as Array<{
+    () => ((config?.customChannelFields ?? {})[customFieldsKey] ?? []) as Array<{
       id: string; label: string; type: string; required?: boolean;
       dataSource: string; staticOptions?: string[];
     }>,
-    [config, channel, flow],
+    [config, customFieldsKey],
   );
   const customCategoryFieldsList = useMemo(
     () => customChannelFields.filter(f => f.dataSource === "category"),

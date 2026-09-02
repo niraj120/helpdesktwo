@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { PERMISSIONS } from "../../constants/permissions";
 import { usePermissions } from "../../hooks/usePermissions";
-import { serviceRequestApi, SR_STATUS_META } from "../../services/serviceRequests";
+import { serviceRequestApi } from "../../services/serviceRequests";
+import { useProjectStatuses } from "../../hooks/useProjectStatuses";
 import { SR, srButton } from "../../utils/srTheme";
 import MessageBanner, { SrMessage } from "./MessageBanner";
 
@@ -14,12 +15,13 @@ const userName = (u: any) =>
       u.email ||
       u._id;
 
-const StatusPill: React.FC<{ status: number }> = ({ status }) => {
-  const m = SR_STATUS_META[status] || {
-    label: String(status),
-    color: SR.text,
-    bg: "#f3f4f6",
-  };
+// Label/colour come from the project's status master (SLA & Escalation).
+const StatusPill: React.FC<{ status: number; projectId?: string }> = ({
+  status,
+  projectId,
+}) => {
+  const { metaFor } = useProjectStatuses(projectId);
+  const m = metaFor(status);
   return (
     <span
       style={{
@@ -250,7 +252,7 @@ const LinkedIsrPanel: React.FC<{
                     <strong style={{ color: "#2563EB" }}>{isr.ticketNumber}</strong>{" "}
                     <span style={{ color: SR.sub }}>{isr.subject}</span>
                   </span>
-                  <StatusPill status={isr.status} />
+                  <StatusPill status={isr.status} projectId={projectId} />
                 </div>
               ))}
             </div>
@@ -288,7 +290,7 @@ const LinkedIsrPanel: React.FC<{
                 <span style={{ fontSize: 12, color: SR.sub }}>
                   {userName(isr.assignedTo)}
                 </span>
-                <StatusPill status={isr.status} />
+                <StatusPill status={isr.status} projectId={projectId} />
               </span>
             </div>
           ))}

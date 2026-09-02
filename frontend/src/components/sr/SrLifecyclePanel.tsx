@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
-import { serviceRequestApi, SR_STATUS_META } from "../../services/serviceRequests";
+import { serviceRequestApi } from "../../services/serviceRequests";
+import { useProjectStatuses } from "../../hooks/useProjectStatuses";
 import { SR, srButton } from "../../utils/srTheme";
 import { usePermissions } from "../../hooks/usePermissions";
 import MessageBanner, { SrMessage } from "./MessageBanner";
@@ -38,6 +39,11 @@ const SrLifecyclePanel: React.FC<Props> = ({
   const id: string = ticket?._id;
   const status: number = ticket?.status;
   const { hasPermission } = usePermissions();
+  // Status labels/colours come from the project's status master, never a
+  // built-in list (SLA & Escalation owns that data).
+  const { metaFor } = useProjectStatuses(
+    ticket?.project?._id || ticket?.project,
+  );
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<SrMessage | null>(null);
@@ -188,7 +194,7 @@ const SrLifecyclePanel: React.FC<Props> = ({
     padding: 14,
   };
 
-  const meta = SR_STATUS_META[status] || { label: status, color: SR.text, bg: "#f3f4f6" };
+  const meta = metaFor(status);
   const nexts = NEXT_STATUSES[status] || [];
 
   return (
@@ -284,7 +290,7 @@ const SrLifecyclePanel: React.FC<Props> = ({
                 <option value="">Select...</option>
                 {nexts.map((s) => (
                   <option key={s} value={s}>
-                    {SR_STATUS_META[s]?.label || s}
+                    {metaFor(s).label}
                   </option>
                 ))}
               </select>

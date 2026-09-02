@@ -17,8 +17,11 @@ const getMongoDBUri = (): string => {
   if (isProduction) {
     const uri = process.env.MONGODB_PRODUCTION_URI;
     if (!uri) {
-      console.warn('⚠️  MONGODB_PRODUCTION_URI not set, falling back to localhost');
-      return 'mongodb://localhost:27017/sac_helpdesk';
+      // Never silently fall back to localhost in production — that masks a
+      // misconfiguration and can point the app at the wrong database.
+      throw new Error(
+        'FATAL: neither MONGODB_URI nor MONGODB_PRODUCTION_URI is set in production. Refusing to start.',
+      );
     }
     console.log('🔐 Using PRODUCTION MongoDB (from MONGODB_PRODUCTION_URI)');
     return uri;

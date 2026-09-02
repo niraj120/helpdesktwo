@@ -445,12 +445,6 @@ export interface SrBlockToggle {
   required?: boolean;
 }
 
-export interface SrDetailStatusStep {
-  code: number;
-  label: string;
-  enabled: boolean;
-}
-
 export interface SrDetailCardConfig {
   key:
     | "sla"
@@ -483,10 +477,13 @@ export interface SrDetailTabConfig {
 }
 
 export interface SrDetailConfig {
+  /**
+   * Display prefs only. The steps themselves are the project's status master
+   * (SLA & Escalation) — never stored here, or the two lists drift.
+   */
   statusProgress: {
     enabled: boolean;
     defaultOpen: boolean;
-    steps: SrDetailStatusStep[];
   };
   cards: SrDetailCardConfig[];
   tabs: SrDetailTabConfig[];

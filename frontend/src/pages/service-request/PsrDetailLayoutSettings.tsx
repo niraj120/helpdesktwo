@@ -39,35 +39,12 @@ const PsrDetailLayoutSettings: React.FC<{
     if (projectId) load();
   }, [projectId]); // eslint-disable-line
 
-  const patch = (path: string, value: any) => {
-    setDetail((d: any) => {
-      const next = structuredClone(d);
-      const parts = path.split(".");
-      let node = next;
-      for (let i = 0; i < parts.length - 1; i += 1) node = node[parts[i]];
-      node[parts[parts.length - 1]] = value;
-      return next;
-    });
-  };
-
   const updateList = (list: "cards" | "tabs", index: number, update: any) => {
     setDetail((d: any) => ({
       ...d,
       [list]: d[list].map((item: any, i: number) =>
         i === index ? { ...item, ...update } : item,
       ),
-    }));
-  };
-
-  const updateStep = (index: number, update: any) => {
-    setDetail((d: any) => ({
-      ...d,
-      statusProgress: {
-        ...d.statusProgress,
-        steps: d.statusProgress.steps.map((item: any, i: number) =>
-          i === index ? { ...item, ...update } : item,
-        ),
-      },
     }));
   };
 
@@ -106,7 +83,8 @@ const PsrDetailLayoutSettings: React.FC<{
               PSR / ISR Detail Layout
             </h3>
             <p style={{ margin: "4px 0 0", color: SR.sub, fontSize: 13 }}>
-              Configure status progress, body cards, and ticket tabs per project.
+              Configure body cards and ticket tabs per project. Statuses are
+              managed in SLA &amp; Escalation.
             </p>
           </div>
           <button style={srButton("primary")} disabled={saving} onClick={save}>
@@ -116,56 +94,9 @@ const PsrDetailLayoutSettings: React.FC<{
         {msg && <p style={{ color: msg === "Saved." ? SR.success : SR.danger }}>{msg}</p>}
       </div>
 
-      <div style={srStyles.card}>
-        <h3 style={{ margin: "0 0 12px", color: SR.text, fontSize: 16 }}>
-          Status Progress
-        </h3>
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input
-            type="checkbox"
-            checked={!!detail.statusProgress?.enabled}
-            onChange={(e) => patch("statusProgress.enabled", e.target.checked)}
-          />
-          Enabled
-        </label>
-        <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-          <input
-            type="checkbox"
-            checked={!!detail.statusProgress?.defaultOpen}
-            onChange={(e) => patch("statusProgress.defaultOpen", e.target.checked)}
-          />
-          Open by default
-        </label>
-        <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-          {detail.statusProgress.steps.map((step: any, i: number) => (
-            <div
-              key={step.code}
-              style={{
-                ...cardBox,
-                display: "grid",
-                gridTemplateColumns: "80px 1fr 120px",
-                gap: 10,
-                alignItems: "center",
-              }}
-            >
-              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={step.enabled}
-                  onChange={(e) => updateStep(i, { enabled: e.target.checked })}
-                />
-                {step.code}
-              </label>
-              <input
-                style={ctrl}
-                value={step.label}
-                onChange={(e) => updateStep(i, { label: e.target.value })}
-              />
-              <span style={{ color: SR.sub, fontSize: 12 }}>Status step</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Status steps are NOT configured here. Ticket statuses come from the
+          shared status master maintained in SLA & Escalation — duplicating them
+          in this screen meant two lists to keep in sync. */}
 
       <ConfigList
         title="Body Cards"

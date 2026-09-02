@@ -232,19 +232,10 @@ export const serviceRequestApi = {
 };
 
 /** PSR/ISR status code → label + color (matches SR_PSR_STATUSES on the backend). */
-export const SR_STATUS_META: Record<
-  number,
-  { label: string; color: string; bg: string }
-> = {
-  1: { label: "Open", color: "#1d4ed8", bg: "#eff6ff" },
-  2: { label: "Work In Progress", color: "#b45309", bg: "#fffbeb" },
-  3: { label: "On Hold", color: "#6b7280", bg: "#f3f4f6" },
-  4: { label: "Resolved", color: "#047857", bg: "#ecfdf5" },
-  5: { label: "Closed", color: "#374151", bg: "#f3f4f6" },
-  6: { label: "Re-open", color: "#b91c1c", bg: "#fef2f2" },
-  7: { label: "Re-Opened WIP", color: "#c2410c", bg: "#fff7ed" },
-  8: { label: "Cancelled", color: "#475569", bg: "#f1f5f9" },
-};
+/**
+ * Status labels/colours are NOT defined in code — they come from the project's
+ * status master (SLA & Escalation) via `useProjectStatuses`.
+ */
 
 /** Priority name → chip colors. Priority is free-form master data; match by
  * normalized name, fall back to a neutral gray for anything unmapped. */

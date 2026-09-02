@@ -289,13 +289,6 @@ export const SR_CONFIG_DEFAULTS: SrConfig = {
     statusProgress: {
       enabled: true,
       defaultOpen: true,
-      steps: [
-        { code: 1, label: "Open", enabled: true },
-        { code: 2, label: "WIP", enabled: true },
-        { code: 4, label: "Resolved", enabled: true },
-        { code: 6, label: "Re-open", enabled: true },
-        { code: 5, label: "Closed", enabled: true },
-      ],
     },
     cards: [
       // sla / psrDetails / pslAssignment / parentStudent / linkedIsr default OFF:
@@ -371,20 +364,6 @@ const mergeByKey = <T extends { key: string }>(defaults: T[], stored?: T[]) => {
     if (!seen.has((item as any).key)) merged.push(item);
   }
   return merged.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
-};
-
-const mergeSteps = (stored?: any[]) => {
-  const byCode = new Map((stored || []).map((item: any) => [Number(item.code), item]));
-  const seen = new Set<number>();
-  const merged = SR_CONFIG_DEFAULTS.psrDetail.statusProgress.steps.map((item) => {
-    seen.add(item.code);
-    return { ...item, ...(byCode.get(item.code) || {}) };
-  });
-  for (const item of stored || []) {
-    const code = Number(item.code);
-    if (!seen.has(code)) merged.push({ ...item, code });
-  }
-  return merged;
 };
 
 const resolvePsrIntake = (stored?: any) => {
@@ -666,7 +645,6 @@ export function resolveSrConfig(raw: any): SrConfig {
         defaultOpen:
           sr.psrDetail?.statusProgress?.defaultOpen ??
           SR_CONFIG_DEFAULTS.psrDetail.statusProgress.defaultOpen,
-        steps: mergeSteps(sr.psrDetail?.statusProgress?.steps),
       },
       cards: mergeByKey(
         SR_CONFIG_DEFAULTS.psrDetail.cards,

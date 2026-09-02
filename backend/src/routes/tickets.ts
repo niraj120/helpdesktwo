@@ -34,6 +34,14 @@ import {
 import { authMiddleware } from "../middleware/auth";
 import { checkPermission } from "../middleware/permissions";
 import { attachProjectContext } from "../middleware/projectScope";
+import { requireResourceProject } from "../middleware/requireProjectAccess";
+import { Ticket } from "../models/Ticket";
+
+// Authorize the ticket in :id against the caller's project scope. The ticket
+// controllers scope the LIST view but not the per-:id operations, so without
+// this an agent could mutate another project's ticket by guessing its id.
+// Ticket stores its project in the `project` field (not `projectId`).
+const ticketOwnsProject = requireResourceProject(Ticket, "id", "project");
 
 // Attachment controllers
 import {
@@ -212,6 +220,7 @@ router.get(
   "/:id",
   authMiddleware,
   checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  ticketOwnsProject,
   getTicketById,
 );
 
@@ -222,6 +231,7 @@ router.post(
   "/:id/reply",
   authMiddleware,
   checkPermission(["TICKET_ADD_COMMENT", "TICKET_VIEW_OWN"]),
+  ticketOwnsProject,
   upload.any(),
   replyToTicket,
 );
@@ -233,13 +243,14 @@ router.patch(
   "/:id/close",
   authMiddleware,
   checkPermission("TICKET_CHANGE_STATUS"),
+  ticketOwnsProject,
   closeTicket,
 );
 
 // @desc    Reopen closed ticket
 // @route   PATCH /api/tickets/:id/reopen
 // @access  Private (Student)
-router.patch("/:id/reopen", authMiddleware, reopenTicket);
+router.patch("/:id/reopen", authMiddleware, ticketOwnsProject, reopenTicket);
 
 // @desc    Update ticket
 // @route   PUT /api/tickets/:id
@@ -258,6 +269,7 @@ router.patch(
   "/:id/status",
   authMiddleware,
   checkPermission("TICKET_CHANGE_STATUS"),
+  ticketOwnsProject,
   updateTicketStatus,
 );
 
@@ -268,6 +280,7 @@ router.patch(
   "/:id/category",
   authMiddleware,
   checkPermission("TICKET_CHANGE_CATEGORY"),
+  ticketOwnsProject,
   updateTicketCategory,
 );
 
@@ -278,6 +291,7 @@ router.patch(
   "/:id/category-hierarchy",
   authMiddleware,
   checkPermission("TICKET_CHANGE_CATEGORY"),
+  ticketOwnsProject,
   updateTicketCategoryHierarchy,
 );
 
@@ -288,6 +302,7 @@ router.patch(
   "/:id/priority",
   authMiddleware,
   checkPermission("TICKET_CHANGE_PRIORITY"),
+  ticketOwnsProject,
   updateTicketPriority,
 );
 
@@ -298,6 +313,7 @@ router.post(
   "/:id/tags",
   authMiddleware,
   checkPermission("TICKET_EDIT"),
+  ticketOwnsProject,
   addTicketTag,
 );
 
@@ -308,6 +324,7 @@ router.delete(
   "/:id/tags/:tag",
   authMiddleware,
   checkPermission("TICKET_EDIT"),
+  ticketOwnsProject,
   removeTicketTag,
 );
 
@@ -318,6 +335,7 @@ router.post(
   "/:id/notes",
   authMiddleware,
   checkPermission("TICKET_ADD_COMMENT"),
+  ticketOwnsProject,
   addInternalNote,
 );
 
@@ -328,6 +346,7 @@ router.post(
   "/:id/escalate",
   authMiddleware,
   checkPermission("TICKET_ESCALATE"),
+  ticketOwnsProject,
   escalateTicket,
 );
 
@@ -338,6 +357,7 @@ router.get(
   "/:id/allowed-escalations",
   authMiddleware,
   checkPermission("TICKET_ESCALATE"),
+  ticketOwnsProject,
   getAllowedEscalations,
 );
 
@@ -348,6 +368,7 @@ router.post(
   "/:id/matrix-escalate",
   authMiddleware,
   checkPermission("TICKET_ESCALATE"),
+  ticketOwnsProject,
   escalateTicketWithMatrix,
 );
 
@@ -358,6 +379,7 @@ router.post(
   "/:id/assign-matrix",
   authMiddleware,
   checkPermission("TICKET_MANAGE"),
+  ticketOwnsProject,
   assignMatrixToTicket,
 );
 
@@ -368,16 +390,20 @@ router.put(
   "/:id/assign",
   authMiddleware,
   checkPermission("TICKET_ASSIGN"),
+  ticketOwnsProject,
   assignTicket,
 );
 
 // @desc    Reassign ticket to a different agent / project
 // @route   PATCH /api/tickets/:id/reassign
 // @access  Private (TICKET_REASSIGN permission)
+// Note: ownership is checked against the ticket's CURRENT project (the source),
+// which is the correct gate for moving it elsewhere.
 router.patch(
   "/:id/reassign",
   authMiddleware,
   checkPermission("TICKET_REASSIGN"),
+  ticketOwnsProject,
   reassignTicket,
 );
 
@@ -400,6 +426,7 @@ router.post(
   "/:id/attachments",
   authMiddleware,
   checkPermission("TICKET_ADD_ATTACHMENT"),
+  ticketOwnsProject,
   uploadMiddleware,
   uploadAttachment,
 );
@@ -416,6 +443,7 @@ router.get(
   "/:id/attachments/:attachmentId/download",
   authMiddleware,
   checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  ticketOwnsProject,
   downloadAttachment,
 );
 
@@ -426,6 +454,7 @@ router.delete(
   "/:id/attachments/:attachmentId",
   authMiddleware,
   checkPermission("TICKET_DELETE_ATTACHMENT"),
+  ticketOwnsProject,
   deleteAttachment,
 );
 
@@ -436,6 +465,7 @@ router.get(
   "/:id/comments",
   authMiddleware,
   checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  ticketOwnsProject,
   getComments,
 );
 
@@ -447,6 +477,7 @@ router.get(
   "/:id/communications",
   authMiddleware,
   checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  ticketOwnsProject,
   getEmailCommunications,
 );
 
@@ -457,6 +488,7 @@ router.get(
   "/:id/communications/:commId",
   authMiddleware,
   checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  ticketOwnsProject,
   getEmailCommunicationById,
 );
 
@@ -468,6 +500,7 @@ router.post(
   "/:id/reply-email",
   authMiddleware,
   checkPermission(["TICKET_REPLY", "TICKET_VIEW_ALL"]),
+  ticketOwnsProject,
   sendTicketReply,
 );
 
@@ -475,9 +508,9 @@ router.post(
 // @route   GET    /api/tickets/:id/draft?type=reply|email
 // @route   PUT    /api/tickets/:id/draft
 // @route   DELETE /api/tickets/:id/draft?type=reply|email
-router.get("/:id/draft", authMiddleware, getDraft);
-router.put("/:id/draft", authMiddleware, saveDraft);
-router.delete("/:id/draft", authMiddleware, deleteDraft);
+router.get("/:id/draft", authMiddleware, ticketOwnsProject, getDraft);
+router.put("/:id/draft", authMiddleware, ticketOwnsProject, saveDraft);
+router.delete("/:id/draft", authMiddleware, ticketOwnsProject, deleteDraft);
 
 // @desc    Add comment to ticket
 // @route   POST /api/tickets/:id/comments
@@ -486,6 +519,7 @@ router.post(
   "/:id/comments",
   authMiddleware,
   checkPermission("TICKET_ADD_COMMENT"),
+  ticketOwnsProject,
   createComment,
 );
 
@@ -496,6 +530,7 @@ router.put(
   "/:id/comments/:commentId",
   authMiddleware,
   checkPermission("TICKET_EDIT_COMMENT"),
+  ticketOwnsProject,
   updateComment,
 );
 
@@ -506,6 +541,7 @@ router.delete(
   "/:id/comments/:commentId",
   authMiddleware,
   checkPermission("TICKET_DELETE_COMMENT"),
+  ticketOwnsProject,
   deleteComment,
 );
 
@@ -516,6 +552,7 @@ router.post(
   "/:id/merge",
   authMiddleware,
   checkPermission("TICKET_MERGE"),
+  ticketOwnsProject,
   mergeTickets,
 );
 
@@ -526,6 +563,7 @@ router.get(
   "/:id/merge-candidates",
   authMiddleware,
   checkPermission("TICKET_MERGE"),
+  ticketOwnsProject,
   getMergeCandidates,
 );
 
@@ -536,6 +574,7 @@ router.get(
   "/:id/sla-status",
   authMiddleware,
   checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  ticketOwnsProject,
   getSLAStatus,
 );
 
@@ -546,6 +585,7 @@ router.post(
   "/:id/pause-sla",
   authMiddleware,
   checkPermission("TICKET_CHANGE_STATUS"),
+  ticketOwnsProject,
   pauseSLA,
 );
 
@@ -556,6 +596,7 @@ router.post(
   "/:id/resume-sla",
   authMiddleware,
   checkPermission("TICKET_CHANGE_STATUS"),
+  ticketOwnsProject,
   resumeSLA,
 );
 

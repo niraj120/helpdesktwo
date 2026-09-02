@@ -24,8 +24,14 @@ import {
 } from "../controllers/ticket-module/categoryEscalationController";
 import { authMiddleware } from "../middleware/auth";
 import { requirePermission } from "../middleware/permissions";
+import {
+  requireProjectAccess,
+  requireResourceProject,
+} from "../middleware/requireProjectAccess";
+import { Category } from "../models/Category";
 
 const router = express.Router();
+const ownsCategory = requireResourceProject(Category, "categoryId");
 
 // Get all categories (admin/debug endpoint)
 router.get("/all", authMiddleware, getAllCategories);
@@ -38,22 +44,25 @@ router.post(
   "/project/:projectId",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  requireProjectAccess("projectId"),
   createCategory,
 );
 
-// Update a category
+// Update a category — authorize the category's OWN project.
 router.put(
   "/:categoryId",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  ownsCategory,
   updateCategory,
 );
 
-// Delete a category
+// Delete a category — authorize the category's OWN project.
 router.delete(
   "/:categoryId",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  ownsCategory,
   deleteCategory,
 );
 
@@ -86,6 +95,7 @@ router.put(
   "/:categoryId/assignment-config",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  ownsCategory,
   upsertAssignmentConfig,
 );
 
@@ -94,6 +104,7 @@ router.delete(
   "/:categoryId/assignment-config",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  ownsCategory,
   deleteAssignmentConfig,
 );
 
@@ -111,6 +122,7 @@ router.put(
   "/:categoryId/sla",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  ownsCategory,
   upsertCategorySLA,
 );
 
@@ -136,6 +148,7 @@ router.put(
   "/:categoryId/escalation-config",
   authMiddleware,
   requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  ownsCategory,
   upsertCategoryEscalationConfig,
 );
 

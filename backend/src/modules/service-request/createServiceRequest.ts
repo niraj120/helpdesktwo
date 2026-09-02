@@ -54,23 +54,45 @@ const joinName = (...values: any[]): string | undefined => {
   return name || undefined;
 };
 
-const buildRequestedByMetadata = (
+const buildRequestedByMetadata = async (
   input: CreateServiceRequestInput,
-): Record<string, any> => {
+): Promise<Record<string, any>> => {
   const parent = input.parent || {};
   const formData = input.formData || {};
   const metadata = input.metadata || {};
   const source = CHANNEL_TO_SOURCE[input.channel] || input.channel;
 
   if (input.interactionType === "ISR") {
+    // ISR is staff→staff: there is no parent or student. The requester IS the
+    // agent who raised it, so resolve their name/contact from their user record
+    // — otherwise the detail page's Requester panel renders blank.
+    const raiserId = input.createdBy || input.actorId;
+    const staff: any =
+      raiserId && mongoose.Types.ObjectId.isValid(String(raiserId))
+        ? await User.findById(raiserId)
+            .select("firstName lastName fullName email mobile phone")
+            .lean()
+        : null;
+    const staffName = firstText(
+      staff?.fullName,
+      joinName(staff?.firstName, staff?.lastName),
+    );
+    const staffEmail = firstText(staff?.email);
+    const staffMobile = firstText(staff?.mobile, staff?.phone);
     return {
       requestedBy: {
         type: "staff",
-        userId: input.createdBy || input.actorId,
+        userId: raiserId,
+        name: staffName,
+        email: staffEmail,
+        mobile: staffMobile,
         source,
       },
-      requestedByUserId: input.createdBy || input.actorId,
+      requestedByUserId: raiserId,
       requestedByType: "staff",
+      ...(staffName ? { requestedByName: staffName } : {}),
+      ...(staffEmail ? { requestedByEmail: staffEmail } : {}),
+      ...(staffMobile ? { requestedByMobile: staffMobile } : {}),
       sourceLabel: source,
     };
   }
@@ -413,11 +435,20 @@ export async function createServiceRequest(
     }
   }
 
+  // ISR is staff→staff: the agent raising it owns it until they hand it over.
+  // If no assignee email was given and neither routing nor the category rules
+  // produced an owner, it stays with the raiser instead of dropping into an
+  // unassigned queue with nobody accountable.
+  if (!assignedTo && input.interactionType === "ISR" && input.actorId) {
+    assignedTo = new mongoose.Types.ObjectId(input.actorId);
+    assignedVia = "manual";
+  }
+
   const ticketNumber = await generateSrTicketNumber(
     input.projectId,
     input.interactionType,
   );
-  const requestedByMetadata = buildRequestedByMetadata(input);
+  const requestedByMetadata = await buildRequestedByMetadata(input);
   const sourceEmailConfigId = normalizeOptionalObjectId(
     input.sourceEmailConfigId,
     "sourceEmailConfigId",

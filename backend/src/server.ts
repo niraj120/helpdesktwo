@@ -71,6 +71,8 @@ import authRoutes from "./routes/auth";
 import projectAuthRoutes from "./routes/projectAuth";
 import studentAuthRoutes from "./routes/studentAuth";
 import keycloakAuthRoutes from "./routes/keycloakAuth";
+import oidcAuthRoutes from "./routes/oidcAuth";
+import { config } from "./config";
 import userRoutes from "./routes/users";
 import ticketRoutes from "./routes/tickets";
 import serviceRequestRoutes from "./modules/service-request/routes/serviceRequest";
@@ -362,6 +364,12 @@ app.use("/api/auth/project", projectAuthRoutes); // Agent login via /api/auth/pr
 app.use("/api/project-auth", projectAuthRoutes);
 app.use("/api/student-auth", studentAuthRoutes);
 app.use("/api/keycloak-auth", keycloakAuthRoutes);
+// Phase-3 OIDC SSO (Authorization Code + PKCE + BFF session). Mounted only when
+// OIDC is configured, so an unconfigured deploy is unaffected.
+if (config.oidc.enabled) {
+  app.use("/api/auth", oidcAuthRoutes);
+  console.log("🔐 OIDC SSO routes mounted at /api/auth/oidc");
+}
 app.use("/api/auth", eulaRoutes);
 app.use("/api/otp", otpRoutes); // OTP verification for fields
 app.use("/api/users", userRoutes);

@@ -10,8 +10,14 @@ import {
 } from "../controllers/statusController";
 import { authMiddleware } from "../middleware/auth";
 import { checkPermission } from "../middleware/permissions";
+import {
+  requireProjectAccess,
+  requireResourceProject,
+} from "../middleware/requireProjectAccess";
+import { Status } from "../models/Status";
 
 const router = express.Router();
+const ownsStatus = requireResourceProject(Status, "statusId");
 
 // Get all statuses (admin/debug endpoint)
 router.get("/all", authMiddleware, getAllStatuses);
@@ -27,6 +33,7 @@ router.post(
     "MASTER_DATA_MANAGE_STATUSES",
     "TICKET_CONFIG_MANAGE_STATUSES",
   ]),
+  requireProjectAccess("projectId"),
   createStatus,
 );
 
@@ -38,6 +45,7 @@ router.put(
     "MASTER_DATA_MANAGE_STATUSES",
     "TICKET_CONFIG_MANAGE_STATUSES",
   ]),
+  requireProjectAccess("projectId"),
   reorderStatuses,
 );
 
@@ -49,7 +57,7 @@ router.get(
   getStatusById,
 );
 
-// Update a status
+// Update a status — authorize the status's OWN project (resource-owns-project)
 router.put(
   "/:statusId",
   authMiddleware,
@@ -57,6 +65,7 @@ router.put(
     "MASTER_DATA_MANAGE_STATUSES",
     "TICKET_CONFIG_MANAGE_STATUSES",
   ]),
+  ownsStatus,
   updateStatus,
 );
 
@@ -68,6 +77,7 @@ router.delete(
     "MASTER_DATA_MANAGE_STATUSES",
     "TICKET_CONFIG_MANAGE_STATUSES",
   ]),
+  ownsStatus,
   deleteStatus,
 );
 
