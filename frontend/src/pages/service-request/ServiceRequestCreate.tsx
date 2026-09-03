@@ -86,6 +86,12 @@ type SourceContext = {
   subject?: string;
   body?: string;
   /**
+   * The source record's own project. Authoritative when the user has not
+   * selected one — a super admin opening an IVR call has no project context,
+   * so without this the SR config is never fetched and no channels render.
+   */
+  projectId?: string;
+  /**
    * Skip the "How would you classify this?" step and open this channel's form
    * directly. Used when the caller already told us the classification — e.g.
    * "Mark Junk" on an IVR call opens the Junk / Telemarketing channel.
@@ -255,9 +261,12 @@ const ServiceRequestCreate: React.FC<{
 
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [projectId, setProjectId] = useState(
-    currentProjectId || portalProjectId || "",
+    routeSourceContext?.projectId || currentProjectId || portalProjectId || "",
   );
   const [config, setConfig] = useState<any>(null);
+  // config stays null both while loading AND when the request fails, so track
+  // the fetch itself — otherwise a failure reads as a permanent "Loading…".
+  const [configLoading, setConfigLoading] = useState(false);
   const [formSchemas, setFormSchemas] = useState<SrFormSchema[]>([]);
 
   const [step, setStep] = useState<Step>("type");
@@ -360,6 +369,7 @@ const ServiceRequestCreate: React.FC<{
             inReplyTo: email.inReplyTo,
             references: email.references,
             sourceEmailConfigId: email.projectEmailConfigId,
+            projectId: email.projectId,
           });
         } else {
           const response = await serviceRequestApi.ivr.get(sourceId);
@@ -369,6 +379,7 @@ const ServiceRequestCreate: React.FC<{
             type: "ivr",
             id: call._id || sourceId,
             returnTo: `${location.pathname}?tab=ivr`,
+            projectId: call.projectId,
             callerName: call.callerName,
             callerMobile: call.callerMobile,
             subject: `IVR call from ${call.callerName || call.callerMobile}`,
@@ -436,12 +447,21 @@ const ServiceRequestCreate: React.FC<{
 
   useEffect(() => {
     if (projectId) return;
-    // Inside a portal the portal's own project wins — it is the project the
-    // agent is looking at, regardless of how many they belong to.
-    if (portalProjectId) setProjectId(portalProjectId);
+    // The source record's project wins: it is the project the email/call
+    // actually belongs to, and the user may have selected none at all.
+    if (sourceContext?.projectId) setProjectId(sourceContext.projectId);
+    // Inside a portal the portal's own project comes next — it is the project
+    // the agent is looking at, regardless of how many they belong to.
+    else if (portalProjectId) setProjectId(portalProjectId);
     else if (singleProject) setProjectId(userProjects[0]._id);
     else if (currentProjectId) setProjectId(currentProjectId);
-  }, [singleProject, userProjects, currentProjectId, portalProjectId]); // eslint-disable-line
+  }, [
+    singleProject,
+    userProjects,
+    currentProjectId,
+    portalProjectId,
+    sourceContext?.projectId,
+  ]); // eslint-disable-line
 
   // Linked-ISR entry (from a PSR "Create linked ISR" button): force ISR + skip
   // the type step.
@@ -461,12 +481,15 @@ const ServiceRequestCreate: React.FC<{
       return;
     }
     (async () => {
+      setConfigLoading(true);
       try {
         const r = await serviceRequestApi.getConfig(projectId);
         setConfig(r.data || null);
       } catch (e) {
         console.error(e);
         setConfig(null);
+      } finally {
+        setConfigLoading(false);
       }
       try {
         const r = await serviceRequestApi.listForms(projectId);
@@ -1513,9 +1536,13 @@ const ServiceRequestCreate: React.FC<{
             {/* config is null until the project's SR config arrives — saying
                 "none configured" before then accuses the project of a
                 misconfiguration it may not have. */}
-            {!projectId || config === null
-              ? "Loading channels…"
-              : "No channels configured. Ask an admin to set them in SR Settings."}
+            {!projectId
+              ? "No project selected — pick one above to load its channels."
+              : configLoading
+                ? "Loading channels…"
+                : config === null
+                  ? "Could not load this project's SR settings. Reload the page, or check that you have access to this project."
+                  : "No channels configured. Ask an admin to set them in SR Settings."}
           </p>
         )}
       </div>

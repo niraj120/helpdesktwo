@@ -21,6 +21,9 @@ interface CategoryNode {
 }
 interface Call {
   _id: string;
+  /** The call's own project — the create flow needs it when the user has not
+   *  selected a project (e.g. a super admin who skipped project selection). */
+  projectId?: string;
   externalId?: string;
   callToNumber?: string;
   callerName?: string;
@@ -331,6 +334,9 @@ const IVRCalls: React.FC<{
           type: "ivr",
           id: call._id,
           returnTo: `${serviceBasePath}?tab=ivr`,
+          // Carry the call's project so the create flow can load that
+          // project's SR config without relying on a project selection.
+          projectId: call.projectId,
           callerName: call.callerName,
           callerMobile: call.callerMobile,
           subject: `IVR call from ${call.callerName || call.callerMobile}`,
