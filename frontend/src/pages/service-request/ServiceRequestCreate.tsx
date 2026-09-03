@@ -84,6 +84,12 @@ type SourceContext = {
   callerMobile?: string;
   subject?: string;
   body?: string;
+  /**
+   * Skip the "How would you classify this?" step and open this channel's form
+   * directly. Used when the caller already told us the classification — e.g.
+   * "Mark Junk" on an IVR call opens the Junk / Telemarketing channel.
+   */
+  preselectChannelFlow?: string;
 };
 
 const stripHtml = (value?: string) =>
@@ -746,6 +752,30 @@ const ServiceRequestCreate: React.FC<{
     setStep("form");
   };
 
+  // The caller may already know the classification (e.g. "Mark Junk" on an IVR
+  // call). Once the project's channels have loaded, open that channel's form
+  // instead of asking the agent to pick it again. Runs once per source: if the
+  // agent then goes Back to the classify step, we leave them there.
+  const preselectedFlowRef = useRef<string | null>(null);
+  useEffect(() => {
+    const wanted = sourceContext?.preselectChannelFlow;
+    if (!wanted || !channels.length) return;
+    const key = `${sourceContext?.type}:${sourceContext?.id}:${wanted}`;
+    if (preselectedFlowRef.current === key) return;
+    const match = channels.find(
+      (c) => c.flow === wanted || c.key === wanted,
+    );
+    if (!match) return; // channel disabled for this project — leave the picker
+    preselectedFlowRef.current = key;
+    setInteractionType("PSR");
+    pickChannel(match);
+  }, [
+    channels,
+    sourceContext?.preselectChannelFlow,
+    sourceContext?.type,
+    sourceContext?.id,
+  ]); // eslint-disable-line
+
   const finalInteraction = (): "PSR" | "ISR" =>
     (channel?.routing?.interactionType as any) || interactionType || "PSR";
 
@@ -1093,12 +1123,20 @@ const ServiceRequestCreate: React.FC<{
     setSubmitting(true);
     setMsg(null);
     try {
-      // Junk — log only, no ticket.
+      // Junk — log only, no ticket. When the junk came from a source inbox the
+      // source still has to be closed out, otherwise it sits there unactioned.
       if (flow === "junk") {
+        if (sourceContext?.type === "ivr") {
+          await serviceRequestApi.ivr.markJunk(sourceContext.id, {
+            remark: effectiveDescription || "Marked as junk from the IVR inbox",
+          });
+        }
         setMsg({ type: "ok", text: "Logged as junk / telemarketing." });
         setTimeout(() => {
           resetFlow();
-          setStep("type");
+          // Back to the inbox it came from, so the agent sees it closed.
+          if (sourceContext?.returnTo) navigate(sourceContext.returnTo);
+          else setStep("type");
         }, 900);
         return;
       }

@@ -319,7 +319,12 @@ const IVRCalls: React.FC<{
     }
   };
 
-  const startIvrPsr = (call: Call) => {
+  /**
+   * Open the guided PSR flow for a call. `preselectChannelFlow` skips the
+   * "How would you classify this?" step when the agent has already told us the
+   * classification — "Mark Junk" lands straight on Junk / Telemarketing.
+   */
+  const startIvrPsr = (call: Call, preselectChannelFlow?: string) => {
     navigate(`${serviceBasePath}?tab=new&sourceType=ivr&sourceId=${call._id}`, {
       state: {
         sourceContext: {
@@ -330,6 +335,7 @@ const IVRCalls: React.FC<{
           callerMobile: call.callerMobile,
           subject: `IVR call from ${call.callerName || call.callerMobile}`,
           body: `Converted from IVR call ${call.externalId || call._id}. Caller: ${call.callerName || "Unknown"} (${call.callerMobile}).`,
+          ...(preselectChannelFlow ? { preselectChannelFlow } : {}),
         },
       },
     });
@@ -736,7 +742,10 @@ const IVRCalls: React.FC<{
                             onClick={(event) => {
                               event.stopPropagation();
                               markRowRead(c._id);
-                              markJunk(c);
+                              // Route through the guided PSR flow on the
+                              // Junk / Telemarketing channel, so the junk record
+                              // is raised with a reason like any other channel.
+                              startIvrPsr(c, "junk");
                             }}
                             style={{ ...srButton("danger"), padding: "6px 12px" }}
                           >
