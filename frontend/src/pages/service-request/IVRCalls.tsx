@@ -51,7 +51,13 @@ interface Call {
   convertedTicketId?: string;
   convertedTicketNumber?: string;
   callbackAt?: string;
-  callbackNote?: string;
+  followUps?: {
+    _id: string;
+    scheduledAt: string;
+    note?: string;
+    status: "pending" | "done" | "cancelled";
+    outcome?: string;
+  }[];
 }
 
 const REQUESTER_TYPES = [
@@ -64,14 +70,17 @@ const REQUESTER_TYPES = [
   { v: "other", l: "Other" },
 ];
 
-/** ISO → the "YYYY-MM-DDTHH:mm" that <input type="datetime-local"> expects. */
-const toLocalInput = (iso?: string) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
+/** Tiny inline action used in the follow-up log rows. */
+const logAction = (color: string): React.CSSProperties => ({
+  background: "none",
+  border: "none",
+  padding: "0 4px",
+  color,
+  fontSize: 11,
+  fontWeight: 600,
+  cursor: "pointer",
+  textDecoration: "underline",
+});
 
 const fmtDuration = (s?: number) => {
   if (!s) return "—";
@@ -359,31 +368,56 @@ const IVRCalls: React.FC<{
     }
   };
 
-  // WIP / call-back date, edited inline per row. Drafts are keyed by call id so
-  // one open editor never overwrites another row's value.
+  // WIP / call-back log. Drafts are keyed by call id so one open editor never
+  // writes into another row.
   const [cbDraft, setCbDraft] = useState<Record<string, string>>({});
   const [savingCb, setSavingCb] = useState<string | null>(null);
-  const saveCallback = async (call: Call) => {
+  const [openLog, setOpenLog] = useState<string | null>(null);
+
+  const addFollowUp = async (call: Call) => {
     const draft = cbDraft[call._id];
-    if (draft === undefined) return;
-    const current = toLocalInput(call.callbackAt);
-    if (draft === current) return; // nothing actually changed
+    if (!draft) {
+      setMsg("Pick a date and time first.");
+      return;
+    }
     setSavingCb(call._id);
     try {
-      await serviceRequestApi.ivr.setCallback(call._id, {
-        // datetime-local has no timezone; new Date() reads it as local time,
-        // which is what the agent meant.
-        callbackAt: draft ? new Date(draft).toISOString() : null,
+      // datetime-local has no timezone; new Date() reads it as local time,
+      // which is what the agent meant.
+      await serviceRequestApi.ivr.addFollowUp(call._id, {
+        scheduledAt: new Date(draft).toISOString(),
       });
-      setMsg(draft ? "Call-back date saved." : "Call-back date cleared.");
+      setMsg("Follow-up added.");
       setCbDraft((prev) => {
         const next = { ...prev };
         delete next[call._id];
         return next;
       });
+      setOpenLog(call._id);
       load();
     } catch (e: any) {
-      setMsg(e?.response?.data?.message || "Could not save the call-back date.");
+      setMsg(e?.response?.data?.message || "Could not add the follow-up.");
+    } finally {
+      setSavingCb(null);
+    }
+  };
+
+  const closeFollowUp = async (
+    call: Call,
+    followUpId: string,
+    status: "done" | "cancelled",
+    outcome?: "answered" | "no_answer",
+  ) => {
+    setSavingCb(call._id);
+    try {
+      await serviceRequestApi.ivr.updateFollowUp(call._id, followUpId, {
+        status,
+        outcome,
+      });
+      setMsg(status === "done" ? "Follow-up closed." : "Follow-up cancelled.");
+      load();
+    } catch (e: any) {
+      setMsg(e?.response?.data?.message || "Could not update the follow-up.");
     } finally {
       setSavingCb(null);
     }
@@ -653,55 +687,171 @@ const IVRCalls: React.FC<{
                           </div>
                         ) : null}
                       </td>
-                      {/* Call-back (WIP) date + one-click dial. Missed calls
-                          carry no conversation, so the committed call-back time
-                          is the only record of what happens next. */}
+                      {/* Call-back (WIP) log + one-click dial. A caller is
+                          often chased several times, so every commitment is
+                          kept and the whole log travels onto the ticket when
+                          the call is converted. */}
                       <td style={td} onClick={(event) => event.stopPropagation()}>
                         {c.callType === "missed" ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <input
-                              type="datetime-local"
-                              value={cbDraft[c._id] ?? toLocalInput(c.callbackAt)}
-                              disabled={savingCb === c._id}
-                              onChange={(event) =>
-                                setCbDraft((prev) => ({ ...prev, [c._id]: event.target.value }))
-                              }
-                              onBlur={() => saveCallback(c)}
-                              title="When we will call this caller back"
-                              style={{
-                                border: "1px solid #e5e7eb",
-                                borderRadius: 8,
-                                padding: "5px 8px",
-                                fontSize: 12,
-                                color: "#111827",
-                              }}
-                            />
-                            <button
-                              onClick={() => clickToCall(c)}
-                              disabled={calling === c._id || !c.callerMobile}
-                              title={
-                                c.callerMobile
-                                  ? "Call this number now — your phone rings first"
-                                  : "No caller number captured"
-                              }
-                              style={{
-                                ...srButton("primary"),
-                                padding: "6px 10px",
-                                opacity: !c.callerMobile ? 0.5 : 1,
-                                cursor: !c.callerMobile ? "not-allowed" : "pointer",
-                              }}
-                            >
-                              {calling === c._id ? "…" : "📞 Call"}
-                            </button>
-                          </div>
+                          <>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <input
+                                type="datetime-local"
+                                value={cbDraft[c._id] ?? ""}
+                                disabled={savingCb === c._id}
+                                onChange={(event) =>
+                                  setCbDraft((prev) => ({ ...prev, [c._id]: event.target.value }))
+                                }
+                                title="Schedule another call-back"
+                                style={{
+                                  border: "1px solid #e5e7eb",
+                                  borderRadius: 8,
+                                  padding: "5px 8px",
+                                  fontSize: 12,
+                                  color: "#111827",
+                                }}
+                              />
+                              <button
+                                onClick={() => addFollowUp(c)}
+                                disabled={savingCb === c._id || !cbDraft[c._id]}
+                                title="Add this follow-up to the log"
+                                style={{
+                                  ...srButton("neutral"),
+                                  padding: "6px 10px",
+                                  opacity: cbDraft[c._id] ? 1 : 0.5,
+                                  cursor: cbDraft[c._id] ? "pointer" : "not-allowed",
+                                }}
+                              >
+                                + Add
+                              </button>
+                              <button
+                                onClick={() => clickToCall(c)}
+                                disabled={calling === c._id || !c.callerMobile}
+                                title={
+                                  c.callerMobile
+                                    ? "Call this number now — your phone rings first"
+                                    : "No caller number captured"
+                                }
+                                style={{
+                                  ...srButton("primary"),
+                                  padding: "6px 10px",
+                                  opacity: !c.callerMobile ? 0.5 : 1,
+                                  cursor: !c.callerMobile ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                {calling === c._id ? "…" : "📞 Call"}
+                              </button>
+                            </div>
+
+                            {c.callbackAt ? (
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  marginTop: 4,
+                                  color:
+                                    new Date(c.callbackAt) < new Date()
+                                      ? "#b91c1c"
+                                      : "#475569",
+                                }}
+                              >
+                                Next: {new Date(c.callbackAt).toLocaleString()}
+                                {new Date(c.callbackAt) < new Date() ? " · overdue" : ""}
+                              </div>
+                            ) : null}
+
+                            {c.followUps?.length ? (
+                              <button
+                                onClick={() =>
+                                  setOpenLog(openLog === c._id ? null : c._id)
+                                }
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  padding: "2px 0",
+                                  marginTop: 2,
+                                  color: "#4338ca",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {openLog === c._id ? "Hide" : "Show"} log (
+                                {c.followUps.length})
+                              </button>
+                            ) : null}
+
+                            {openLog === c._id && c.followUps?.length ? (
+                              <div
+                                style={{
+                                  marginTop: 4,
+                                  borderTop: "1px solid #eef2f7",
+                                  paddingTop: 4,
+                                  display: "grid",
+                                  gap: 4,
+                                }}
+                              >
+                                {[...c.followUps]
+                                  .sort(
+                                    (a, b) =>
+                                      new Date(a.scheduledAt).getTime() -
+                                      new Date(b.scheduledAt).getTime(),
+                                  )
+                                  .map((f) => (
+                                    <div key={f._id} style={{ fontSize: 11, color: "#475569" }}>
+                                      <span style={{ fontWeight: 600 }}>
+                                        {new Date(f.scheduledAt).toLocaleString()}
+                                      </span>{" "}
+                                      <span
+                                        style={{
+                                          color:
+                                            f.status === "done"
+                                              ? "#047857"
+                                              : f.status === "cancelled"
+                                                ? "#6b7280"
+                                                : "#b45309",
+                                        }}
+                                      >
+                                        {f.status}
+                                        {f.outcome ? ` · ${f.outcome.replace(/_/g, " ")}` : ""}
+                                      </span>
+                                      {f.status === "pending" ? (
+                                        <>
+                                          {" "}
+                                          <button
+                                            onClick={() =>
+                                              closeFollowUp(c, f._id, "done", "answered")
+                                            }
+                                            disabled={savingCb === c._id}
+                                            style={logAction("#047857")}
+                                          >
+                                            answered
+                                          </button>
+                                          <button
+                                            onClick={() =>
+                                              closeFollowUp(c, f._id, "done", "no_answer")
+                                            }
+                                            disabled={savingCb === c._id}
+                                            style={logAction("#b45309")}
+                                          >
+                                            no answer
+                                          </button>
+                                          <button
+                                            onClick={() => closeFollowUp(c, f._id, "cancelled")}
+                                            disabled={savingCb === c._id}
+                                            style={logAction("#6b7280")}
+                                          >
+                                            cancel
+                                          </button>
+                                        </>
+                                      ) : null}
+                                    </div>
+                                  ))}
+                              </div>
+                            ) : null}
+                          </>
                         ) : (
                           "—"
                         )}
-                        {c.callbackAt && new Date(c.callbackAt) < new Date() ? (
-                          <div style={{ color: "#b91c1c", fontSize: 11, marginTop: 4 }}>
-                            Call-back overdue
-                          </div>
-                        ) : null}
                       </td>
                       <td style={{ ...td, textAlign: "right" }}>
                         {c.callStatus === "converted" && c.convertedTicketId ? (

@@ -74,13 +74,27 @@ export interface ICallIntake extends Document {
   matchedBy?: string;
   remark?: string;
   /**
-   * WIP / call-back date: when an agent has committed to calling this caller
-   * back. Set mainly on missed calls, which have no conversation yet.
+   * WIP / call-back log. A caller is often chased several times before they
+   * answer, so every commitment is kept rather than overwritten — the whole
+   * list is copied onto the ticket when the call is converted.
+   */
+  followUps?: {
+    _id?: mongoose.Types.ObjectId;
+    scheduledAt: Date;
+    note?: string;
+    status: "pending" | "done" | "cancelled";
+    /** How the follow-up call went, recorded when it is closed out. */
+    outcome?: "answered" | "no_answer" | "busy" | "other";
+    createdBy?: mongoose.Types.ObjectId;
+    createdAt: Date;
+    completedBy?: mongoose.Types.ObjectId;
+    completedAt?: Date;
+  }[];
+  /**
+   * Earliest still-pending follow-up. Derived from followUps — kept as a real
+   * field so the inbox can sort and filter on "due" without unwinding the array.
    */
   callbackAt?: Date;
-  callbackNote?: string;
-  callbackSetBy?: mongoose.Types.ObjectId;
-  callbackSetAt?: Date;
   /**
    * Outbound Click-to-Call attempts made to call this caller back. Each entry
    * correlates a SmartFlo originate (refId + customIdentifier) to the agent who
@@ -193,11 +207,27 @@ const CallIntakeSchema = new Schema<ICallIntake>(
     didLabel: { type: String },
     matchedBy: { type: String },
     remark: { type: String },
+    followUps: [
+      {
+        scheduledAt: { type: Date, required: true },
+        note: { type: String },
+        status: {
+          type: String,
+          enum: ["pending", "done", "cancelled"],
+          default: "pending",
+        },
+        outcome: {
+          type: String,
+          enum: ["answered", "no_answer", "busy", "other"],
+        },
+        createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+        createdAt: { type: Date, default: Date.now },
+        completedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        completedAt: { type: Date },
+      },
+    ],
     // Indexed: the inbox sorts and filters on "due for call-back".
     callbackAt: { type: Date, index: true },
-    callbackNote: { type: String },
-    callbackSetBy: { type: Schema.Types.ObjectId, ref: "User" },
-    callbackSetAt: { type: Date },
     outboundCalls: [
       {
         _id: false,

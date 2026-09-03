@@ -104,7 +104,11 @@ export const markJunk = async (req: AuthRequest, res: Response) => {
 
 export const markConverted = async (req: AuthRequest, res: Response) => {
   try {
-    const c = await ivr.markCallConverted(req.params.id, req.body);
+    const c = await ivr.markCallConverted(req.params.id, {
+      ...req.body,
+      // Attribution for the call history copied onto the ticket.
+      actorUserId: actorId(req),
+    });
     res.json({ success: true, data: c });
   } catch (err) {
     fail(res, err);
@@ -120,14 +124,34 @@ export const resolveOnCall = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/** Set or clear the WIP / call-back date on a call. */
-export const setCallback = async (req: AuthRequest, res: Response) => {
+/** Add a WIP / call-back commitment. Each one is appended to the log. */
+export const addFollowUp = async (req: AuthRequest, res: Response) => {
   try {
-    const doc = await ivr.setCallCallback(req.params.id, {
-      callbackAt: req.body?.callbackAt ?? null,
+    const doc = await ivr.addCallFollowUp(req.params.id, {
+      scheduledAt: String(req.body?.scheduledAt || ""),
       note: str(req.body?.note),
       actorUserId: actorId(req),
     });
+    res.status(201).json({ success: true, data: doc });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/** Close out or amend one follow-up. */
+export const updateFollowUp = async (req: AuthRequest, res: Response) => {
+  try {
+    const doc = await ivr.updateCallFollowUp(
+      req.params.id,
+      req.params.followUpId,
+      {
+        status: req.body?.status,
+        outcome: req.body?.outcome,
+        scheduledAt: str(req.body?.scheduledAt),
+        note: str(req.body?.note),
+        actorUserId: actorId(req),
+      },
+    );
     res.json({ success: true, data: doc });
   } catch (err) {
     fail(res, err);

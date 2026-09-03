@@ -5,6 +5,7 @@
  */
 import mongoose from "mongoose";
 import { CallIntake, RequesterType } from "../../models/CallIntake";
+import { Ticket } from "../../models/Ticket";
 import { IvrIngestLog } from "../../models/IvrIngestLog";
 import { User } from "../../models/User";
 import { Project } from "../../models/Project";
@@ -646,6 +647,8 @@ export async function convertCall(
     at: now,
   });
   await call.save();
+  // The SR inherits the call's story — inbound outcome, call-backs, follow-ups.
+  await attachCallHistoryToTicket(call, String(r.ticketId), actorId);
   return { call, ticket: r };
 }
 
@@ -699,7 +702,7 @@ export async function markCallJunk(
 /** Mark a call as converted by a PSR created through the guided New Request flow. */
 export async function markCallConverted(
   id: string,
-  input: { ticketId: string; ticketNumber?: string },
+  input: { ticketId: string; ticketNumber?: string; actorUserId?: string },
 ) {
   const call = await CallIntake.findById(id);
   if (!call) throw new SrError("Call not found", 404);
@@ -712,44 +715,257 @@ export async function markCallConverted(
   call.convertedTicketNumber = input.ticketNumber;
   call.convertedAt = new Date();
   await call.save();
+  // Same trail as the direct convert path — the guided flow must not lose it.
+  await attachCallHistoryToTicket(
+    call,
+    input.ticketId,
+    input.actorUserId || String(call.assignedTo || ""),
+  );
   return call;
 }
 
 /**
- * Set (or clear) the WIP / call-back date on a call — when an agent has
- * committed to ringing this caller back. Mainly used on missed calls, which
- * carry no conversation yet, so the only record of intent is this date.
+ * Build the call's story as ticket changeHistory entries: the inbound call and
+ * how it went, every outbound call-back attempt, and every follow-up commitment
+ * with its outcome. Written onto the ticket at conversion so the SR carries the
+ * whole pre-ticket history — otherwise it is stranded on the CallIntake and the
+ * ticket looks like it appeared from nowhere.
  *
- * Passing a null/empty date clears the commitment.
+ * changeHistory requires oldValue/newValue, so events use "—" as oldValue and
+ * put the readable line in newValue, matching the existing "PSL Call" pattern.
  */
-export async function setCallCallback(
+export async function buildCallHistoryEntries(
+  call: any,
+  actorId: string,
+): Promise<any[]> {
+  const by = oid(actorId);
+  const fmt = (d?: Date | string) =>
+    d ? new Date(d).toLocaleString("en-IN") : "unknown time";
+
+  // Resolve every user referenced by the log in one round trip.
+  const ids = new Set<string>();
+  for (const f of call.followUps || []) {
+    if (f.createdBy) ids.add(String(f.createdBy));
+    if (f.completedBy) ids.add(String(f.completedBy));
+  }
+  for (const o of call.outboundCalls || []) {
+    if (o.agentUserId) ids.add(String(o.agentUserId));
+    if (o.initiatedBy) ids.add(String(o.initiatedBy));
+  }
+  const users = ids.size
+    ? await User.find({ _id: { $in: [...ids].map((i) => oid(i)) } })
+        .select("firstName lastName email")
+        .lean()
+    : [];
+  const nameOf = (id?: any) => {
+    if (!id) return "someone";
+    const u: any = users.find((x: any) => String(x._id) === String(id));
+    if (!u) return "someone";
+    return (
+      [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "someone"
+    );
+  };
+
+  const entries: any[] = [];
+  const push = (newValue: string, changedAt: Date) =>
+    entries.push({
+      field: "IVR Call",
+      oldValue: "—",
+      newValue,
+      changedBy: by,
+      changedAt,
+      changeType: "add",
+    });
+
+  // 1. The inbound call itself.
+  const caller = call.callerName
+    ? `${call.callerName} (${call.callerMobile})`
+    : call.callerMobile || "unknown number";
+  if (call.callType === "missed") {
+    push(
+      `Inbound call from ${caller} at ${fmt(call.receivedAt)} — MISSED (no agent answered).`,
+      call.receivedAt || new Date(),
+    );
+  } else {
+    const who =
+      call.answeredAgentName || call.answeredAgentNumber || "an agent";
+    const secs = call.durationSeconds;
+    push(
+      `Inbound call from ${caller} at ${fmt(call.receivedAt)} — ANSWERED by ${who}` +
+        (secs ? ` (${Math.floor(secs / 60)}m ${secs % 60}s).` : "."),
+      call.receivedAt || new Date(),
+    );
+  }
+  if (call.didLabel || call.digitsDialed?.length) {
+    push(
+      `Routed via ${call.didLabel || "DID not captured"}` +
+        (call.digitsDialed?.length
+          ? `, IVR digits: ${call.digitsDialed.join(", ")}.`
+          : "."),
+      call.receivedAt || new Date(),
+    );
+  }
+
+  // 2. Outbound call-back attempts (Click-to-Call).
+  for (const o of call.outboundCalls || []) {
+    push(
+      `Call-back placed by ${nameOf(o.initiatedBy || o.agentUserId)} at ${fmt(
+        o.initiatedAt,
+      )} to ${o.destinationNumber || call.callerMobile} — ${String(
+        o.status || "initiated",
+      ).toUpperCase()}${o.message ? ` (${o.message})` : ""}.`,
+      o.initiatedAt || new Date(),
+    );
+  }
+
+  // 3. Follow-up commitments and how each ended.
+  for (const f of call.followUps || []) {
+    push(
+      `Follow-up scheduled for ${fmt(f.scheduledAt)} by ${nameOf(f.createdBy)}` +
+        (f.note ? ` — "${f.note}"` : "."),
+      f.createdAt || f.scheduledAt || new Date(),
+    );
+    if (f.status && f.status !== "pending") {
+      push(
+        `Follow-up ${f.status === "done" ? "completed" : "cancelled"} by ${nameOf(
+          f.completedBy,
+        )} at ${fmt(f.completedAt)}` +
+          (f.outcome ? ` — outcome: ${f.outcome.replace(/_/g, " ")}.` : "."),
+        f.completedAt || new Date(),
+      );
+    }
+  }
+
+  const pending = (call.followUps || []).filter(
+    (f: any) => f.status === "pending",
+  ).length;
+  push(
+    `Converted to a service request from the IVR inbox. ` +
+      `${(call.outboundCalls || []).length} call-back attempt(s), ` +
+      `${(call.followUps || []).length} follow-up(s) logged` +
+      (pending ? `, ${pending} still pending.` : "."),
+    new Date(),
+  );
+
+  return entries.sort(
+    (a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime(),
+  );
+}
+
+/**
+ * Copy the call's history onto the ticket it produced. Non-fatal: a conversion
+ * must not fail because its audit trail could not be written.
+ */
+export async function attachCallHistoryToTicket(
+  call: any,
+  ticketId: string,
+  actorId: string,
+) {
+  try {
+    const entries = await buildCallHistoryEntries(call, actorId);
+    if (!entries.length) return;
+    await Ticket.updateOne(
+      { _id: oid(ticketId) },
+      { $push: { changeHistory: { $each: entries } } },
+    );
+  } catch (e) {
+    console.warn(
+      "[ivr] could not attach call history to ticket:",
+      (e as any)?.message,
+    );
+  }
+}
+
+/**
+ * Recompute callbackAt from the follow-up log: the earliest still-pending
+ * commitment, or nothing when none are outstanding. Callers must invoke this
+ * after any change to followUps so the inbox's "due" column stays truthful.
+ */
+function syncNextCallback(call: any) {
+  const pending = (call.followUps || [])
+    .filter((f: any) => f.status === "pending")
+    .map((f: any) => new Date(f.scheduledAt).getTime())
+    .filter((t: number) => !Number.isNaN(t))
+    .sort((a: number, b: number) => a - b);
+  call.callbackAt = pending.length ? new Date(pending[0]) : undefined;
+}
+
+/**
+ * Add a WIP / call-back commitment. A caller is often chased several times, so
+ * each one is appended — nothing is overwritten.
+ */
+export async function addCallFollowUp(
   id: string,
-  input: { callbackAt?: string | null; note?: string; actorUserId?: string },
+  input: { scheduledAt: string; note?: string; actorUserId?: string },
 ) {
   const call = await CallIntake.findById(id);
   if (!call) throw new SrError("Call not found", 404);
 
-  const raw = String(input.callbackAt ?? "").trim();
-  if (!raw) {
-    call.callbackAt = undefined;
-    call.callbackNote = undefined;
-    call.callbackSetBy = undefined;
-    call.callbackSetAt = undefined;
-    await call.save();
-    return call;
-  }
-
-  const when = new Date(raw);
+  const when = new Date(String(input.scheduledAt || "").trim());
   if (Number.isNaN(when.getTime())) {
-    throw new SrError("Invalid call-back date.", 400);
+    throw new SrError("A valid call-back date is required.", 400);
   }
-  call.callbackAt = when;
-  call.callbackNote = input.note?.trim() || undefined;
-  call.callbackSetBy =
-    input.actorUserId && mongoose.Types.ObjectId.isValid(input.actorUserId)
-      ? oid(input.actorUserId)
-      : undefined;
-  call.callbackSetAt = new Date();
+  call.followUps = call.followUps || [];
+  call.followUps.push({
+    scheduledAt: when,
+    note: input.note?.trim() || undefined,
+    status: "pending",
+    createdBy:
+      input.actorUserId && mongoose.Types.ObjectId.isValid(input.actorUserId)
+        ? oid(input.actorUserId)
+        : undefined,
+    createdAt: new Date(),
+  } as any);
+  syncNextCallback(call);
+  await call.save();
+  return call;
+}
+
+/**
+ * Close out or amend one follow-up — mark it done with an outcome, cancel it,
+ * or correct its date/note.
+ */
+export async function updateCallFollowUp(
+  id: string,
+  followUpId: string,
+  input: {
+    status?: "pending" | "done" | "cancelled";
+    outcome?: "answered" | "no_answer" | "busy" | "other";
+    scheduledAt?: string;
+    note?: string;
+    actorUserId?: string;
+  },
+) {
+  const call = await CallIntake.findById(id);
+  if (!call) throw new SrError("Call not found", 404);
+  const entry = (call.followUps || []).find(
+    (f: any) => String(f._id) === String(followUpId),
+  ) as any;
+  if (!entry) throw new SrError("Follow-up not found", 404);
+
+  if (input.scheduledAt !== undefined) {
+    const when = new Date(String(input.scheduledAt).trim());
+    if (Number.isNaN(when.getTime())) {
+      throw new SrError("Invalid call-back date.", 400);
+    }
+    entry.scheduledAt = when;
+  }
+  if (input.note !== undefined) entry.note = input.note?.trim() || undefined;
+  if (input.outcome) entry.outcome = input.outcome;
+  if (input.status) {
+    entry.status = input.status;
+    if (input.status === "pending") {
+      entry.completedAt = undefined;
+      entry.completedBy = undefined;
+    } else {
+      entry.completedAt = new Date();
+      entry.completedBy =
+        input.actorUserId && mongoose.Types.ObjectId.isValid(input.actorUserId)
+          ? oid(input.actorUserId)
+          : undefined;
+    }
+  }
+  syncNextCallback(call);
   await call.save();
   return call;
 }

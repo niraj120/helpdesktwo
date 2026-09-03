@@ -58,11 +58,17 @@ router.post(
   checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
   c.resolveOnCall,
 );
-// WIP / call-back date — when we have committed to ringing the caller back.
+// WIP / call-back log — a caller may be chased several times, so each
+// commitment is appended rather than replacing the last.
 router.post(
-  "/calls/:id/callback",
+  "/calls/:id/followups",
   checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
-  c.setCallback,
+  c.addFollowUp,
+);
+router.patch(
+  "/calls/:id/followups/:followUpId",
+  checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
+  c.updateFollowUp,
 );
 // Outbound Click-to-Call (call the caller back via TATA SmartFlo).
 router.post(
