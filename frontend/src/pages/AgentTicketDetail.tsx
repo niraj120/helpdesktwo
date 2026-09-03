@@ -103,6 +103,20 @@ interface SLATrackingData {
   };
 }
 
+/**
+ * Display name for a user. Not every account has a lastName (service accounts
+ * such as "Admin" often don't), so joining the parts blindly renders
+ * "Admin undefined".
+ */
+const personName = (u?: {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}) =>
+  !u
+    ? ""
+    : [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "";
+
 interface Ticket {
   _id: string;
   ticketNumber: string;
@@ -3965,7 +3979,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                 if (ev.kind === "escalation") {
                                   const d = ev.data;
                                   const byName = d.escalatedBy
-                                    ? `${d.escalatedBy.firstName} ${d.escalatedBy.lastName}`
+                                    ? personName(d.escalatedBy)
                                     : "System (auto)";
                                   const toName =
                                     `${d.escalatedTo?.firstName || ""} ${d.escalatedTo?.lastName || ""}`.trim();
@@ -5071,7 +5085,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         <UserIcon className="h-5 w-5 text-gray-400" />
                         <span className="text-sm text-gray-900">
                           {ticket.assignedTo
-                            ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
+                            ? personName(ticket.assignedTo) || "Unassigned"
                             : "Unassigned"}
                         </span>
                       </div>
@@ -5843,7 +5857,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             const a = reassignAgents.find(
                               (x) => x._id === reassignAgentId,
                             );
-                            return a ? `${a.firstName} ${a.lastName}` : "";
+                            return a ? personName(a) : "";
                           })()
                           : ""
                     }

@@ -25,7 +25,10 @@ import {
   buildRoutingScope,
   primaryOwnerRole,
 } from "./psrRoutingResolver";
-import { autoAssignMatrixToTicket } from "../../services/escalationMatrixService";
+import {
+  autoAssignMatrixToTicket,
+  resolveMatrixAssignee,
+} from "../../services/escalationMatrixService";
 import {
   InteractionType,
   ModeOfContact,
@@ -435,6 +438,22 @@ export async function createServiceRequest(
     }
   }
 
+  // SLA & Escalation matrix — the level-1 owner is the starting assignee when
+  // nothing more specific has claimed the ticket. Applies to PSR and ISR alike;
+  // runs before the ISR raiser fallback so a configured matrix wins over
+  // "whoever typed it in".
+  if (!assignedTo && categoryId) {
+    const fromMatrix = await resolveMatrixAssignee(
+      input.projectId,
+      String(categoryId),
+      priority,
+    );
+    if (fromMatrix) {
+      assignedTo = fromMatrix.userId;
+      assignedVia = fromMatrix.assignedVia;
+    }
+  }
+
   // ISR is staff→staff: the agent raising it owns it until they hand it over.
   // If no assignee email was given and neither routing nor the category rules
   // produced an owner, it stays with the raiser instead of dropping into an
@@ -584,10 +603,10 @@ export async function createServiceRequest(
     }
   }
 
-  // Attach an escalation matrix so PSRs can escalate along the entity ladder
-  // (teacher → HOD → principal). Prefers the project's entity-routing matrix;
-  // falls back to its category/priority matrix. Non-fatal on failure.
-  if (input.interactionType === "PSR" && !autoClosed) {
+  // Attach the escalation matrix (level pointer + SLA clock) for every
+  // interaction type. PSR prefers the project's entity-routing matrix; PSR and
+  // ISR both fall back to the category/priority matrix. Non-fatal on failure.
+  if (!autoClosed) {
     try {
       await autoAssignMatrixToTicket(
         String(ticket._id),

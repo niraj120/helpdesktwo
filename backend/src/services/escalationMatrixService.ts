@@ -183,6 +183,89 @@ async function resolveEntityRoutingAssignee(
   }
 }
 
+/**
+ * Resolve the owner a NEW ticket should start with from its escalation matrix.
+ *
+ * The matrix's first active level answers "who holds this ticket while its SLA
+ * clock runs", so it is also the right starting assignee when nothing more
+ * specific (an explicit assignee, or the category's assignment config) has
+ * claimed the ticket. Applies to every interaction type — normal, PSR and ISR.
+ *
+ * Entity-routing matrices are skipped here: their owner depends on the saved
+ * ticket's scope, and autoAssignMatrixToTicket resolves those after creation.
+ *
+ * @returns the resolved user plus how it was resolved, or null to leave the
+ *          caller's own fallback in charge.
+ */
+export async function resolveMatrixAssignee(
+  projectId: string,
+  categoryId?: string,
+  priority?: string,
+): Promise<{
+  userId: mongoose.Types.ObjectId;
+  assignedVia: "by-user" | "by-role";
+} | null> {
+  try {
+    const matrix = await getMatrixByProjectId(projectId, priority, categoryId);
+    if (!matrix) return null;
+    // Entity routing needs the persisted ticket — handled post-create.
+    if ((matrix as any).assignmentSource === "entity_routing") return null;
+
+    const levels = getEffectiveLevelsByPriority(
+      matrix,
+      typeof priority === "string" ? priority : undefined,
+    )
+      .filter((l) => l.isActive)
+      .sort((a, b) => a.levelNumber - b.levelNumber);
+    const first: any = levels[0];
+    if (!first) return null;
+
+    // Level 1 names a specific person.
+    if (first.assigneeType === "user" && first.assigneeUserId) {
+      const user = await User.findOne({
+        _id: first.assigneeUserId,
+        isActive: true,
+      })
+        .select("_id")
+        .lean();
+      if (user?._id) {
+        return {
+          userId: new mongoose.Types.ObjectId(String(user._id)),
+          assignedVia: "by-user",
+        };
+      }
+      return null;
+    }
+
+    // Level 1 names a role — take an active member of it in this project.
+    if (first.roleId) {
+      const roleUser = await User.findOne({
+        role: first.roleId,
+        isActive: true,
+        $or: [
+          { projects: toObjectIdStrict(projectId, "projectId") },
+          { projects: { $size: 0 } },
+        ],
+      })
+        .select("_id")
+        .lean();
+      if (roleUser?._id) {
+        return {
+          userId: new mongoose.Types.ObjectId(String(roleUser._id)),
+          assignedVia: "by-role",
+        };
+      }
+    }
+    return null;
+  } catch (e) {
+    console.warn(
+      "[Escalation] resolveMatrixAssignee failed:",
+      (e as any)?.message,
+    );
+    return null;
+  }
+}
+
 export async function autoAssignMatrixToTicket(
   ticketId: string | mongoose.Types.ObjectId,
   projectId: string | mongoose.Types.ObjectId,
@@ -395,6 +478,52 @@ export async function autoAssignMatrixToTicket(
         matrixUpdateFields.assignedVia = "condition-based";
         console.log(
           `🎯 [Escalation] PSR entity routing — L${startLevel.levelNumber} owner ${ownerId}`,
+        );
+      }
+    }
+
+    // Category/priority matrices: the start level's owner becomes the ticket's
+    // first assignee. Normal-ticket creation deliberately skips the legacy
+    // assignment engine when a matrix exists ("matrix L1 will assign on save"),
+    // so without this the ticket would be left with nobody. Never overrides an
+    // assignee that creation already resolved.
+    if (
+      (matrix as any).assignmentSource !== "entity_routing" &&
+      !ticket.assignedTo &&
+      !matrixUpdateFields.assignedTo
+    ) {
+      const level: any = startLevel;
+      let ownerId: mongoose.Types.ObjectId | null = null;
+      let via = "by-user";
+      if (level.assigneeType === "user" && level.assigneeUserId) {
+        const user = await User.findOne({
+          _id: level.assigneeUserId,
+          isActive: true,
+        })
+          .select("_id")
+          .lean();
+        if (user?._id) ownerId = new mongoose.Types.ObjectId(String(user._id));
+      } else if (level.roleId) {
+        const roleUser = await User.findOne({
+          role: level.roleId,
+          isActive: true,
+          $or: [
+            { projects: toObjectIdStrict(projectId.toString(), "projectId") },
+            { projects: { $size: 0 } },
+          ],
+        })
+          .select("_id")
+          .lean();
+        if (roleUser?._id) {
+          ownerId = new mongoose.Types.ObjectId(String(roleUser._id));
+          via = "by-role";
+        }
+      }
+      if (ownerId) {
+        matrixUpdateFields.assignedTo = ownerId;
+        matrixUpdateFields.assignedVia = via;
+        console.log(
+          `🎯 [Escalation] Matrix L${startLevel.levelNumber} (${via}) — assigning ${ownerId}`,
         );
       }
     }
