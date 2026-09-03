@@ -47,6 +47,8 @@ interface Call {
   callStatus: string;
   convertedTicketId?: string;
   convertedTicketNumber?: string;
+  callbackAt?: string;
+  callbackNote?: string;
 }
 
 const REQUESTER_TYPES = [
@@ -58,6 +60,15 @@ const REQUESTER_TYPES = [
   { v: "junk", l: "Junk / Spam" },
   { v: "other", l: "Other" },
 ];
+
+/** ISO → the "YYYY-MM-DDTHH:mm" that <input type="datetime-local"> expects. */
+const toLocalInput = (iso?: string) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 const fmtDuration = (s?: number) => {
   if (!s) return "—";
@@ -336,6 +347,36 @@ const IVRCalls: React.FC<{
     }
   };
 
+  // WIP / call-back date, edited inline per row. Drafts are keyed by call id so
+  // one open editor never overwrites another row's value.
+  const [cbDraft, setCbDraft] = useState<Record<string, string>>({});
+  const [savingCb, setSavingCb] = useState<string | null>(null);
+  const saveCallback = async (call: Call) => {
+    const draft = cbDraft[call._id];
+    if (draft === undefined) return;
+    const current = toLocalInput(call.callbackAt);
+    if (draft === current) return; // nothing actually changed
+    setSavingCb(call._id);
+    try {
+      await serviceRequestApi.ivr.setCallback(call._id, {
+        // datetime-local has no timezone; new Date() reads it as local time,
+        // which is what the agent meant.
+        callbackAt: draft ? new Date(draft).toISOString() : null,
+      });
+      setMsg(draft ? "Call-back date saved." : "Call-back date cleared.");
+      setCbDraft((prev) => {
+        const next = { ...prev };
+        delete next[call._id];
+        return next;
+      });
+      load();
+    } catch (e: any) {
+      setMsg(e?.response?.data?.message || "Could not save the call-back date.");
+    } finally {
+      setSavingCb(null);
+    }
+  };
+
   const [calling, setCalling] = useState<string | null>(null);
   const clickToCall = async (call: Call) => {
     if (!call.callerMobile) {
@@ -519,12 +560,13 @@ const IVRCalls: React.FC<{
                 <th style={th}>Recording</th>
                 <th style={th}>Status</th>
                 <th style={th}>Call Status</th>
+                <th style={th}>Call Back (WIP)</th>
                 <th style={{ ...th, textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td style={{ ...td, color: "#9ca3af" }} colSpan={9}>No calls.</td></tr>
+                <tr><td style={{ ...td, color: "#9ca3af" }} colSpan={10}>No calls.</td></tr>
               ) : (
                 rows.map((c) => {
                   const cs = CALL_STATUS_META[c.callStatus] || CALL_STATUS_META.new;
@@ -596,6 +638,56 @@ const IVRCalls: React.FC<{
                         {c.providerCallStatus ? (
                           <div style={{ color: "#6b7280", fontSize: 12, marginTop: 4 }}>
                             {c.providerCallStatus}
+                          </div>
+                        ) : null}
+                      </td>
+                      {/* Call-back (WIP) date + one-click dial. Missed calls
+                          carry no conversation, so the committed call-back time
+                          is the only record of what happens next. */}
+                      <td style={td} onClick={(event) => event.stopPropagation()}>
+                        {c.callType === "missed" ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <input
+                              type="datetime-local"
+                              value={cbDraft[c._id] ?? toLocalInput(c.callbackAt)}
+                              disabled={savingCb === c._id}
+                              onChange={(event) =>
+                                setCbDraft((prev) => ({ ...prev, [c._id]: event.target.value }))
+                              }
+                              onBlur={() => saveCallback(c)}
+                              title="When we will call this caller back"
+                              style={{
+                                border: "1px solid #e5e7eb",
+                                borderRadius: 8,
+                                padding: "5px 8px",
+                                fontSize: 12,
+                                color: "#111827",
+                              }}
+                            />
+                            <button
+                              onClick={() => clickToCall(c)}
+                              disabled={calling === c._id || !c.callerMobile}
+                              title={
+                                c.callerMobile
+                                  ? "Call this number now — your phone rings first"
+                                  : "No caller number captured"
+                              }
+                              style={{
+                                ...srButton("primary"),
+                                padding: "6px 10px",
+                                opacity: !c.callerMobile ? 0.5 : 1,
+                                cursor: !c.callerMobile ? "not-allowed" : "pointer",
+                              }}
+                            >
+                              {calling === c._id ? "…" : "📞 Call"}
+                            </button>
+                          </div>
+                        ) : (
+                          "—"
+                        )}
+                        {c.callbackAt && new Date(c.callbackAt) < new Date() ? (
+                          <div style={{ color: "#b91c1c", fontSize: 11, marginTop: 4 }}>
+                            Call-back overdue
                           </div>
                         ) : null}
                       </td>

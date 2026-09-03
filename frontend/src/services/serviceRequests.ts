@@ -159,6 +159,11 @@ export const serviceRequestApi = {
       api.post(`/ivr/calls/${id}/converted`, body).then((r) => r.data),
     resolveOnCall: (id: string, body: any) =>
       api.post(`/ivr/calls/${id}/resolve-on-call`, body).then((r) => r.data),
+    // WIP / call-back date. Pass callbackAt: null to clear it.
+    setCallback: (
+      id: string,
+      body: { callbackAt: string | null; note?: string },
+    ) => api.post(`/ivr/calls/${id}/callback`, body).then((r) => r.data),
     // Outbound Click-to-Call: rings the agent, then dials the caller back.
     clickToCall: (id: string, body?: { destinationNumber?: string }) =>
       api.post(`/ivr/calls/${id}/click-to-call`, body || {}).then((r) => r.data),

@@ -74,6 +74,14 @@ export interface ICallIntake extends Document {
   matchedBy?: string;
   remark?: string;
   /**
+   * WIP / call-back date: when an agent has committed to calling this caller
+   * back. Set mainly on missed calls, which have no conversation yet.
+   */
+  callbackAt?: Date;
+  callbackNote?: string;
+  callbackSetBy?: mongoose.Types.ObjectId;
+  callbackSetAt?: Date;
+  /**
    * Outbound Click-to-Call attempts made to call this caller back. Each entry
    * correlates a SmartFlo originate (refId + customIdentifier) to the agent who
    * placed it; the matching webhook is stitched back via customIdentifier.
@@ -185,6 +193,11 @@ const CallIntakeSchema = new Schema<ICallIntake>(
     didLabel: { type: String },
     matchedBy: { type: String },
     remark: { type: String },
+    // Indexed: the inbox sorts and filters on "due for call-back".
+    callbackAt: { type: Date, index: true },
+    callbackNote: { type: String },
+    callbackSetBy: { type: Schema.Types.ObjectId, ref: "User" },
+    callbackSetAt: { type: Date },
     outboundCalls: [
       {
         _id: false,

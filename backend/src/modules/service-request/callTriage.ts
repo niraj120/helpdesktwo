@@ -715,6 +715,45 @@ export async function markCallConverted(
   return call;
 }
 
+/**
+ * Set (or clear) the WIP / call-back date on a call — when an agent has
+ * committed to ringing this caller back. Mainly used on missed calls, which
+ * carry no conversation yet, so the only record of intent is this date.
+ *
+ * Passing a null/empty date clears the commitment.
+ */
+export async function setCallCallback(
+  id: string,
+  input: { callbackAt?: string | null; note?: string; actorUserId?: string },
+) {
+  const call = await CallIntake.findById(id);
+  if (!call) throw new SrError("Call not found", 404);
+
+  const raw = String(input.callbackAt ?? "").trim();
+  if (!raw) {
+    call.callbackAt = undefined;
+    call.callbackNote = undefined;
+    call.callbackSetBy = undefined;
+    call.callbackSetAt = undefined;
+    await call.save();
+    return call;
+  }
+
+  const when = new Date(raw);
+  if (Number.isNaN(when.getTime())) {
+    throw new SrError("Invalid call-back date.", 400);
+  }
+  call.callbackAt = when;
+  call.callbackNote = input.note?.trim() || undefined;
+  call.callbackSetBy =
+    input.actorUserId && mongoose.Types.ObjectId.isValid(input.actorUserId)
+      ? oid(input.actorUserId)
+      : undefined;
+  call.callbackSetAt = new Date();
+  await call.save();
+  return call;
+}
+
 /** OCR — resolved during the call, no SR created. */
 export async function resolveCallOnCall(
   id: string,

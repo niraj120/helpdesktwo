@@ -120,6 +120,20 @@ export const resolveOnCall = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/** Set or clear the WIP / call-back date on a call. */
+export const setCallback = async (req: AuthRequest, res: Response) => {
+  try {
+    const doc = await ivr.setCallCallback(req.params.id, {
+      callbackAt: req.body?.callbackAt ?? null,
+      note: str(req.body?.note),
+      actorUserId: actorId(req),
+    });
+    res.json({ success: true, data: doc });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
 /** Outbound Click-to-Call: ring the agent, then dial the caller back. */
 export const clickToCall = async (req: AuthRequest, res: Response) => {
   try {
