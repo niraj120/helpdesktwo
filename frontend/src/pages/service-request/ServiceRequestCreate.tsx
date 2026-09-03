@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import SrPage from "../../components/sr/SrPage";
 import { srStyles, srButton, SR } from "../../utils/srTheme";
 import { useProjectContext } from "../../contexts/ProjectContext";
+import { useBranding } from "../../contexts/BrandingContext";
 import { usePermissions } from "../../hooks/usePermissions";
 import { PERMISSIONS } from "../../constants/permissions";
 import { api } from "../../utils/api";
@@ -233,6 +234,7 @@ const ServiceRequestCreate: React.FC<{
   >(routeSourceContext);
   const sourceContext = resolvedSourceContext;
   const { currentProjectId, userProjects } = useProjectContext();
+  const { branding } = useBranding();
   const { hasPermission } = usePermissions();
 
   // Permission booleans (global). Whether the option is actually OFFERED also
@@ -245,8 +247,16 @@ const ServiceRequestCreate: React.FC<{
   const canPriority = hasPermission(PERMISSIONS.SR_PRIORITY_OVERRIDE);
   const canOffline = hasPermission(PERMISSIONS.SR_OFFLINE_ENTRY);
 
+  // A project portal has no ProjectContext selection — it resolves its project
+  // by domain through BrandingContext. Without this fallback projectId stays
+  // empty inside the portal, the SR config never loads, and the classify step
+  // renders "No channels configured" for a project that has them.
+  const portalProjectId = isProjectPortal ? branding?.projectId : undefined;
+
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
-  const [projectId, setProjectId] = useState(currentProjectId || "");
+  const [projectId, setProjectId] = useState(
+    currentProjectId || portalProjectId || "",
+  );
   const [config, setConfig] = useState<any>(null);
   const [formSchemas, setFormSchemas] = useState<SrFormSchema[]>([]);
 
@@ -425,9 +435,13 @@ const ServiceRequestCreate: React.FC<{
   }, [hideProjectSelector]);
 
   useEffect(() => {
-    if (!projectId && singleProject) setProjectId(userProjects[0]._id);
-    else if (!projectId && currentProjectId) setProjectId(currentProjectId);
-  }, [singleProject, userProjects, currentProjectId]); // eslint-disable-line
+    if (projectId) return;
+    // Inside a portal the portal's own project wins — it is the project the
+    // agent is looking at, regardless of how many they belong to.
+    if (portalProjectId) setProjectId(portalProjectId);
+    else if (singleProject) setProjectId(userProjects[0]._id);
+    else if (currentProjectId) setProjectId(currentProjectId);
+  }, [singleProject, userProjects, currentProjectId, portalProjectId]); // eslint-disable-line
 
   // Linked-ISR entry (from a PSR "Create linked ISR" button): force ISR + skip
   // the type step.
@@ -1496,7 +1510,12 @@ const ServiceRequestCreate: React.FC<{
         ))}
         {channels.length === 0 && (
           <p style={{ color: SR.sub, fontSize: 13 }}>
-            No channels configured. Ask an admin to set them in SR Settings.
+            {/* config is null until the project's SR config arrives — saying
+                "none configured" before then accuses the project of a
+                misconfiguration it may not have. */}
+            {!projectId || config === null
+              ? "Loading channels…"
+              : "No channels configured. Ask an admin to set them in SR Settings."}
           </p>
         )}
       </div>
