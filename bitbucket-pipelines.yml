@@ -9,7 +9,11 @@ pipelines:
           script:
             - echo "Frontend Deployment Started"
             - |
-              ssh -v ubuntu@34.14.157.13 '
+              # Retry only on SSH-level failures (exit 255): connection reset,
+              # refused, or the sshd MaxStartups limit shedding load. A non-255 code is
+              # the remote command's own result and must not be repeated.
+              for attempt in 1 2 3; do
+                ssh -v ubuntu@34.14.157.13 '
                 cd /home/ubuntu/helpdesk/frontend &&
                 node -v &&
                 git checkout dev &&
@@ -28,6 +32,13 @@ pipelines:
                 pm2 restart helpdesk-frontend:3001 &&
                 echo "Frontend deployed successfully!"
               '
+                rc=$?
+                [ $rc -eq 0 ] && exit 0
+                [ $rc -ne 255 ] && exit $rc
+                echo "SSH could not connect (attempt $attempt/3) - retrying in $((attempt * 20))s"
+                sleep $((attempt * 20))
+              done
+              echo "SSH failed after 3 attempts" && exit 255
 
     dev-deploy-backend:
       - step:
@@ -35,7 +46,11 @@ pipelines:
           script:
             - echo "Backend Deployment Started"
             - |
-              ssh -v ubuntu@34.14.157.13 '
+              # Retry only on SSH-level failures (exit 255): connection reset,
+              # refused, or the sshd MaxStartups limit shedding load. A non-255 code is
+              # the remote command's own result and must not be repeated.
+              for attempt in 1 2 3; do
+                ssh -v ubuntu@34.14.157.13 '
                 cd /home/ubuntu/helpdesk/backend &&
                 node -v &&
                 git checkout dev &&
@@ -54,6 +69,13 @@ pipelines:
                 pm2 restart helpdesk-backend:3003 &&
                 echo "Backend deployed successfully!"
               '
+                rc=$?
+                [ $rc -eq 0 ] && exit 0
+                [ $rc -ne 255 ] && exit $rc
+                echo "SSH could not connect (attempt $attempt/3) - retrying in $((attempt * 20))s"
+                sleep $((attempt * 20))
+              done
+              echo "SSH failed after 3 attempts" && exit 255
 
     Internal-prod-deploy-frontend:
       - step:
@@ -61,7 +83,11 @@ pipelines:
           script:
             - echo "Frontend Deployment Started"
             - |
-              ssh -v ubuntu@35.200.131.128 '
+              # Retry only on SSH-level failures (exit 255): connection reset,
+              # refused, or the sshd MaxStartups limit shedding load. A non-255 code is
+              # the remote command's own result and must not be repeated.
+              for attempt in 1 2 3; do
+                ssh -v ubuntu@35.200.131.128 '
                 cd /home/ubuntu/helpdesk/frontend &&
                 node -v &&
                 git checkout Internal-Prod &&
@@ -80,6 +106,13 @@ pipelines:
                 pm2 restart helpdesk-frontend:3001 &&
                 echo "Frontend deployed successfully!"
               '
+                rc=$?
+                [ $rc -eq 0 ] && exit 0
+                [ $rc -ne 255 ] && exit $rc
+                echo "SSH could not connect (attempt $attempt/3) - retrying in $((attempt * 20))s"
+                sleep $((attempt * 20))
+              done
+              echo "SSH failed after 3 attempts" && exit 255
 
     Internal-prod-deploy-backend:
       - step:
@@ -87,7 +120,11 @@ pipelines:
           script:
             - echo "Backend Deployment Started"
             - |
-              ssh -v ubuntu@35.200.131.128 '
+              # Retry only on SSH-level failures (exit 255): connection reset,
+              # refused, or the sshd MaxStartups limit shedding load. A non-255 code is
+              # the remote command's own result and must not be repeated.
+              for attempt in 1 2 3; do
+                ssh -v ubuntu@35.200.131.128 '
                 cd /home/ubuntu/helpdesk/backend &&
                 node -v &&
                 git checkout Internal-Prod &&
@@ -106,3 +143,10 @@ pipelines:
                 pm2 restart helpdesk-backend:3003 &&
                 echo "Backend deployed successfully!"
               '
+                rc=$?
+                [ $rc -eq 0 ] && exit 0
+                [ $rc -ne 255 ] && exit $rc
+                echo "SSH could not connect (attempt $attempt/3) - retrying in $((attempt * 20))s"
+                sleep $((attempt * 20))
+              done
+              echo "SSH failed after 3 attempts" && exit 255
