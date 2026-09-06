@@ -42,6 +42,13 @@ interface SrRow {
   };
   linkedIsr?: { total: number; done: number };
   linkedIsrs?: LinkedIsrRef[];
+  /** Set when this row itself sits under a parent ticket (linked ISR). */
+  linkedParent?: {
+    _id: string;
+    ticketNumber: string;
+    interactionType?: string;
+    subject?: string;
+  };
   wip?: { committedDate?: string };
   createdAt: string;
   updatedAt?: string;
@@ -74,6 +81,8 @@ interface SrFilters {
   source: string;
   classification: string;
   linkedIsrState: string;
+  /** Filter to requests carrying this tag — the batch-working workflow. */
+  tags: string;
   sortBy: string;
   sortOrder: string;
 }
@@ -91,6 +100,7 @@ const DEFAULT_FILTERS: SrFilters = {
   source: "",
   classification: "",
   linkedIsrState: "",
+  tags: "",
   sortBy: "createdAt",
   sortOrder: "desc",
 };
@@ -154,11 +164,7 @@ const REQUEST_SCOPE_OPTIONS: RequestScopeOption[] = [
     key: "assigned",
     label: "Assigned to Me",
     description: "Tickets currently assigned to you",
-    permissions: [
-      PERMISSIONS.SR_VIEW_ASSIGNED,
-      PERMISSIONS.SR_PSR_RECEIVE,
-      PERMISSIONS.SR_ISR_RECEIVE,
-    ],
+    permissions: [PERMISSIONS.SR_VIEW_OWN],
   },
   {
     key: "raised",
@@ -176,11 +182,8 @@ const REQUEST_SCOPE_OPTIONS: RequestScopeOption[] = [
     description: "Tickets you raised or received",
     permissions: [
       PERMISSIONS.SR_VIEW_OWN,
-      PERMISSIONS.SR_VIEW_ASSIGNED,
       PERMISSIONS.SR_PSR_CREATE,
       PERMISSIONS.SR_ISR_CREATE,
-      PERMISSIONS.SR_PSR_RECEIVE,
-      PERMISSIONS.SR_ISR_RECEIVE,
     ],
   },
 ];
@@ -710,6 +713,12 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
           label: `Channel: ${optionLabel(CHANNEL_OPTIONS, filters.classification)}`,
         }
       : undefined,
+    filters.tags
+      ? {
+          key: "tags",
+          label: `Tag: ${filters.tags}`,
+        }
+      : null,
     filters.linkedIsrState
       ? {
           key: "linkedIsrState",
@@ -816,6 +825,22 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     knownRowIdsRef.current = ids;
     hasLoadedRowsRef.current = true;
   }, []);
+
+  // Tags actually in use, so the filter offers real choices instead of a
+  // free-text box that silently matches nothing.
+  const [tagOptions, setTagOptions] = useState<SelectOption[]>([]);
+  useEffect(() => {
+    serviceRequestApi
+      .tags(projectId || undefined)
+      .then((r: any) => {
+        const list: string[] = Array.isArray(r?.data) ? r.data : [];
+        setTagOptions([
+          { value: "", label: "Any tag" },
+          ...list.map((t) => ({ value: t, label: t })),
+        ]);
+      })
+      .catch(() => setTagOptions([{ value: "", label: "Any tag" }]));
+  }, [projectId]);
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) setLoading(true);
@@ -1300,6 +1325,8 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                 {!soleType &&
                   selectControl("Request type", "interactionType", requestTypeOptions)}
                 {selectControl("Linked ISR", "linkedIsrState", LINKED_ISR_OPTIONS)}
+                {tagOptions.length > 1 &&
+                  selectControl("Tag", "tags", tagOptions)}
                 {dateControl("Updated from", "updatedFrom")}
                 {dateControl("Updated to", "updatedTo")}
                 {selectControl("Sort by", "sortBy", [
@@ -1555,6 +1582,35 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                       <span style={{ color: "#2563EB", fontWeight: 600 }}>
                         {r.ticketNumber}
                       </span>
+                      {/* A linked ISR reads as standalone without this — show
+                          the parent it belongs to, clickable through to it. */}
+                      {r.linkedParent && (
+                        <div
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(detailPath(r.linkedParent!._id));
+                          }}
+                          title={`Linked under ${r.linkedParent.ticketNumber}${
+                            r.linkedParent.subject
+                              ? ` — ${r.linkedParent.subject}`
+                              : ""
+                          }`}
+                          style={{
+                            marginTop: 2,
+                            fontSize: 11,
+                            color: "#6366f1",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 3,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <span aria-hidden>🔗</span>
+                          <span style={{ textDecoration: "underline" }}>
+                            {r.linkedParent.ticketNumber}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td style={{ ...td, maxWidth: 240 }}>
                       <span

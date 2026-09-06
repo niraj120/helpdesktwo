@@ -179,6 +179,45 @@ export const emitTicketListUpdate = (
 };
 
 /**
+ * Emit an IVR call-list change to everyone watching this project's calls.
+ *
+ * Reuses the project ticket room: it is already authorized against project
+ * access, and an IVR call belongs to the same project as its tickets, so a new
+ * room would duplicate that check without adding anything.
+ */
+export const emitIvrCallUpdate = (
+  io: Server,
+  projectId: string,
+  payload: {
+    type: "new-call" | "call-updated";
+    call: any;
+  },
+) => {
+  io.to(`project-tickets-${projectId}`).emit("ivr-call-update", payload);
+  io.to("all-tickets").emit("ivr-call-update", payload);
+};
+
+/**
+ * Emit "something new arrived in the Service Requests area".
+ *
+ * The hub shows four tabs fed by different pipelines; an agent sitting on one
+ * has no way of knowing the others moved. One event with an `area` lets the
+ * hub badge whichever tab grew, instead of each tab inventing its own channel.
+ */
+export const emitSrActivity = (
+  io: Server,
+  projectId: string,
+  payload: {
+    area: "requests" | "email" | "ivr" | "leads";
+    /** Human reference for the toast, e.g. a ticket or enquiry number. */
+    ref?: string;
+  },
+) => {
+  io.to(`project-tickets-${projectId}`).emit("sr-activity", payload);
+  io.to("all-tickets").emit("sr-activity", payload);
+};
+
+/**
  * Emit a targeted notification to a specific user
  */
 export const emitUserNotification = (

@@ -14,10 +14,9 @@ import { Role } from "../models/Role";
 import { Permission } from "../models/Permission";
 
 const ISR_CODES = [
-  "SR_ISR_CREATE",
-  "SR_ISR_RECEIVE",
-  "SR_VIEW_OWN",
-  "SR_VIEW_ASSIGNED",
+  "TICKET_CREATE",
+  "TICKET_VIEW_OWN",
+  "TICKET_ADD_COMMENT",
 ];
 
 async function run() {

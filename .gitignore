@@ -141,3 +141,6 @@ backend/uploads/tickets/*
 
 # Claude Code session files
 .claude/
+
+# RBAC snapshots taken before permission migrations (contain role data)
+backend/backups/

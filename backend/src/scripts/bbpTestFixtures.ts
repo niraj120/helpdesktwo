@@ -73,10 +73,9 @@ async function run() {
 
   if (wantIsr) {
     const ISR_PERMS = [
-      "SR_ISR_CREATE",
-      "SR_ISR_RECEIVE",
-      "SR_VIEW_OWN",
-      "SR_VIEW_ASSIGNED",
+      "TICKET_CREATE",
+      "TICKET_VIEW_OWN",
+      "TICKET_ADD_COMMENT",
     ];
     const perms = await Permission.find({ code: { $in: ISR_PERMS } })
       .select("_id code")

@@ -1,4 +1,6 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useSocket } from "../../hooks/useSocket";
+import { useProjectContext } from "../../contexts/ProjectContext";
 import { useLocation, useSearchParams } from "react-router-dom";
 import SrPage from "../../components/sr/SrPage";
 import SrTabs from "../../components/sr/SrTabs";
@@ -14,13 +16,7 @@ const TABS = [
   {
     key: "all",
     label: "All Requests",
-    permissions: [
-      PERMISSIONS.SR_VIEW_ALL,
-      PERMISSIONS.SR_VIEW_OWN,
-      PERMISSIONS.SR_VIEW_ASSIGNED,
-      PERMISSIONS.SR_PSR_RECEIVE,
-      PERMISSIONS.SR_ISR_RECEIVE,
-    ],
+    permissions: [PERMISSIONS.SR_VIEW_ALL, PERMISSIONS.SR_VIEW_OWN],
   },
   {
     key: "new",
@@ -45,25 +41,68 @@ const TABS = [
     key: "leads",
     label: "Leads",
     permissions: [
-      PERMISSIONS.EMAIL_TRIAGE_CONVERT,
-      PERMISSIONS.SR_PSR_CREATE,
+      PERMISSIONS.SR_LEADS_ACCESS,
+      PERMISSIONS.SR_LEADS_MANAGE,
       PERMISSIONS.SR_CONFIG_MANAGE,
     ],
   },
 ];
 
+/** Which tab a given kind of arrival belongs to. */
+const AREA_TAB: Record<string, string> = {
+  requests: "all",
+  email: "email",
+  ivr: "ivr",
+  leads: "leads",
+};
+
 const ServiceRequestsHub: React.FC = () => {
   const { hasAnyPermission } = usePermissions();
   const location = useLocation();
   const [sp, setSp] = useSearchParams();
+  const { currentProjectId } = useProjectContext();
   const isProjectPortal = location.pathname.includes("/portal/");
-  const visibleTabs = TABS.filter((tab) => hasAnyPermission(tab.permissions));
+  const baseTabs = TABS.filter((tab) => hasAnyPermission(tab.permissions));
   const requestedTab = sp.get("tab") || "all";
-  const active = visibleTabs.some((tab) => tab.key === requestedTab)
+  const active = baseTabs.some((tab) => tab.key === requestedTab)
     ? requestedTab
-    : visibleTabs[0]?.key || "all";
+    : baseTabs[0]?.key || "all";
   const setActive = (key: string) =>
     setSp(key === "all" ? {} : { tab: key }, { replace: true });
+
+  // An agent works one tab at a time and cannot see the other pipelines
+  // moving. Count arrivals per tab while the hub is open, and clear a tab's
+  // count once it is opened — the moment it is read, it is no longer new.
+  const [newByTab, setNewByTab] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    setNewByTab((prev) => (prev[active] ? { ...prev, [active]: 0 } : prev));
+  }, [active]);
+
+  const socketRooms = useMemo(
+    () =>
+      currentProjectId
+        ? [`project-tickets-${currentProjectId}`]
+        : ["all-tickets"],
+    [currentProjectId],
+  );
+
+  useSocket({
+    rooms: socketRooms,
+    events: {
+      "sr-activity": (payload: { area?: string }) => {
+        const tab = AREA_TAB[payload?.area || ""];
+        // Nothing to flag for the tab already on screen.
+        if (!tab || tab === active) return;
+        setNewByTab((prev) => ({ ...prev, [tab]: (prev[tab] || 0) + 1 }));
+      },
+    },
+  });
+
+  const visibleTabs = baseTabs.map((tab) => ({
+    ...tab,
+    badge: newByTab[tab.key] || 0,
+  }));
 
   return (
     <SrPage

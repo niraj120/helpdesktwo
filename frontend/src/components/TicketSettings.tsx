@@ -25,6 +25,8 @@ interface TicketStatus {
   isDefault: boolean;
   isClosed: boolean;
   requireClosingRemark: boolean;
+  requireCommittedDate?: boolean;
+  committedDateLabel?: string;
   displayOrder: number;
 }
 
@@ -635,6 +637,8 @@ const TicketSettings: React.FC = () => {
       isDefault: false,
       isClosed: false,
       requireClosingRemark: false,
+      requireCommittedDate: false,
+      committedDateLabel: "",
       displayOrder: statuses.length + 1,
     });
     setShowStatusModal(true);
@@ -680,6 +684,8 @@ const TicketSettings: React.FC = () => {
           isDefault: editingStatus.isDefault,
           isClosed: editingStatus.isClosed,
           requireClosingRemark: editingStatus.requireClosingRemark,
+          requireCommittedDate: editingStatus.requireCommittedDate ?? false,
+          committedDateLabel: editingStatus.committedDateLabel || undefined,
           displayOrder: editingStatus.displayOrder,
         }),
       });
@@ -1419,11 +1425,73 @@ const TicketSettings: React.FC = () => {
                                   fontWeight: 400,
                                 }}
                               >
-                                Agent must enter a remark + date before this
-                                status is saved
+                                Agent must explain why before this status is
+                                saved
                               </span>
                             </span>
                           </label>
+                        </div>
+
+                        {/* A date is a different promise from a remark: "by
+                            when", not "why". Statuses like Work In Progress
+                            want it; Closed generally does not. */}
+                        <div style={{ marginTop: "12px" }}>
+                          <label
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              marginTop: "4px",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={editingStatus.requireCommittedDate ?? false}
+                              onChange={(e) =>
+                                setEditingStatus({
+                                  ...editingStatus,
+                                  requireCommittedDate: e.target.checked,
+                                })
+                              }
+                            />
+                            <span>
+                              Require a Committed Date For This Status
+                              <span
+                                style={{
+                                  display: "block",
+                                  fontSize: "11px",
+                                  color: "#6b7280",
+                                  fontWeight: 400,
+                                }}
+                              >
+                                Agent must commit to a date. It is saved as the
+                                ticket's WIP commitment and shown on the detail
+                                page.
+                              </span>
+                            </span>
+                          </label>
+                          {editingStatus.requireCommittedDate && (
+                            <input
+                              type="text"
+                              value={editingStatus.committedDateLabel || ""}
+                              placeholder="Label for the date (default: Committed date)"
+                              onChange={(e) =>
+                                setEditingStatus({
+                                  ...editingStatus,
+                                  committedDateLabel: e.target.value,
+                                })
+                              }
+                              style={{
+                                marginTop: "8px",
+                                marginLeft: "24px",
+                                width: "calc(100% - 24px)",
+                                padding: "8px 10px",
+                                border: "1px solid #e5e7eb",
+                                borderRadius: "8px",
+                                fontSize: "13px",
+                              }}
+                            />
+                          )}
                         </div>
 
                         <div

@@ -79,6 +79,7 @@ const LinkedIsrPanel: React.FC<{
   const [q, setQ] = useState("");
   const [results, setResults] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [msg, setMsg] = useState<SrMessage | null>(null);
   const deb = useRef<any>(null);
 
@@ -98,28 +99,57 @@ const LinkedIsrPanel: React.FC<{
     if (parentId) load();
   }, [parentId]); // eslint-disable-line
 
+  /**
+   * Fetch candidates for linking. With no term this returns the most recent
+   * ISRs, so opening "Link existing" shows something to pick straight away
+   * instead of an empty box that only responds once you have typed two
+   * characters. The backend matches the term against ticket number and
+   * subject, so a full number like BPP-2026-0007 resolves to that one ISR.
+   */
+  const fetchCandidates = async (term: string) => {
+    setSearching(true);
+    try {
+      const r = await serviceRequestApi.list({
+        interactionType: "ISR",
+        ...(term ? { search: term } : {}),
+        projectId,
+        limit: 8,
+      });
+      setResults(
+        (r.items || []).filter(
+          (i: any) =>
+            // Already linked here, and — when the parent is itself an ISR —
+            // the parent must not offer itself as its own child.
+            String(i.linkedPsrId || "") !== parentId &&
+            String(i._id) !== parentId,
+        ),
+      );
+    } catch (e) {
+      console.error(e);
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
   const searchIsr = (val: string) => {
     setQ(val);
     if (deb.current) clearTimeout(deb.current);
-    if (val.trim().length < 2) {
-      setResults([]);
-      return;
-    }
-    deb.current = setTimeout(async () => {
-      try {
-        const r = await serviceRequestApi.list({
-          interactionType: "ISR",
-          search: val.trim(),
-          projectId,
-          limit: 8,
-        });
-        setResults(
-          (r.items || []).filter((i: any) => String(i.linkedPsrId || "") !== parentId),
-        );
-      } catch (e) {
-        console.error(e);
+    const term = val.trim();
+    // A single character is too broad to be useful; fall back to the recent
+    // list rather than blanking the results.
+    deb.current = setTimeout(() => fetchCandidates(term.length >= 2 ? term : ""), 300);
+  };
+
+  const openLink = () => {
+    setShowLink((open) => {
+      const next = !open;
+      if (next) {
+        setQ("");
+        fetchCandidates("");
       }
-    }, 350);
+      return next;
+    });
   };
 
   const link = async (isrId: string) => {
@@ -176,7 +206,7 @@ const LinkedIsrPanel: React.FC<{
           {canLink && (
             <button
               style={srButton("neutral")}
-              onClick={() => setShowLink((s) => !s)}
+              onClick={openLink}
             >
               Link existing
             </button>
@@ -224,6 +254,15 @@ const LinkedIsrPanel: React.FC<{
               boxSizing: "border-box",
             }}
           />
+          {results.length === 0 && (
+            <div style={{ marginTop: 8, fontSize: 13, color: SR.muted }}>
+              {searching
+                ? "Searching..."
+                : q.trim()
+                  ? `No ISR matches "${q.trim()}".`
+                  : "No other ISRs available to link in this project."}
+            </div>
+          )}
           {results.length > 0 && (
             <div
               style={{

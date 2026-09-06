@@ -5,6 +5,8 @@ export interface SrTab {
   key: string;
   label: string;
   icon?: React.ReactNode;
+  /** Unseen arrivals in this section since the agent last looked at it. */
+  badge?: number;
 }
 
 /**
@@ -54,6 +56,28 @@ const SrTabs: React.FC<{
         >
           {t.icon}
           {t.label}
+          {/* Only on inactive tabs: the one you are reading is by definition
+              seen, and a count there would never clear. */}
+          {!on && !!t.badge && (
+            <span
+              aria-label={`${t.badge} new`}
+              style={{
+                minWidth: 18,
+                height: 18,
+                padding: "0 5px",
+                borderRadius: 999,
+                background: "#ef4444",
+                color: "#fff",
+                fontSize: 11,
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {t.badge > 99 ? "99+" : t.badge}
+            </span>
+          )}
         </button>
       );
     })}

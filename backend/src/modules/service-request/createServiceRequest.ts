@@ -18,7 +18,12 @@ import { SR_STATUS } from "./srWorkflow";
 import { resolveSrRouting } from "./srMasterData";
 import { findDuplicateServiceRequests } from "./srDuplicateDetection";
 import { generateSrTicketNumber } from "./srTicketNumber";
-import { SrError, notifySrWatchers } from "./serviceRequestService";
+import { notifySrActivity } from "./srActivity";
+import {
+  SrError,
+  notifySrWatchers,
+  assertIsrParentAllowed,
+} from "./serviceRequestService";
 import { autoAssignTicket } from "../../utils/ticketAutoAssignment";
 import {
   resolveScopeOwners,
@@ -256,9 +261,10 @@ export async function createServiceRequest(
   const categoryId = normalizeOptionalObjectId(input.categoryId, "category");
   const categoryHierarchy = normalizeCategoryHierarchy(input.categoryHierarchy);
 
-  // Linked parent validation: only an ISR may link, and only to a normal ticket
-  // or PSR in the same project. linkedPsrId is kept as a backward-compatible
-  // alias for existing PSR flows.
+  // Linked parent validation: only an ISR may link, and only to a ticket in the
+  // same project — a normal ticket, a PSR, or (where the project enables
+  // sub-ISRs) another ISR. linkedPsrId is kept as a backward-compatible alias
+  // for existing PSR flows.
   let linkedPsrId: mongoose.Types.ObjectId | undefined;
   const parentLinkId = input.linkedParentTicketId || input.linkedPsrId;
   if (parentLinkId) {
@@ -271,12 +277,18 @@ export async function createServiceRequest(
     const parent = await Ticket.findById(parentLinkId)
       .select("interactionType project")
       .lean();
-    if (!parent || (parent as any).interactionType === "ISR") {
+    if (!parent) {
       throw new SrError("Linked parent ticket not found.", 404);
     }
     if (String((parent as any).project) !== String(input.projectId)) {
       throw new SrError("Linked parent ticket belongs to a different project.", 400);
     }
+    // Same rules as linking an existing ISR: opt-in, no loops, depth capped.
+    await assertIsrParentAllowed(
+      String(parentLinkId),
+      (parent as any).interactionType,
+      String(input.projectId),
+    );
     linkedPsrId = new mongoose.Types.ObjectId(parentLinkId);
   }
 
@@ -624,6 +636,7 @@ export async function createServiceRequest(
     autoClosed ? "closed" : "created",
     input.createdBy,
   );
+  notifySrActivity(input.projectId, "requests", ticketNumber);
 
   return {
     ticketId: String(ticket._id),

@@ -44,6 +44,9 @@ export const serviceRequestApi = {
   list: (params: SrListParams) =>
     api.get<SrListResponse>(base, { params }).then((r) => r.data),
   get: (id: string) => api.get(`${base}/${id}`).then((r) => r.data),
+  // Tags currently in use on this project's service requests.
+  tags: (projectId?: string) =>
+    api.get(`${base}/tags`, { params: { projectId } }).then((r) => r.data),
   create: (body: any) => api.post(base, body).then((r) => r.data),
   bulkDelete: (ids: string[]) =>
     api.delete(`${base}/bulk`, { data: { ticketIds: ids } }).then((r) => r.data),
@@ -160,15 +163,32 @@ export const serviceRequestApi = {
     resolveOnCall: (id: string, body: any) =>
       api.post(`/ivr/calls/${id}/resolve-on-call`, body).then((r) => r.data),
     // WIP / call-back log — each commitment is appended, never overwritten.
-    addFollowUp: (id: string, body: { scheduledAt: string; note?: string }) =>
+    // wipLevel is the call-frequency step; the server derives the due time from
+    // that step's TAT, so no date is sent from the client.
+    addFollowUp: (id: string, body: { wipLevel: number; note?: string }) =>
       api.post(`/ivr/calls/${id}/followups`, body).then((r) => r.data),
+    // Only users flagged as IVR agents may receive a reassigned call.
+    assignableAgents: (projectId: string) =>
+      api
+        .get("/ivr/assignable-agents", { params: { projectId } })
+        .then((r) => r.data),
+    // Call-back ladder: the steps an agent may pick and the TAT each allows.
+    callbackTat: (projectId: string) =>
+      api
+        .get("/ivr/callback-tat", { params: { projectId } })
+        .then((r) => r.data),
+    saveCallbackTat: (body: {
+      projectId: string;
+      enabled?: boolean;
+      tiers: { label: string; tatHours: number; isActive?: boolean }[];
+    }) => api.put("/ivr/callback-tat", body).then((r) => r.data),
     updateFollowUp: (
       id: string,
       followUpId: string,
       body: {
-        status?: "pending" | "done" | "cancelled";
-        outcome?: "answered" | "no_answer" | "busy" | "other";
-        scheduledAt?: string;
+        status?: string;
+        outcome?: string;
+        wipLevel?: number;
         note?: string;
       },
     ) =>

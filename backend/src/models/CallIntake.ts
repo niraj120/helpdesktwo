@@ -81,6 +81,23 @@ export interface ICallIntake extends Document {
   followUps?: {
     _id?: mongoose.Types.ObjectId;
     scheduledAt: Date;
+    /**
+     * Which step of the call-back ladder the agent chose (WIP 1, WIP 2, ...).
+     * scheduledAt is derived from the step's TAT, so both are recorded: the
+     * level says what was promised, the hours say what the policy was AT THE
+     * TIME, which matters once a manager edits the ladder.
+     */
+    wipLevel?: number;
+    wipLabel?: string;
+    tatHours?: number;
+    /**
+     * When the TAT clock starts. A call landing at 22:00 is owned straight
+     * away, but its 4h only begins when the project's working day opens — so
+     * the promise is measured from here, not from when the step was logged.
+     */
+    tatStartsAt?: Date;
+    /** 80% of the TAT consumed — the point the inbox turns red. */
+    urgentAt?: Date;
     note?: string;
     status: "pending" | "done" | "cancelled";
     /** How the follow-up call went, recorded when it is closed out. */
@@ -95,6 +112,13 @@ export interface ICallIntake extends Document {
    * field so the inbox can sort and filter on "due" without unwinding the array.
    */
   callbackAt?: Date;
+  /**
+   * When the earliest pending call-back crosses 80% of its TAT — the point the
+   * inbox turns it red. Derived alongside callbackAt and stored so the list can
+   * filter on "running out of time" with a plain date compare instead of
+   * recomputing a percentage per row.
+   */
+  callbackDueSoonAt?: Date;
   /**
    * Outbound Click-to-Call attempts made to call this caller back. Each entry
    * correlates a SmartFlo originate (refId + customIdentifier) to the agent who
@@ -210,6 +234,11 @@ const CallIntakeSchema = new Schema<ICallIntake>(
     followUps: [
       {
         scheduledAt: { type: Date, required: true },
+        wipLevel: { type: Number },
+        wipLabel: { type: String },
+        tatHours: { type: Number },
+        tatStartsAt: { type: Date },
+        urgentAt: { type: Date },
         note: { type: String },
         status: {
           type: String,
@@ -228,6 +257,7 @@ const CallIntakeSchema = new Schema<ICallIntake>(
     ],
     // Indexed: the inbox sorts and filters on "due for call-back".
     callbackAt: { type: Date, index: true },
+    callbackDueSoonAt: { type: Date, index: true },
     outboundCalls: [
       {
         _id: false,

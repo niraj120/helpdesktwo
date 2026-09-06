@@ -68,17 +68,16 @@ function hasPerm(req: AuthRequest, code: string): boolean {
   });
 }
 
+// Service requests have their own visibility rules: SR_VIEW_ALL sees every SR
+// in scope, SR_VIEW_OWN sees the ones raised by or assigned to the caller, and
+// a raiser with only a create permission can still follow what they submitted.
 function srAccess(req: AuthRequest) {
+  const canCreate =
+    hasPerm(req, "SR_PSR_CREATE") || hasPerm(req, "SR_ISR_CREATE");
   return {
     all: hasPerm(req, "SR_VIEW_ALL"),
-    own:
-      hasPerm(req, "SR_VIEW_OWN") ||
-      hasPerm(req, "SR_PSR_CREATE") ||
-      hasPerm(req, "SR_ISR_CREATE"),
-    assigned:
-      hasPerm(req, "SR_VIEW_ASSIGNED") ||
-      hasPerm(req, "SR_PSR_RECEIVE") ||
-      hasPerm(req, "SR_ISR_RECEIVE"),
+    own: hasPerm(req, "SR_VIEW_OWN") || canCreate,
+    assigned: hasPerm(req, "SR_VIEW_OWN"),
   };
 }
 
@@ -388,6 +387,7 @@ export const list = async (req: AuthRequest, res: Response) => {
       status: str(req.query.status),
       assignedTo: str(req.query.assignedTo),
       search: str(req.query.search),
+      tags: str(req.query.tags),
       createdFrom: str(req.query.createdFrom),
       createdTo: str(req.query.createdTo),
       updatedFrom: str(req.query.updatedFrom),
@@ -467,12 +467,40 @@ export const linkPsr = async (req: AuthRequest, res: Response) => {
 
 // ── Phase 3: create (online / walk-in), student lookup, form schemas ─────────
 
+/** Tags in use on this project's service requests. */
+export const tags = async (req: AuthRequest, res: Response) => {
+  try {
+    const data = await srSvc.listSrTags(
+      req.query.projectId ? String(req.query.projectId) : undefined,
+      getProjectScope(req),
+    );
+    res.json({ success: true, data });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
 export const create = async (req: AuthRequest, res: Response) => {
   try {
     const body = { ...req.body };
+
+    // Raising a PSR and raising an ISR are separate rights: the route accepts
+    // either permission, so the requested type must be checked against the one
+    // the caller actually holds.
+    const requestedType = String(body.interactionType || "").toUpperCase();
+    const createPerm =
+      requestedType === "PSR" ? "SR_PSR_CREATE" : "SR_ISR_CREATE";
+    if (!hasPerm(req, createPerm)) {
+      res.status(403).json({
+        success: false,
+        message: `You do not have permission to raise a ${requestedType || "service request"} (${createPerm} required)`,
+      });
+      return;
+    }
+
     // Strip permission-gated fields the actor isn't allowed to set.
     if (!hasPerm(req, "SR_ASSIGN_EMAILS")) delete body.assignedToEmails;
-    if (!hasPerm(req, "SR_PRIORITY_OVERRIDE")) {
+    if (!hasPerm(req, "SR_CHANGE_PRIORITY")) {
       delete body.priority;
       delete body.scheduleDispatchDate;
     }

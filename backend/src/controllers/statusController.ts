@@ -51,7 +51,7 @@ export const getStatusesByProject = async (req: AuthRequest, res: Response) => {
     const statuses = await Status.find(filter)
       .sort({ displayOrder: 1, name: 1 })
       .select(
-        "name code color isDefault isClosed displayOrder description isActive projectId requireClosingRemark",
+        "name code color isDefault isClosed displayOrder description isActive projectId requireClosingRemark requireCommittedDate committedDateLabel",
       );
 
     console.log(
@@ -92,6 +92,8 @@ export const createStatus = async (req: AuthRequest, res: Response) => {
       isDefault,
       isClosed,
       requireClosingRemark,
+      requireCommittedDate,
+      committedDateLabel,
       displayOrder,
       description,
     } = req.body;
@@ -141,6 +143,8 @@ export const createStatus = async (req: AuthRequest, res: Response) => {
       isDefault: isDefault || false,
       isClosed: isClosed || false,
       requireClosingRemark: requireClosingRemark || false,
+      requireCommittedDate: requireCommittedDate || false,
+      committedDateLabel: committedDateLabel || undefined,
       displayOrder: displayOrder || 0,
       description,
       createdBy: userId,
@@ -174,6 +178,8 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
       isDefault,
       isClosed,
       requireClosingRemark,
+      requireCommittedDate,
+      committedDateLabel,
       displayOrder,
       description,
       isActive,
@@ -210,6 +216,10 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
     if (isClosed !== undefined) $set.isClosed = isClosed;
     if (requireClosingRemark !== undefined)
       $set.requireClosingRemark = requireClosingRemark;
+    if (requireCommittedDate !== undefined)
+      $set.requireCommittedDate = requireCommittedDate;
+    if (committedDateLabel !== undefined)
+      $set.committedDateLabel = committedDateLabel;
     if (displayOrder !== undefined) $set.displayOrder = displayOrder;
     if (description !== undefined) $set.description = description;
     if (isActive !== undefined) $set.isActive = isActive;

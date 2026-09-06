@@ -1,10 +1,19 @@
 /**
  * Missed-call round-robin assignment to IVR agents.
  *
- * On a MISSED call, resolve the dialed digit → bucket, find active IVR agents
- * mapped to that bucket who are not on leave today, and assign the call to the
- * least-recently-assigned agent (fair rotation). If no eligible agent exists the
- * call is left unassigned and flagged for manual handling.
+ * SmartFlo names no agent on a missed call — nobody picked it up — so the
+ * platform decides who owns it:
+ *
+ *   - Caller chose an IVR option: rotate among the agents mapped to that
+ *     option, so a billing call reaches whoever handles billing.
+ *   - Caller chose nothing (or a digit we do not recognise): rotate among every
+ *     available IVR agent rather than requiring someone to be mapped to the
+ *     "other" bucket.
+ *
+ * Either way the pick is the least-recently-assigned eligible agent, so the
+ * rotation stays fair. A missed call with an unmapped option falls back to the
+ * full pool rather than going unassigned — an unowned missed call is worse than
+ * one owned by the wrong specialist.
  */
 import mongoose from "mongoose";
 import { IvrAgentConfig } from "../../../models/IvrAgentConfig";
@@ -16,18 +25,22 @@ import {
 import { User } from "../../../models/User";
 import { IvrDidConfig } from "../../../models/IvrDidConfig";
 
-/** Resolve which bucket a call belongs to from its dialed digits. */
+/**
+ * Which bucket a call belongs to, and whether the caller actually chose it.
+ * `chosen: false` means no digit was dialed or none matched the project's
+ * options — the difference that decides how wide the agent pool is.
+ */
 async function resolveBucket(
   projectId: mongoose.Types.ObjectId,
   digitsDialed: string[] = [],
-): Promise<string> {
+): Promise<{ bucket: string; chosen: boolean }> {
   const cfg = await IvrDigitConfig.findOne({ projectId }).lean();
   const codes = new Set((cfg?.digits || []).map((d) => String(d.code)));
   for (const d of digitsDialed) {
     const code = String(d || "").trim();
-    if (code && codes.has(code)) return code;
+    if (code && codes.has(code)) return { bucket: code, chosen: true };
   }
-  return OTHER_BUCKET;
+  return { bucket: OTHER_BUCKET, chosen: false };
 }
 
 function dayBounds(now = new Date()) {
@@ -44,21 +57,23 @@ function dayBounds(now = new Date()) {
  */
 export async function assignMissedCall(
   call: any,
-): Promise<{ assigned: boolean; userId?: string; bucket: string }> {
+): Promise<{
+  assigned: boolean;
+  userId?: string;
+  bucket: string;
+  via?: string;
+}> {
   const projectId = call.projectId;
-  const bucket = await resolveBucket(projectId, call.digitsDialed || []);
-
-  // Candidate agent configs: active + mapped to this bucket, in this project.
-  const configs = await IvrAgentConfig.find({
+  const { bucket, chosen } = await resolveBucket(
     projectId,
-    active: true,
-    digits: bucket,
-  }).lean();
+    call.digitsDialed || [],
+  );
 
-  if (configs.length) {
+  /** Eligible = active IVR agent, not on leave today, and available now. */
+  const eligibleFrom = async (configs: any[]) => {
+    if (!configs.length) return [];
     const userIds = configs.map((c) => c.userId);
 
-    // Drop users who are inactive or no longer flagged as IVR agents.
     const activeUsers = await User.find({
       _id: { $in: userIds },
       isActive: true,
@@ -68,7 +83,6 @@ export async function assignMissedCall(
       .lean();
     const activeSet = new Set(activeUsers.map((u) => String(u._id)));
 
-    // Drop users on leave today.
     const { start, end } = dayBounds();
     const onLeave = await IvrAgentLeave.find({
       projectId,
@@ -85,36 +99,57 @@ export async function assignMissedCall(
       c.available !== false ||
       (c.unavailableUntil && new Date(c.unavailableUntil) <= now);
 
-    const eligible = configs
+    return configs
       .filter(
         (c) =>
           activeSet.has(String(c.userId)) &&
           !leaveSet.has(String(c.userId)) &&
           isAvailableNow(c),
       )
-      // least-recently-assigned first (null/undefined = never assigned = oldest)
+      // least-recently-assigned first (never assigned counts as oldest)
       .sort(
         (a, b) =>
           new Date(a.lastAssignedAt || 0).getTime() -
           new Date(b.lastAssignedAt || 0).getTime(),
       );
+  };
 
-    if (eligible.length) {
-      const chosen = eligible[0];
-      await IvrAgentConfig.updateOne(
-        { _id: chosen._id },
-        { $set: { lastAssignedAt: new Date() } },
-      );
-      call.assignedTo = chosen.userId;
-      call.assignedBucket = bucket;
-      call.assignmentStatus = "assigned";
-      call.callStatus = "assigned";
-      await call.save();
-      return { assigned: true, userId: String(chosen.userId), bucket };
-    }
+  let eligible: any[] = [];
+  let via = "";
+
+  if (chosen) {
+    // The caller picked an option — prefer the agents who handle it.
+    eligible = await eligibleFrom(
+      await IvrAgentConfig.find({ projectId, active: true, digits: bucket }).lean(),
+    );
+    via = "digit-bucket";
   }
 
-  // No eligible agent — leave unassigned + flag for manual handling.
+  if (!eligible.length) {
+    // No option chosen, or nobody available for the one that was: rotate
+    // across every available agent so the call still gets an owner.
+    eligible = await eligibleFrom(
+      await IvrAgentConfig.find({ projectId, active: true }).lean(),
+    );
+    via = chosen ? "any-agent-fallback" : "any-agent";
+  }
+
+  if (eligible.length) {
+    const chosenAgent = eligible[0];
+    await IvrAgentConfig.updateOne(
+      { _id: chosenAgent._id },
+      { $set: { lastAssignedAt: new Date() } },
+    );
+    call.assignedTo = chosenAgent.userId;
+    call.assignedBucket = bucket;
+    call.assignmentStatus = "assigned";
+    call.callStatus = "assigned";
+    call.matchedBy = via;
+    await call.save();
+    return { assigned: true, userId: String(chosenAgent.userId), bucket, via };
+  }
+
+  // Nobody available anywhere in the project — flag for manual handling.
   call.assignedBucket = bucket;
   call.assignmentStatus = "unassigned_no_agent";
   await call.save();

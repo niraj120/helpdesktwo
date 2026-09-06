@@ -1,6 +1,12 @@
 /**
- * Service Request (PSR/ISR) lifecycle routes. Phase 2.
- * Permission-gated; does not touch existing /api/tickets endpoints.
+ * Service Request (PSR/ISR) lifecycle routes.
+ *
+ * Service requests carry their own permission set, separate from the queries
+ * desk: SR_* here, TICKET_* over in /api/tickets. A PSR/ISR is stored as a
+ * Ticket, but granting someone the run of the query desk gives them no reach
+ * over service requests. The shared /api/tickets/:id endpoints resolve which
+ * set applies per record — see middleware/ticketActionPermission.ts and the
+ * ACTION_PERMISSIONS map it reads.
  */
 import { Router } from "express";
 import { authMiddleware } from "../../../middleware/auth";
@@ -10,12 +16,15 @@ import * as c from "../controllers/serviceRequestController";
 const router = Router();
 router.use(authMiddleware);
 
+// Module access. SR_ACCESS says the caller works in the Service Requests area at
+// all; the per-route SR_* gates below say what they may do once inside.
+router.use(checkPermission("SR_ACCESS"));
+
+// Who may see service requests at all; the controller then narrows the result
+// set to the ones this caller owns, was assigned, or may see project-wide.
 const VIEW_PERMS = [
   "SR_VIEW_ALL",
   "SR_VIEW_OWN",
-  "SR_VIEW_ASSIGNED",
-  "SR_PSR_RECEIVE",
-  "SR_ISR_RECEIVE",
   "SR_PSR_CREATE",
   "SR_ISR_CREATE",
 ];
@@ -23,14 +32,7 @@ const VIEW_PERMS = [
 // Per-project SR config (enable + WIP limits)
 router.get(
   "/config",
-  checkPermission([
-    "SR_CONFIG_MANAGE",
-    "SR_VIEW_ALL",
-    "SR_VIEW_OWN",
-    "SR_VIEW_ASSIGNED",
-    "SR_PSR_RECEIVE",
-    "SR_PSR_CREATE",
-  ]),
+  checkPermission(["SR_CONFIG_MANAGE", ...VIEW_PERMS]),
   c.getConfig,
 );
 router.put("/config", checkPermission("SR_CONFIG_MANAGE"), c.updateConfig);
@@ -70,6 +72,8 @@ router.put(
 router.get("/", checkPermission(VIEW_PERMS), c.list);
 
 // ── Phase 3: create + lookup + form schemas (static paths first) ─────────────
+// Create. The controller enforces the per-type split: raising a PSR needs
+// SR_PSR_CREATE, raising an ISR needs SR_ISR_CREATE.
 router.post(
   "/",
   checkPermission(["SR_PSR_CREATE", "SR_ISR_CREATE"]),
@@ -106,6 +110,9 @@ router.delete(
   c.removeForm,
 );
 
+// Tags in use, for the list filter. Static path, so before /:id.
+router.get("/tags", checkPermission(VIEW_PERMS), c.tags);
+
 // Duplicate-check before creating an SR
 router.get(
   "/duplicates",
@@ -119,7 +126,7 @@ router.post("/:id/merge", checkPermission("SR_MERGE"), c.merge);
 // Open ↔ WIP ↔ Resolved (committed date enforced for WIP)
 router.post(
   "/:id/status",
-  checkPermission(["SR_PSR_RECEIVE", "SR_ISR_RECEIVE", "TICKET_CHANGE_STATUS"]),
+  checkPermission("SR_CHANGE_STATUS"),
   c.changeStatus,
 );
 
@@ -146,7 +153,7 @@ router.post("/:id/parent-close", c.parentClose);
 router.get("/:id/linked-isrs", checkPermission(VIEW_PERMS), c.linkedIsrs);
 router.post(
   "/:id/link-psr",
-  checkPermission(["SR_ISR_LINK", "SR_ISR_CREATE", "SR_REASSIGN"]),
+  checkPermission(["SR_ISR_LINK", "SR_ISR_CREATE"]),
   c.linkPsr,
 );
 

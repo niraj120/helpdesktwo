@@ -1164,6 +1164,30 @@ export const submitTicket = async (req: Request, res: Response) => {
 };
 
 /**
+ * Keep PSR/ISR out of the query lists.
+ *
+ * Service Requests are Ticket documents distinguished by `interactionType`, and
+ * they have their own list under the Service Requests area. Without this a
+ * TICKET_VIEW_ALL holder would see every PSR and ISR mixed into the query grid.
+ * A caller that genuinely wants them passes `?interactionType=PSR|ISR|all`.
+ */
+function applyInteractionScope(query: any, req: Request) {
+  const requested = String((req.query as any)?.interactionType || "").trim();
+  if (!requested) {
+    // `$in: [null, ...]` also matches documents predating the field.
+    query.interactionType = { $in: [null, "normal"] };
+    return;
+  }
+  if (requested.toLowerCase() === "all") return;
+  const types = requested
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (!types.length) return;
+  query.interactionType = types.length === 1 ? types[0] : { $in: types };
+}
+
+/**
  * Get all tickets created by a specific student within a project.
  * Used by agents for duplicate-check display ONLY — no center/assignment filters applied.
  * Requires caller to be authenticated; any agent role may call this.
@@ -1327,6 +1351,7 @@ export const getMyTickets = async (req: Request, res: Response) => {
 
     // Build query based on permissions and role type
     let query: any = {};
+    applyInteractionScope(query, req);
 
     // Super Admin should see EMPTY list in My Tickets (no tickets assigned to them)
     if (isSuperAdmin) {
@@ -1555,6 +1580,20 @@ export const getMyTickets = async (req: Request, res: Response) => {
     if (req.query.categoryId) {
       query.category = req.query.categoryId;
       console.log(`🔍 [FILTER] Category: ${req.query.categoryId}`);
+    }
+
+    // Tag filter. Tagging a batch and then filtering on the tag is how an
+    // agent gathers "everything caused by this outage" into one working set,
+    // so ANY of the given tags matches rather than all of them.
+    if (req.query.tags) {
+      const tagList = String(req.query.tags)
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+      if (tagList.length) {
+        query.tags = { $in: tagList };
+        console.log(`🔍 [FILTER] Tags: ${tagList.join(", ")}`);
+      }
     }
 
     // District filter — district is stored on the centre's `city` field, so
@@ -1883,6 +1922,7 @@ export const getAllTickets = async (req: Request, res: Response) => {
     console.log(`🔍 [VIEW_TICKETS] forAssignment: ${forAssignment}`);
 
     let query: any = {};
+    applyInteractionScope(query, req);
 
     // ============ HIERARCHY-BASED FILTERING FOR ASSIGN QUERIES ============
     // When forAssignment=true, filter to only show tickets assigned to:
@@ -2703,6 +2743,7 @@ export const getAgentAssignedTickets = async (req: Request, res: Response) => {
     const query: any = {
       assignedTo: userId,
     };
+    applyInteractionScope(query, req);
 
     // Filter by project if projectId is provided (convert to ObjectId)
     if (req.query.projectId) {
@@ -2971,6 +3012,9 @@ export const getTicketById = async (req: Request, res: Response) => {
       .populate("category", "name")
       .populate("assignedTo", "firstName lastName email")
       .populate("escalationMatrixId", "name") // Populate escalation matrix name
+      // Parent of a linked ISR, so the detail header can show what this sits
+      // under. The SR detail screen is this same endpoint.
+      .populate("linkedPsrId", "ticketNumber interactionType subject status")
       .populate({
         path: "threads.createdBy",
         select: "firstName lastName email role",
@@ -3829,6 +3873,13 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { status, closingRemark } = req.body;
+    // A status can ask for a remark (why) and/or a date (by when). They are
+    // separate answers, so they arrive as separate fields rather than one
+    // packed string — that packing is what filed WIP commitments as closing
+    // remarks. `closingRemark` is still honoured for older clients.
+    const statusRemark: string =
+      (req.body.statusRemark ?? closingRemark ?? "").toString();
+    const committedDateRaw = req.body.committedDate;
     const userId = (req as any).user?.userId;
     const user = (req as any).user;
 
@@ -3886,11 +3937,29 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
     const statusDoc =
       projectStatuses.find((s: any) => s.code === statusNum) ?? null;
 
-    // Enforce closing remark requirement
-    if (statusDoc?.requireClosingRemark && !closingRemark?.trim()) {
+    // Enforce whatever this status asks for.
+    if (statusDoc?.requireClosingRemark && !statusRemark.trim()) {
       return res.status(400).json({
         success: false,
-        message: "A closing remark is required before applying this status.",
+        message: `A remark is required before applying "${statusDoc.name}".`,
+      });
+    }
+
+    let committedDate: Date | null = null;
+    if (committedDateRaw) {
+      const parsed = new Date(committedDateRaw);
+      if (Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: "The committed date is not a valid date.",
+        });
+      }
+      committedDate = parsed;
+    }
+    if ((statusDoc as any)?.requireCommittedDate && !committedDate) {
+      return res.status(400).json({
+        success: false,
+        message: `${(statusDoc as any)?.committedDateLabel || "A committed date"} is required before applying "${statusDoc?.name}".`,
       });
     }
 
@@ -3936,35 +4005,80 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       changeType: "update",
     };
 
-    // If a closing remark was provided, build a separate history entry for it
-    const remarkHistoryEntry = closingRemark?.trim()
+    // The remark is recorded against the status it explains. Only a closing
+    // status produces a "closingRemark" — labelling a WIP note that way is
+    // what made the audit trail read wrongly.
+    const remarkField = isClosingStatus ? "closingRemark" : "statusRemark";
+    const remarkHistoryEntry = statusRemark.trim()
       ? {
           _id: new mongoose.Types.ObjectId(),
-          field: "closingRemark",
+          field: remarkField,
           oldValue: "",
-          newValue: closingRemark.trim(),
+          newValue: statusRemark.trim(),
           changedBy: userId,
           changedAt: now,
           changeType: "remark",
         }
       : null;
 
+    // A committed date is a promise about this ticket, so it goes on the
+    // ticket's WIP commitment — the same place the SR flow writes it, which is
+    // what the "WIP Commitment" card reads. Each revision is kept.
+    if (committedDate) {
+      const wip: any = (ticket as any).wip || {};
+      updateFields["wip.committedDate"] = committedDate;
+      updateFields["wip.revisionCount"] = (wip.revisionCount ?? 0) + 1;
+      updateFields["wip.reminderSentAt"] = undefined;
+    }
+
+    const committedDateHistoryEntry = committedDate
+      ? {
+          _id: new mongoose.Types.ObjectId(),
+          field: "wip.committedDate",
+          oldValue: (ticket as any).wip?.committedDate
+            ? new Date((ticket as any).wip.committedDate).toISOString()
+            : "",
+          newValue: committedDate.toISOString(),
+          changedBy: userId,
+          changedAt: now,
+          changeType: "update",
+        }
+      : null;
+
     // Use findByIdAndUpdate to avoid full document validation (bypasses subdocument validation issues)
-    const pushPayload: any = {
-      changeHistory: changeHistoryEntry,
-    };
+    const historyEntries = [
+      changeHistoryEntry,
+      remarkHistoryEntry,
+      committedDateHistoryEntry,
+    ].filter(Boolean);
+
+    const pushPayload: any =
+      historyEntries.length > 1
+        ? { changeHistory: { $each: historyEntries } }
+        : { changeHistory: changeHistoryEntry };
+
     if (remarkHistoryEntry) {
-      // Push remark as a separate changeHistory entry AND as an internal note
-      pushPayload.changeHistory = [
-        changeHistoryEntry,
-        remarkHistoryEntry,
-      ] as any;
+      // Also an internal note, labelled by what it actually is.
+      const label = isClosingStatus
+        ? "Closing Remark"
+        : `${statusDoc?.name || "Status"} Remark`;
+      const datePart = committedDate
+        ? ` (by ${committedDate.toISOString().slice(0, 10)})`
+        : "";
       pushPayload.internalNotes = {
         _id: new mongoose.Types.ObjectId(),
-        content: `[Closing Remark] ${closingRemark.trim()}`,
+        content: `[${label}]${datePart} ${statusRemark.trim()}`,
         createdBy: userId,
         createdAt: now,
         isInternal: true,
+      };
+    }
+    if (committedDate) {
+      pushPayload["wip.history"] = {
+        committedDate,
+        setBy: userId,
+        setAt: now,
+        reason: statusRemark.trim() || undefined,
       };
     }
     const updatedTicket = await Ticket.findByIdAndUpdate(
@@ -5178,17 +5292,225 @@ export const getAllTags = async (req: Request, res: Response) => {
 };
 
 /**
- * Bulk update tickets by tags
+ * Change status on a set of tickets the agent has selected.
+ *
+ * The tag flow is: tag a batch, filter by the tag, select, act. Acting on
+ * explicit ids (rather than on the tag itself) keeps the blast radius equal to
+ * what the agent can actually see on screen, and lets each ticket be checked
+ * individually for ownership.
+ */
+export const bulkChangeStatus = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    const user = (req as any).user;
+    const { ticketIds, status, remark } = req.body;
+
+    const ids = (Array.isArray(ticketIds) ? ticketIds : [])
+      .map((id: any) => String(id))
+      .filter((id: string) => mongoose.Types.ObjectId.isValid(id));
+    const statusNum = Number(status);
+    if (!ids.length || !Number.isFinite(statusNum)) {
+      return res.status(400).json({
+        success: false,
+        message: "ticketIds and a numeric status are required.",
+      });
+    }
+
+    const tickets = await Ticket.find({ _id: { $in: ids } });
+    const now = new Date();
+    const updated: string[] = [];
+    const skipped: { ticketNumber?: string; reason: string }[] = [];
+
+    for (const ticket of tickets) {
+      // Same ownership rule as a single change — a batch is not a way round it.
+      if (!(await canModifyTicket(userId, ticket, user))) {
+        skipped.push({
+          ticketNumber: (ticket as any).ticketNumber,
+          reason: "not assigned to you",
+        });
+        continue;
+      }
+      const from = ticket.status;
+      if (from === statusNum) {
+        skipped.push({
+          ticketNumber: (ticket as any).ticketNumber,
+          reason: "already in that status",
+        });
+        continue;
+      }
+
+      const entries: any[] = [
+        {
+          _id: new mongoose.Types.ObjectId(),
+          field: "status",
+          oldValue: String(from),
+          newValue: String(statusNum),
+          changedBy: userId,
+          changedAt: now,
+          changeType: "update",
+        },
+      ];
+      if (remark?.trim()) {
+        entries.push({
+          _id: new mongoose.Types.ObjectId(),
+          field: "statusRemark",
+          oldValue: "",
+          newValue: remark.trim(),
+          changedBy: userId,
+          changedAt: now,
+          changeType: "remark",
+        });
+      }
+
+      await Ticket.updateOne(
+        { _id: ticket._id },
+        {
+          $set: { status: statusNum, updatedAt: now },
+          $push: { changeHistory: { $each: entries } },
+        },
+      );
+      updated.push(String(ticket._id));
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Updated ${updated.length} of ${ids.length} ticket(s).`,
+      data: { updated: updated.length, skipped },
+    });
+  } catch (error) {
+    console.error("Bulk status change error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to change status in bulk",
+    });
+  }
+};
+
+/**
+ * Post the same reply to a set of tickets — the "one outage, many tickets"
+ * case, where every requester needs the same explanation.
+ */
+export const bulkReply = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    const user = (req as any).user;
+    const { ticketIds, message } = req.body;
+
+    const ids = (Array.isArray(ticketIds) ? ticketIds : [])
+      .map((id: any) => String(id))
+      .filter((id: string) => mongoose.Types.ObjectId.isValid(id));
+    if (!ids.length || !String(message || "").trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "ticketIds and a message are required.",
+      });
+    }
+    const body = String(message).trim();
+
+    const tickets = await Ticket.find({ _id: { $in: ids } });
+    const now = new Date();
+    const replied: string[] = [];
+    const skipped: { ticketNumber?: string; reason: string }[] = [];
+
+    for (const ticket of tickets) {
+      if (!(await canModifyTicket(userId, ticket, user))) {
+        skipped.push({
+          ticketNumber: (ticket as any).ticketNumber,
+          reason: "not assigned to you",
+        });
+        continue;
+      }
+      if (ticket.status === 5) {
+        skipped.push({
+          ticketNumber: (ticket as any).ticketNumber,
+          reason: "closed",
+        });
+        continue;
+      }
+      await Ticket.updateOne(
+        { _id: ticket._id },
+        {
+          $push: {
+            threads: {
+              message: body,
+              createdBy: new mongoose.Types.ObjectId(userId),
+              attachments: [],
+              createdAt: now,
+            },
+          },
+          $set: { updatedAt: now, hasAgentReply: true },
+        },
+      );
+      replied.push(String(ticket._id));
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Replied to ${replied.length} of ${ids.length} ticket(s).`,
+      data: { replied: replied.length, skipped },
+    });
+  } catch (error) {
+    console.error("Bulk reply error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to reply in bulk",
+    });
+  }
+};
+
+/**
+ * Bulk update tickets by tags.
+ *
+ * Two things this deliberately refuses to do: reach outside the caller's
+ * project scope, and set arbitrary fields. `updates` used to be spread
+ * straight into `$set`, so any caller could rewrite any field on every ticket
+ * carrying a tag, in any project.
  */
 export const bulkUpdateByTags = async (req: Request, res: Response) => {
   try {
     const { tags, updates } = req.body;
+    const tagList = (Array.isArray(tags) ? tags : [])
+      .map((t: any) => String(t).trim())
+      .filter(Boolean);
+    if (!tagList.length) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one tag is required.",
+      });
+    }
+
+    // Only fields it makes sense to set across a batch.
+    const allowed: Record<string, (v: any) => any> = {
+      status: (v) => Number(v),
+      priority: (v) => String(v),
+    };
+    const safeUpdates: any = {};
+    for (const [key, value] of Object.entries(updates || {})) {
+      if (allowed[key]) safeUpdates[key] = allowed[key](value);
+    }
+    if (!Object.keys(safeUpdates).length) {
+      return res.status(400).json({
+        success: false,
+        message: "Nothing to update. Supported fields: status, priority.",
+      });
+    }
+
+    const filter: any = { tags: { $in: tagList } };
+    // Never let a tag reach across projects the caller cannot see.
+    const projectIds = (req as any).user?.userDirectProjects || [];
+    const isSuperAdmin = (req as any).user?.role?.code === "SUPER_ADMIN";
+    if (!isSuperAdmin && projectIds.length) {
+      filter.project = { $in: projectIds };
+    }
+    // Service requests have their own lifecycle rules; a tag sweep must not
+    // move them sideways past those.
+    filter.interactionType = { $in: [null, "normal"] };
 
     const result = await Ticket.updateMany(
-      { tags: { $in: tags } },
+      filter,
       {
         $set: {
-          ...updates,
+          ...safeUpdates,
           updatedAt: new Date(),
         },
       },
@@ -5336,6 +5658,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 
     // Build query based on user permissions (not role)
     let query: any = {};
+    applyInteractionScope(query, req);
 
     // Check permissions using extracted codes
     const hasViewAllTickets = permissionCodes.includes("TICKET_VIEW_ALL");

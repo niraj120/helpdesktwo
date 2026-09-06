@@ -1,8 +1,9 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { serviceRequestApi } from "../../services/serviceRequests";
 import { useProjectStatuses } from "../../hooks/useProjectStatuses";
 import { SR, srButton } from "../../utils/srTheme";
 import { usePermissions } from "../../hooks/usePermissions";
+import { PERMISSIONS } from "../../constants/permissions";
 import MessageBanner, { SrMessage } from "./MessageBanner";
 
 /** Live statuses an SR may be cancelled from (mirrors backend SR_CANCELABLE_FROM). */
@@ -48,6 +49,31 @@ const SrLifecyclePanel: React.FC<Props> = ({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<SrMessage | null>(null);
   const [toStatus, setToStatus] = useState<number | "">("");
+  // How many re-opens this request has left, per the project's configured
+  // limit. Falls back to one, which is what the server assumes when the
+  // config has not loaded (or the project never set one).
+  const projectId = ticket?.project?._id || ticket?.project;
+  const [reopenLimit, setReopenLimit] = useState(1);
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    serviceRequestApi
+      .getConfig(String(projectId))
+      .then((r: any) => {
+        if (cancelled) return;
+        const limit = r?.data?.psr?.workflow?.lifecycle?.reopenLimit;
+        if (Number.isFinite(limit)) setReopenLimit(Number(limit));
+      })
+      .catch(() => {
+        /* keep the safe default */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+  const reopensUsed = (ticket as any)?.reopen?.count ?? 0;
+  const reopensLeft = Math.max(0, reopenLimit - reopensUsed);
+
   const [committedDate, setCommittedDate] = useState("");
   const [comment, setComment] = useState("");
   const [displayToParent, setDisplayToParent] = useState(false);
@@ -354,10 +380,22 @@ const SrLifecyclePanel: React.FC<Props> = ({
             Close
           </button>
         )}
-        {status === 5 && (
+        {/* Re-opening is a permission, and a project caps how often it may be
+            done. Showing the button to someone who holds neither only produces
+            a failed request they cannot act on. */}
+        {status === 5 && hasPermission(PERMISSIONS.SR_REOPEN) && (
           <button
-            disabled={busy}
-            style={srButton("danger")}
+            disabled={busy || !reopensLeft}
+            style={{
+              ...srButton("danger"),
+              opacity: reopensLeft ? 1 : 0.5,
+              cursor: reopensLeft ? "pointer" : "not-allowed",
+            }}
+            title={
+              reopensLeft
+                ? `${reopensLeft} re-open${reopensLeft === 1 ? "" : "s"} left for this request`
+                : "This request has reached its re-open limit"
+            }
             onClick={() => setAction(action === "reopen" ? "" : "reopen")}
           >
             Re-open
@@ -384,7 +422,7 @@ const SrLifecyclePanel: React.FC<Props> = ({
         >
           PSL Call
         </button>
-        {CANCELABLE_FROM.includes(status) && hasPermission("SR_CANCEL") && (
+        {CANCELABLE_FROM.includes(status) && hasPermission(PERMISSIONS.SR_CANCEL) && (
           <button
             disabled={busy}
             style={srButton("danger")}
@@ -397,6 +435,11 @@ const SrLifecyclePanel: React.FC<Props> = ({
 
       {action === "reopen" && (
         <div style={actionPanel}>
+          <div style={{ fontSize: 12, color: SR.muted, marginBottom: 6 }}>
+            {reopensUsed > 0
+              ? `Re-opened ${reopensUsed} of ${reopenLimit} time${reopenLimit === 1 ? "" : "s"} allowed for this project.`
+              : `This project allows ${reopenLimit} re-open${reopenLimit === 1 ? "" : "s"} per request.`}
+          </div>
           <label style={label}>Re-open reason</label>
           <textarea
             style={{ ...ctrl, width: "100%", minHeight: 74, resize: "vertical" }}

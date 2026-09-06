@@ -1607,22 +1607,10 @@ const ProjectPortalDashboard = () => {
           element={
             <ProtectedRoute
               permission={[
-                PERMISSIONS.SR_VIEW_ALL,
-                PERMISSIONS.SR_VIEW_OWN,
-                PERMISSIONS.SR_VIEW_ASSIGNED,
-                PERMISSIONS.SR_PSR_CREATE,
-                PERMISSIONS.SR_PSR_RECEIVE,
-                PERMISSIONS.SR_ISR_CREATE,
-                PERMISSIONS.SR_ISR_RECEIVE,
-                PERMISSIONS.SR_ISR_LINK,
-                PERMISSIONS.SR_REASSIGN,
-                PERMISSIONS.SR_DELEGATE,
-                PERMISSIONS.SR_CLOSE,
-                PERMISSIONS.SR_REOPEN,
+                PERMISSIONS.SR_ACCESS,
                 PERMISSIONS.SR_DISPLAY_TO_PARENT,
                 PERMISSIONS.SR_CONFIG_MANAGE,
                 PERMISSIONS.SR_ASSIGN_EMAILS,
-                PERMISSIONS.SR_PRIORITY_OVERRIDE,
                 PERMISSIONS.SR_OFFLINE_ENTRY,
                 PERMISSIONS.EMAIL_TRIAGE_ACCESS,
                 PERMISSIONS.EMAIL_TRIAGE_CONVERT,
@@ -1640,22 +1628,10 @@ const ProjectPortalDashboard = () => {
           element={
             <ProtectedRoute
               permission={[
-                PERMISSIONS.SR_VIEW_ALL,
-                PERMISSIONS.SR_VIEW_OWN,
-                PERMISSIONS.SR_VIEW_ASSIGNED,
-                PERMISSIONS.SR_PSR_CREATE,
-                PERMISSIONS.SR_PSR_RECEIVE,
-                PERMISSIONS.SR_ISR_CREATE,
-                PERMISSIONS.SR_ISR_RECEIVE,
-                PERMISSIONS.SR_ISR_LINK,
-                PERMISSIONS.SR_REASSIGN,
-                PERMISSIONS.SR_DELEGATE,
-                PERMISSIONS.SR_CLOSE,
-                PERMISSIONS.SR_REOPEN,
+                PERMISSIONS.SR_ACCESS,
                 PERMISSIONS.SR_DISPLAY_TO_PARENT,
                 PERMISSIONS.SR_CONFIG_MANAGE,
                 PERMISSIONS.SR_ASSIGN_EMAILS,
-                PERMISSIONS.SR_PRIORITY_OVERRIDE,
                 PERMISSIONS.SR_OFFLINE_ENTRY,
               ]}
             >

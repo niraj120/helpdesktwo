@@ -10,8 +10,7 @@ const VIEW = [
   "IVR_TRIAGE_ACCESS",
   "IVR_TRIAGE_CONVERT",
   "SR_VIEW_ALL",
-  "SR_VIEW_ASSIGNED",
-  "SR_PSR_RECEIVE",
+  "SR_VIEW_OWN",
   "SR_PSR_CREATE",
   "EMAIL_TRIAGE_ACCESS",
 ];
@@ -27,9 +26,17 @@ router.post(
 );
 router.get("/calls", checkPermission(VIEW), c.list);
 // Bulk reassign — must be registered before the /:id routes.
+// Who a call may be handed to — needed by anyone who can reassign.
+router.get(
+  "/assignable-agents",
+  checkPermission(["IVR_CALL_REASSIGN", "IVR_AGENT_MANAGE"]),
+  c.assignableAgents,
+);
+// Handing a call to another agent is its own right: being able to convert a
+// call does not mean being able to move other people's work around.
 router.post(
   "/calls/bulk-reassign",
-  checkPermission(["IVR_AGENT_MANAGE", "IVR_TRIAGE_CONVERT"]),
+  checkPermission(["IVR_CALL_REASSIGN", "IVR_AGENT_MANAGE"]),
   c.bulkReassign,
 );
 router.get("/calls/:id", checkPermission(VIEW), c.getOne);
@@ -58,16 +65,30 @@ router.post(
   checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
   c.resolveOnCall,
 );
+// Call-back ladder (WIP steps + their TAT). The manager owns the policy;
+// everyone who logs call-backs needs to read it to render the choices.
+router.get(
+  "/callback-tat",
+  checkPermission(["IVR_TAT_CONFIG", "IVR_CALLBACK_SET", ...VIEW]),
+  c.getCallbackTat,
+);
+router.put(
+  "/callback-tat",
+  checkPermission("IVR_TAT_CONFIG"),
+  c.updateCallbackTat,
+);
+
 // WIP / call-back log — a caller may be chased several times, so each
-// commitment is appended rather than replacing the last.
+// commitment is appended rather than replacing the last. The agent selects a
+// step from the ladder; its TAT sets the due time.
 router.post(
   "/calls/:id/followups",
-  checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
+  checkPermission(["IVR_CALLBACK_SET", "IVR_TRIAGE_CONVERT"]),
   c.addFollowUp,
 );
 router.patch(
   "/calls/:id/followups/:followUpId",
-  checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),
+  checkPermission(["IVR_CALLBACK_SET", "IVR_TRIAGE_CONVERT"]),
   c.updateFollowUp,
 );
 // Outbound Click-to-Call (call the caller back via TATA SmartFlo).

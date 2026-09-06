@@ -250,7 +250,7 @@ const ServiceRequestCreate: React.FC<{
   const permPSR = hasPermission(PERMISSIONS.SR_PSR_CREATE);
   const permISR = hasPermission(PERMISSIONS.SR_ISR_CREATE);
   const canAssignEmails = hasPermission(PERMISSIONS.SR_ASSIGN_EMAILS);
-  const canPriority = hasPermission(PERMISSIONS.SR_PRIORITY_OVERRIDE);
+  const canPriority = hasPermission(PERMISSIONS.SR_CHANGE_PRIORITY);
   const canOffline = hasPermission(PERMISSIONS.SR_OFFLINE_ENTRY);
 
   // A project portal has no ProjectContext selection — it resolves its project
@@ -499,7 +499,10 @@ const ServiceRequestCreate: React.FC<{
         setFormSchemas([]);
       }
       try {
-        const res = await api.get("/categories", { params: { projectId } });
+        // The categories API exposes /categories/all and
+        // /categories/project/:projectId — there is no collection route, so
+        // "/categories?projectId=" 404s and the category list comes back empty.
+        const res = await api.get(`/categories/project/${projectId}`);
         const d: any = res.data;
         const list: CategoryNode[] =
           d?.data?.categories || d?.categories || d?.data || d || [];

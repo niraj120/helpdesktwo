@@ -38,6 +38,11 @@ export interface SrConfigPatch {
       createEnabled?: boolean;
       linkExistingEnabled?: boolean;
     };
+    linkFromIsr?: {
+      enabled?: boolean;
+      createEnabled?: boolean;
+      linkExistingEnabled?: boolean;
+    };
   };
   wip?: {
     maxRevisions?: number;
@@ -61,6 +66,15 @@ export interface SrConfigPatch {
   emailJunk?: { senders?: string[] };
   ivr?: {
     enabled?: boolean;
+    callbackTat?: {
+      enabled?: boolean;
+      tiers?: {
+        level?: number;
+        label?: string;
+        tatHours?: number;
+        isActive?: boolean;
+      }[];
+    };
     parentLookup?: {
       enabled?: boolean;
       tableId?: string;

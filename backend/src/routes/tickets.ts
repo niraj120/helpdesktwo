@@ -21,6 +21,8 @@ import {
   reassignTicket,
   getAllTags,
   bulkUpdateByTags,
+  bulkChangeStatus,
+  bulkReply,
   getDashboardStats,
   getProjectDashboardStats,
   createOfflineTicket,
@@ -33,6 +35,7 @@ import {
 } from "../controllers/ticketController";
 import { authMiddleware } from "../middleware/auth";
 import { checkPermission } from "../middleware/permissions";
+import { requireTicketAction } from "../middleware/ticketActionPermission";
 import { attachProjectContext } from "../middleware/projectScope";
 import { requireResourceProject } from "../middleware/requireProjectAccess";
 import { Ticket } from "../models/Ticket";
@@ -180,6 +183,25 @@ router.get(
   getAssignableAgents,
 );
 
+// Bulk actions on a selected set. Registered before /:id so the literal
+// paths are not swallowed by the param route.
+// @route   POST /api/tickets/bulk-status
+router.post(
+  "/bulk-status",
+  authMiddleware,
+  checkPermission("TICKET_BULK_UPDATE"),
+  attachProjectContext,
+  bulkChangeStatus,
+);
+// @route   POST /api/tickets/bulk-reply
+router.post(
+  "/bulk-reply",
+  authMiddleware,
+  checkPermission(["TICKET_BULK_UPDATE", "TICKET_ADD_COMMENT"]),
+  attachProjectContext,
+  bulkReply,
+);
+
 // @desc    Bulk update tickets by tags (MUST be before /:id route)
 // @route   POST /api/tickets/bulk-update
 // @access  Private (Agent)
@@ -219,7 +241,7 @@ router.post("/", (req, res) => {
 router.get(
   "/:id",
   authMiddleware,
-  checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  requireTicketAction("VIEW"),
   ticketOwnsProject,
   getTicketById,
 );
@@ -230,7 +252,7 @@ router.get(
 router.post(
   "/:id/reply",
   authMiddleware,
-  checkPermission(["TICKET_ADD_COMMENT", "TICKET_VIEW_OWN"]),
+  requireTicketAction("REPLY"),
   ticketOwnsProject,
   upload.any(),
   replyToTicket,
@@ -242,7 +264,7 @@ router.post(
 router.patch(
   "/:id/close",
   authMiddleware,
-  checkPermission("TICKET_CHANGE_STATUS"),
+  requireTicketAction("CLOSE"),
   ticketOwnsProject,
   closeTicket,
 );
@@ -250,7 +272,13 @@ router.patch(
 // @desc    Reopen closed ticket
 // @route   PATCH /api/tickets/:id/reopen
 // @access  Private (Student)
-router.patch("/:id/reopen", authMiddleware, ticketOwnsProject, reopenTicket);
+router.patch(
+  "/:id/reopen",
+  authMiddleware,
+  requireTicketAction("REOPEN"),
+  ticketOwnsProject,
+  reopenTicket,
+);
 
 // @desc    Update ticket
 // @route   PUT /api/tickets/:id
@@ -268,7 +296,7 @@ router.put("/:id", (req, res) => {
 router.patch(
   "/:id/status",
   authMiddleware,
-  checkPermission("TICKET_CHANGE_STATUS"),
+  requireTicketAction("CHANGE_STATUS"),
   ticketOwnsProject,
   updateTicketStatus,
 );
@@ -279,7 +307,7 @@ router.patch(
 router.patch(
   "/:id/category",
   authMiddleware,
-  checkPermission("TICKET_CHANGE_CATEGORY"),
+  requireTicketAction("CHANGE_CATEGORY"),
   ticketOwnsProject,
   updateTicketCategory,
 );
@@ -290,7 +318,7 @@ router.patch(
 router.patch(
   "/:id/category-hierarchy",
   authMiddleware,
-  checkPermission("TICKET_CHANGE_CATEGORY"),
+  requireTicketAction("CHANGE_CATEGORY"),
   ticketOwnsProject,
   updateTicketCategoryHierarchy,
 );
@@ -301,7 +329,7 @@ router.patch(
 router.patch(
   "/:id/priority",
   authMiddleware,
-  checkPermission("TICKET_CHANGE_PRIORITY"),
+  requireTicketAction("CHANGE_PRIORITY"),
   ticketOwnsProject,
   updateTicketPriority,
 );
@@ -312,7 +340,7 @@ router.patch(
 router.post(
   "/:id/tags",
   authMiddleware,
-  checkPermission("TICKET_EDIT"),
+  requireTicketAction("EDIT"),
   ticketOwnsProject,
   addTicketTag,
 );
@@ -323,7 +351,7 @@ router.post(
 router.delete(
   "/:id/tags/:tag",
   authMiddleware,
-  checkPermission("TICKET_EDIT"),
+  requireTicketAction("EDIT"),
   ticketOwnsProject,
   removeTicketTag,
 );
@@ -334,7 +362,7 @@ router.delete(
 router.post(
   "/:id/notes",
   authMiddleware,
-  checkPermission("TICKET_ADD_COMMENT"),
+  requireTicketAction("COMMENT"),
   ticketOwnsProject,
   addInternalNote,
 );
@@ -345,7 +373,7 @@ router.post(
 router.post(
   "/:id/escalate",
   authMiddleware,
-  checkPermission("TICKET_ESCALATE"),
+  requireTicketAction("ESCALATE"),
   ticketOwnsProject,
   escalateTicket,
 );
@@ -356,7 +384,7 @@ router.post(
 router.get(
   "/:id/allowed-escalations",
   authMiddleware,
-  checkPermission("TICKET_ESCALATE"),
+  requireTicketAction("ESCALATE"),
   ticketOwnsProject,
   getAllowedEscalations,
 );
@@ -367,7 +395,7 @@ router.get(
 router.post(
   "/:id/matrix-escalate",
   authMiddleware,
-  checkPermission("TICKET_ESCALATE"),
+  requireTicketAction("ESCALATE"),
   ticketOwnsProject,
   escalateTicketWithMatrix,
 );
@@ -389,7 +417,7 @@ router.post(
 router.put(
   "/:id/assign",
   authMiddleware,
-  checkPermission("TICKET_ASSIGN"),
+  requireTicketAction("ASSIGN"),
   ticketOwnsProject,
   assignTicket,
 );
@@ -402,7 +430,7 @@ router.put(
 router.patch(
   "/:id/reassign",
   authMiddleware,
-  checkPermission("TICKET_REASSIGN"),
+  requireTicketAction("REASSIGN"),
   ticketOwnsProject,
   reassignTicket,
 );
@@ -425,7 +453,7 @@ router.post(
 router.post(
   "/:id/attachments",
   authMiddleware,
-  checkPermission("TICKET_ADD_ATTACHMENT"),
+  requireTicketAction("ATTACH"),
   ticketOwnsProject,
   uploadMiddleware,
   uploadAttachment,
@@ -442,7 +470,7 @@ router.get("/attachment-signed-url", authMiddleware, getAttachmentSignedUrl);
 router.get(
   "/:id/attachments/:attachmentId/download",
   authMiddleware,
-  checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  requireTicketAction("VIEW"),
   ticketOwnsProject,
   downloadAttachment,
 );
@@ -453,7 +481,7 @@ router.get(
 router.delete(
   "/:id/attachments/:attachmentId",
   authMiddleware,
-  checkPermission("TICKET_DELETE_ATTACHMENT"),
+  requireTicketAction("DELETE_ATTACHMENT"),
   ticketOwnsProject,
   deleteAttachment,
 );
@@ -464,7 +492,7 @@ router.delete(
 router.get(
   "/:id/comments",
   authMiddleware,
-  checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  requireTicketAction("VIEW"),
   ticketOwnsProject,
   getComments,
 );
@@ -476,7 +504,7 @@ router.get(
 router.get(
   "/:id/communications",
   authMiddleware,
-  checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  requireTicketAction("VIEW"),
   ticketOwnsProject,
   getEmailCommunications,
 );
@@ -487,7 +515,7 @@ router.get(
 router.get(
   "/:id/communications/:commId",
   authMiddleware,
-  checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  requireTicketAction("VIEW"),
   ticketOwnsProject,
   getEmailCommunicationById,
 );
@@ -499,7 +527,7 @@ router.get(
 router.post(
   "/:id/reply-email",
   authMiddleware,
-  checkPermission(["TICKET_REPLY", "TICKET_VIEW_ALL"]),
+  requireTicketAction("REPLY"),
   ticketOwnsProject,
   sendTicketReply,
 );
@@ -518,7 +546,7 @@ router.delete("/:id/draft", authMiddleware, ticketOwnsProject, deleteDraft);
 router.post(
   "/:id/comments",
   authMiddleware,
-  checkPermission("TICKET_ADD_COMMENT"),
+  requireTicketAction("COMMENT"),
   ticketOwnsProject,
   createComment,
 );
@@ -529,7 +557,7 @@ router.post(
 router.put(
   "/:id/comments/:commentId",
   authMiddleware,
-  checkPermission("TICKET_EDIT_COMMENT"),
+  requireTicketAction("COMMENT"),
   ticketOwnsProject,
   updateComment,
 );
@@ -540,7 +568,7 @@ router.put(
 router.delete(
   "/:id/comments/:commentId",
   authMiddleware,
-  checkPermission("TICKET_DELETE_COMMENT"),
+  requireTicketAction("COMMENT"),
   ticketOwnsProject,
   deleteComment,
 );
@@ -551,7 +579,7 @@ router.delete(
 router.post(
   "/:id/merge",
   authMiddleware,
-  checkPermission("TICKET_MERGE"),
+  requireTicketAction("MERGE"),
   ticketOwnsProject,
   mergeTickets,
 );
@@ -562,7 +590,7 @@ router.post(
 router.get(
   "/:id/merge-candidates",
   authMiddleware,
-  checkPermission("TICKET_MERGE"),
+  requireTicketAction("MERGE"),
   ticketOwnsProject,
   getMergeCandidates,
 );
@@ -573,7 +601,7 @@ router.get(
 router.get(
   "/:id/sla-status",
   authMiddleware,
-  checkPermission(["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]),
+  requireTicketAction("VIEW"),
   ticketOwnsProject,
   getSLAStatus,
 );
@@ -584,7 +612,7 @@ router.get(
 router.post(
   "/:id/pause-sla",
   authMiddleware,
-  checkPermission("TICKET_CHANGE_STATUS"),
+  requireTicketAction("CHANGE_STATUS"),
   ticketOwnsProject,
   pauseSLA,
 );
@@ -595,7 +623,7 @@ router.post(
 router.post(
   "/:id/resume-sla",
   authMiddleware,
-  checkPermission("TICKET_CHANGE_STATUS"),
+  requireTicketAction("CHANGE_STATUS"),
   ticketOwnsProject,
   resumeSLA,
 );

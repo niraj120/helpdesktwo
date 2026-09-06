@@ -607,16 +607,9 @@ function App() {
             element={
               <ProtectedRoute
                 permission={[
-                  "SR_VIEW_ALL",
-                  "SR_VIEW_OWN",
-                  "SR_VIEW_ASSIGNED",
-                  "SR_PSR_RECEIVE",
-                  "SR_PSR_CREATE",
-                  "SR_ISR_CREATE",
-                  "SR_ISR_RECEIVE",
+                  "SR_ACCESS",
                   "EMAIL_TRIAGE_ACCESS",
                   "IVR_TRIAGE_ACCESS",
-                  "TICKET_VIEW_ALL",
                 ]}
               >
                 <ServiceRequestsHub />
@@ -689,13 +682,7 @@ function App() {
             element={
               <ProtectedRoute
                 permission={[
-                  "SR_VIEW_ALL",
-                  "SR_VIEW_OWN",
-                  "SR_VIEW_ASSIGNED",
-                  "SR_PSR_RECEIVE",
-                  "SR_ISR_RECEIVE",
-                  "SR_PSR_CREATE",
-                  "SR_ISR_CREATE",
+                  "SR_ACCESS",
                 ]}
               >
                 <ServiceRequestDetail />

@@ -418,6 +418,84 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   const hasFetchedTickets = useRef(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
+  // Tag filter. Tag a batch, filter on the tag, then act on the selection —
+  // the working set for "one cause, many tickets".
+  const [filterTags, setFilterTags] = useState<string[]>([]);
+  const [availableTagOptions, setAvailableTagOptions] = useState<string[]>([]);
+  const [bulkStatusValue, setBulkStatusValue] = useState<string>("");
+  const [bulkReplyText, setBulkReplyText] = useState("");
+  const [showBulkReply, setShowBulkReply] = useState(false);
+
+  /** Apply one status to everything selected. */
+  const runBulkStatus = async (statusCode: string) => {
+    if (!statusCode || !selectedTicketIds.size) return;
+    setBulkLoading(true);
+    setBulkError("");
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await axios.post(
+        `${API_CONFIG.API_URL}/tickets/bulk-status`,
+        {
+          ticketIds: Array.from(selectedTicketIds),
+          status: Number(statusCode),
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      // The server skips what the agent may not touch; say so rather than
+      // reporting a clean success for a partial change.
+      const skipped = res.data?.data?.skipped || [];
+      if (skipped.length) {
+        setBulkError(
+          `${skipped.length} ticket(s) were left unchanged: ${skipped
+            .slice(0, 3)
+            .map((x: any) => `${x.ticketNumber} (${x.reason})`)
+            .join(", ")}${skipped.length > 3 ? "…" : ""}`,
+        );
+      }
+      setBulkStatusValue("");
+      setSelectedTicketIds(new Set());
+      fetchTickets(currentPage, filterProject, filterAssignedTo);
+    } catch (e: any) {
+      setBulkError(
+        e?.response?.data?.message || "Could not change status in bulk.",
+      );
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  /** Post the same reply to everything selected. */
+  const runBulkReply = async () => {
+    const body = bulkReplyText.trim();
+    if (!body || !selectedTicketIds.size) return;
+    setBulkLoading(true);
+    setBulkError("");
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await axios.post(
+        `${API_CONFIG.API_URL}/tickets/bulk-reply`,
+        { ticketIds: Array.from(selectedTicketIds), message: body },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const skipped = res.data?.data?.skipped || [];
+      if (skipped.length) {
+        setBulkError(
+          `${skipped.length} ticket(s) got no reply: ${skipped
+            .slice(0, 3)
+            .map((x: any) => `${x.ticketNumber} (${x.reason})`)
+            .join(", ")}${skipped.length > 3 ? "…" : ""}`,
+        );
+      }
+      setBulkReplyText("");
+      setShowBulkReply(false);
+      setSelectedTicketIds(new Set());
+      fetchTickets(currentPage, filterProject, filterAssignedTo);
+    } catch (e: any) {
+      setBulkError(e?.response?.data?.message || "Could not reply in bulk.");
+    } finally {
+      setBulkLoading(false);
+    }
+  };
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
 
   const canExport = checkPermission("TICKET_EXPORT");
@@ -633,7 +711,27 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     filterProject,
     filterAssignedTo,
     customFieldFilters,
+    filterTags,
   ]);
+
+  // The tags that exist to filter on, for the project in view.
+  useEffect(() => {
+    const token = localStorage.getItem("authToken");
+    if (!token) return;
+    axios
+      .get(`${API_CONFIG.API_URL}/tickets/tags`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params:
+          filterProject && filterProject !== "all"
+            ? { projectId: filterProject }
+            : {},
+      })
+      .then((r) => {
+        const data = r.data?.data ?? r.data;
+        setAvailableTagOptions(Array.isArray(data) ? data.map(String) : []);
+      })
+      .catch(() => setAvailableTagOptions([]));
+  }, [filterProject]);
 
   const fetchStatuses = async (projectId: string | null) => {
     try {
@@ -805,6 +903,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       if (filterDateTo) params.createdBefore = filterDateTo;
       if (deferredSearchQuery.trim())
         params.search = deferredSearchQuery.trim();
+      if (filterTags.length) params.tags = filterTags.join(",");
       Object.entries(customFieldFilters).forEach(([key, val]) => {
         if (val && val.trim()) {
           if (key.startsWith("hierarchy_level_")) {
@@ -2296,6 +2395,74 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     );
                   })}
 
+                {/* Tags — pick one or more to gather a batch. Only rendered
+                    when the project actually has tags in use. */}
+                {availableTagOptions.length > 0 && (
+                  <div style={{ position: "relative" }}>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const tag = e.target.value;
+                        if (!tag) return;
+                        setFilterTags((prev) =>
+                          prev.includes(tag) ? prev : [...prev, tag],
+                        );
+                      }}
+                      style={{
+                        padding: "8px 30px 8px 12px",
+                        border: `1px solid ${filterTags.length ? "#1d4ed8" : "#D1D5DB"}`,
+                        borderRadius: "8px",
+                        fontSize: "13px",
+                        background: filterTags.length ? "#eff6ff" : "white",
+                        color: filterTags.length ? "#1d4ed8" : "#374151",
+                        cursor: "pointer",
+                        appearance: "none",
+                      }}
+                    >
+                      <option value="">
+                        {filterTags.length
+                          ? `Tags: ${filterTags.length} selected`
+                          : "Tag"}
+                      </option>
+                      {availableTagOptions
+                        .filter((t) => !filterTags.includes(t))
+                        .map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Selected tags, removable — without these the filter is on
+                    but invisible, which reads as "the list is broken". */}
+                {filterTags.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() =>
+                      setFilterTags((prev) => prev.filter((x) => x !== t))
+                    }
+                    title="Remove this tag filter"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "6px 10px",
+                      border: "1px solid #bfdbfe",
+                      background: "#eff6ff",
+                      color: "#1d4ed8",
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t}
+                    <span aria-hidden>×</span>
+                  </button>
+                ))}
+
                 {/* 3. Priority */}
                 <div style={{ position: "relative" }}>
                   <select
@@ -3150,6 +3317,93 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
             </div>
           </div>
 
+          {/* Bulk reply composer — sits above the action bar so the agent can
+              see what they are about to send to everyone selected. */}
+          {selectedTicketIds.size > 0 && showBulkReply && (
+            <div
+              style={{
+                position: "fixed",
+                bottom: "92px",
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: 60,
+                width: "min(680px, 92vw)",
+                background: "white",
+                border: "1px solid #e5e7eb",
+                borderRadius: "12px",
+                boxShadow: "0 10px 30px rgba(0,0,0,.15)",
+                padding: "14px",
+              }}
+            >
+              <div
+                style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}
+              >
+                Reply to {selectedTicketIds.size} ticket
+                {selectedTicketIds.size !== 1 ? "s" : ""}
+              </div>
+              <textarea
+                rows={4}
+                value={bulkReplyText}
+                onChange={(e) => setBulkReplyText(e.target.value)}
+                placeholder="This message is posted on every selected ticket…"
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  resize: "vertical",
+                }}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  justifyContent: "flex-end",
+                  marginTop: 10,
+                }}
+              >
+                <button
+                  onClick={() => {
+                    setShowBulkReply(false);
+                    setBulkReplyText("");
+                  }}
+                  style={{
+                    padding: "7px 14px",
+                    border: "1px solid #e5e7eb",
+                    background: "white",
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={runBulkReply}
+                  disabled={bulkLoading || bulkReplyText.trim().length < 2}
+                  style={{
+                    padding: "7px 14px",
+                    background: "#4f46e5",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor:
+                      bulkLoading || bulkReplyText.trim().length < 2
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      bulkLoading || bulkReplyText.trim().length < 2 ? 0.6 : 1,
+                  }}
+                >
+                  {bulkLoading ? "Sending…" : "Send reply"}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Floating Bulk Action Bar */}
           {selectedTicketIds.size > 0 && (
             <div
@@ -3181,6 +3435,60 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                   background: "rgba(255,255,255,.2)",
                 }}
               />
+              {/* Change status across the selection — the point of tagging a
+                  batch in the first place. */}
+              <select
+                value={bulkStatusValue}
+                disabled={bulkLoading}
+                onChange={(e) => {
+                  setBulkStatusValue(e.target.value);
+                  runBulkStatus(e.target.value);
+                }}
+                style={{
+                  padding: "7px 10px",
+                  background: "rgba(255,255,255,.15)",
+                  border: "1px solid rgba(255,255,255,.3)",
+                  color: "white",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                <option value="" style={{ color: "#111827" }}>
+                  Change status…
+                </option>
+                {statuses.map((st: any) => (
+                  <option
+                    key={st.code}
+                    value={st.code}
+                    style={{ color: "#111827" }}
+                  >
+                    {st.name}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={() => setShowBulkReply((v) => !v)}
+                disabled={bulkLoading}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "7px 14px",
+                  background: "rgba(255,255,255,.15)",
+                  border: "1px solid rgba(255,255,255,.3)",
+                  color: "white",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Reply to all
+              </button>
+
               {canMerge && selectedTicketIds.size >= 2 && (
                 <button
                   onClick={() => {

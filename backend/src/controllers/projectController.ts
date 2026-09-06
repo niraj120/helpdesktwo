@@ -1047,7 +1047,9 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
           projectId: project._id,
           isActive: true,
         })
-          .select("name code color isDefault isClosed requireClosingRemark")
+          .select(
+            "name code color isDefault isClosed requireClosingRemark requireCommittedDate committedDateLabel",
+          )
           .sort({ displayOrder: 1 });
         return statuses;
       })(),

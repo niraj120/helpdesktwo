@@ -4,6 +4,7 @@
  * actions. Distinct from the auto-ticket EmailProcessingQueue.
  */
 import mongoose from "mongoose";
+import { notifySrActivity } from "./srActivity";
 import { EmailIntake } from "../../models/EmailIntake";
 import { Lead } from "../../models/Lead";
 import { Project } from "../../models/Project";
@@ -90,6 +91,11 @@ export async function ingestEmail(input: IngestEmailInput) {
         closedAt: isJunkSender ? new Date() : undefined,
         dueAt,
       });
+      // Junk is filed silently — badging it would train agents to ignore the
+      // badge, which is the one thing it cannot afford.
+      if (!isJunkSender) {
+        notifySrActivity(input.projectId, "email", (doc as any).uniqueId);
+      }
       return doc;
     } catch (e: any) {
       if (e?.code === 11000 && attempt < 4) continue;

@@ -490,6 +490,17 @@ export interface SrDetailConfig {
 }
 
 /** Resolved (fully-defaulted) per-project SR configuration. */
+/** One step of the IVR call-back ladder (WIP 1, WIP 2, ...). */
+export interface IvrCallbackTier {
+  /** 1-based position; what the agent is really choosing. */
+  level: number;
+  /** Shown to the agent, e.g. "WIP 1". */
+  label: string;
+  /** Hours from logging the step to the call-back being due. */
+  tatHours: number;
+  isActive: boolean;
+}
+
 export interface SrConfig {
   enabled: boolean;
   numbering: {
@@ -504,6 +515,12 @@ export interface SrConfig {
       createEnabled: boolean;
       linkExistingEnabled: boolean;
     };
+    /** Sub-ISRs: link or raise an ISR underneath another ISR. */
+    linkFromIsr: {
+      enabled: boolean;
+      createEnabled: boolean;
+      linkExistingEnabled: boolean;
+    };
   };
   wip: SrWipConfig;
   reopen: SrReopenConfig;
@@ -514,7 +531,12 @@ export interface SrConfig {
   email: SrEmailConfig;
   /** Permanent junk senders (auto-junk on ingest). */
   emailJunk: SrEmailJunkConfig;
-  ivr: { enabled: boolean };
+  ivr: {
+    enabled: boolean;
+    /** Call-back ladder: the agent picks a step, its TAT sets the due time. */
+    callbackTat: { enabled: boolean; tiers: IvrCallbackTier[] };
+    [key: string]: any;
+  };
   /** Configurable classify-call channels (PSR flow). */
   classifyChannels: SrClassifyChannel[];
   /** Optional create-form blocks (each also permission-gated). */

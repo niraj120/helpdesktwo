@@ -11,6 +11,9 @@ import { User } from "../../models/User";
 import { Project } from "../../models/Project";
 import PsrTable from "../../models/psr/PsrTable";
 import { createServiceRequest } from "./createServiceRequest";
+import { resolveSrConfig } from "./serviceRequestConfig";
+import { WorkingCalendar } from "../../models/WorkingCalendar";
+import { calculateDueDate } from "../../services/slaService";
 import { SrError } from "./serviceRequestService";
 import { applyProjectScope, ProjectScope } from "../../utils/projectScope";
 import {
@@ -214,6 +217,13 @@ export async function ingestCall(input: IngestCallInput) {
     } catch (e) {
       console.error("[ivr] round-robin assign failed:", e);
     }
+    // ...and owe a first call-back step, exactly as on the webhook path. A
+    // call reaching us through this route is no less of a commitment.
+    try {
+      await applyFirstCallbackStep(call);
+    } catch (e) {
+      console.error("[ivr] first call-back step failed:", e);
+    }
   } else if (call.callType === "answered" && !call.assignedTo) {
     // Answered calls land in the picking agent's own list.
     try {
@@ -222,6 +232,26 @@ export async function ingestCall(input: IngestCallInput) {
       console.error("[ivr] answered-call assign failed:", e);
     }
   }
+
+  // Keep open inboxes current — same event the webhook path emits.
+  try {
+    const { getIo } = require("../../socket/ioInstance");
+    const { emitIvrCallUpdate, emitSrActivity } = require("../../socket/socketHandlers");
+    const io = getIo();
+    if (io) {
+      emitIvrCallUpdate(io, String(call.projectId), {
+        type: "new-call",
+        call: call.toObject ? call.toObject() : call,
+      });
+      emitSrActivity(io, String(call.projectId), {
+        area: "ivr",
+        ref: call.callerMobile,
+      });
+    }
+  } catch (e) {
+    console.error("[ivr] socket emit failed:", e);
+  }
+
   return call;
 }
 
@@ -506,6 +536,13 @@ export async function ingestSmartflowWebhook(input: {
     } catch (e) {
       console.error("[ivr] round-robin assign failed:", e);
     }
+    // ...and the first call-back step is committed for them, so the clock
+    // starts when the call lands rather than when an agent gets to it.
+    try {
+      await applyFirstCallbackStep(call);
+    } catch (e) {
+      console.error("[ivr] first call-back step failed:", e);
+    }
   } else if (call.callType === "answered" && !call.assignedTo) {
     // Answered calls land in the picking agent's own list.
     try {
@@ -514,6 +551,27 @@ export async function ingestSmartflowWebhook(input: {
       console.error("[ivr] answered-call assign failed:", e);
     }
   }
+  // Tell any open IVR inbox about the call so the list updates itself rather
+  // than waiting for someone to hit refresh. Emitted after assignment so the
+  // row arrives with its owner and first call-back step already set.
+  try {
+    const { getIo } = require("../../socket/ioInstance");
+    const { emitIvrCallUpdate, emitSrActivity } = require("../../socket/socketHandlers");
+    const io = getIo();
+    if (io) {
+      emitIvrCallUpdate(io, String(call.projectId), {
+        type: "new-call",
+        call: call.toObject ? call.toObject() : call,
+      });
+      emitSrActivity(io, String(call.projectId), {
+        area: "ivr",
+        ref: call.callerMobile,
+      });
+    }
+  } catch (e) {
+    console.error("[ivr] socket emit failed:", e);
+  }
+
   return { ignored: false, call, logId: log._id };
 }
 
@@ -522,6 +580,14 @@ export interface ListCallParams {
   callType?: string; // answered | missed | all
   registered?: string; // "true" | "false" | all
   callStatus?: string; // new | assigned | converted | all
+  /** Call-back state: wip | due_soon | overdue */
+  wip?: string;
+  /**
+   * Set when the caller may NOT see every call in the project. The list is
+   * then pinned to the calls assigned to them, whatever the request asked for
+   * — an agent works their own queue, not the floor's.
+   */
+  restrictToUserId?: string;
   search?: string;
   /** Restrict to calls assigned to this user (the "My calls" tab). */
   assignedTo?: string;
@@ -545,6 +611,25 @@ export async function listCalls(params: ListCallParams) {
   if (params.callStatus && params.callStatus !== "all")
     q.callStatus = params.callStatus;
   if (params.assignedTo) q.assignedTo = params.assignedTo;
+  // Enforced last so no combination of query params can widen it.
+  if (params.restrictToUserId) q.assignedTo = oid(params.restrictToUserId);
+
+  // WIP (call-back) state. "wip" is every call with an outstanding commitment;
+  // the other two narrow it to the ones the agent should act on first.
+  const now = new Date();
+  if (params.wip) {
+    // A junked or converted call owes nothing, so it must not surface in any
+    // of these — least of all "overdue", where it would read as a breach.
+    q.callStatus = { $nin: ["junk", "converted"] };
+    if (params.wip === "wip") {
+      q.callbackAt = { $ne: null };
+    } else if (params.wip === "due_soon") {
+      q.callbackAt = { $gt: now };
+      q.callbackDueSoonAt = { $lte: now };
+    } else if (params.wip === "overdue") {
+      q.callbackAt = { $lt: now };
+    }
+  }
   if (params.search) {
     const rx = new RegExp(
       params.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
@@ -656,6 +741,26 @@ export async function convertCall(
  * Bulk-reassign IVR calls to a single agent. Returns per-call outcome.
  * Does not change conversion state — only who owns the call in the inbox.
  */
+/**
+ * IVR agents a call may be handed to: active users flagged as IVR agents in
+ * this project. Deliberately not the general user list — reassigning to
+ * someone who does not take calls silently strands the call.
+ */
+export async function listAssignableIvrAgents(projectId: string) {
+  if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+    throw new SrError("A valid projectId is required.", 400);
+  }
+  const users = await User.find({
+    isActive: true,
+    isIvrAgent: true,
+    projects: oid(projectId),
+  })
+    .select("_id firstName lastName email")
+    .sort({ firstName: 1, lastName: 1 })
+    .lean();
+  return users;
+}
+
 export async function bulkReassignCalls(
   callIds: string[],
   toUserId: string,
@@ -668,6 +773,23 @@ export async function bulkReassignCalls(
     mongoose.Types.ObjectId.isValid(String(c)),
   );
   if (!ids.length) throw new SrError("No valid call ids provided.", 400);
+
+  // Only someone who actually takes IVR calls may be handed one. Checked here
+  // rather than trusting the dropdown: a call parked on a non-agent is
+  // invisible to the rota and to the person receiving it.
+  const target = await User.findOne({
+    _id: oid(toUserId),
+    isActive: true,
+    isIvrAgent: true,
+  })
+    .select("_id")
+    .lean();
+  if (!target) {
+    throw new SrError(
+      "Calls can only be reassigned to an active IVR agent.",
+      400,
+    );
+  }
 
   const calls = await CallIntake.find({ _id: { $in: ids } });
   let reassigned = 0;
@@ -695,6 +817,7 @@ export async function markCallJunk(
   call.callStatus = "junk";
   call.status = "closed";
   call.remark = input.remark || "Marked as junk";
+  cancelPendingCallbacks(call, "Call marked junk");
   await call.save();
   return call;
 }
@@ -714,6 +837,7 @@ export async function markCallConverted(
   call.convertedTicketId = oid(input.ticketId);
   call.convertedTicketNumber = input.ticketNumber;
   call.convertedAt = new Date();
+  cancelPendingCallbacks(call, "Converted to a service request");
   await call.save();
   // Same trail as the direct convert path — the guided flow must not lose it.
   await attachCallHistoryToTicket(
@@ -881,33 +1005,248 @@ export async function attachCallHistoryToTicket(
  * commitment, or nothing when none are outstanding. Callers must invoke this
  * after any change to followUps so the inbox's "due" column stays truthful.
  */
+/** The share of a step's TAT that must elapse before it counts as urgent. */
+export const CALLBACK_URGENT_AT = 0.8;
+
+/**
+ * The project's working calendar: the default one, or any active calendar for
+ * the project. The default flag is not always set (BPP's calendar is not
+ * marked default), and silently falling back to plain elapsed hours there
+ * would make the TAT mean something different per project.
+ */
+async function resolveWorkingCalendar(projectId: any) {
+  return (
+    (await WorkingCalendar.findOne({ projectId, isDefault: true, isActive: true })) ||
+    (await WorkingCalendar.findOne({ projectId, isActive: true }))
+  );
+}
+
+/**
+ * When a call-back step logged now falls due, counting working hours only.
+ *
+ * A call arriving at 22:00 is assigned immediately, but its clock does not
+ * start until the working day opens — so a 4h step promised overnight is due
+ * at 13:00 the next working day, not at 02:00 when nobody is there. Without a
+ * calendar the TAT stays plain elapsed hours, which is the old behaviour.
+ */
+async function resolveCallbackDeadline(projectId: any, tatHours: number) {
+  const calendar: any = await resolveWorkingCalendar(projectId);
+  const now = new Date();
+
+  if (!calendar) {
+    const ms = tatHours * 60 * 60 * 1000;
+    return {
+      startsAt: now,
+      dueAt: new Date(now.getTime() + ms),
+      urgentAt: new Date(now.getTime() + ms * CALLBACK_URGENT_AT),
+      usedCalendar: false,
+    };
+  }
+
+  const startsAt = calendar.isWorkingTime(now)
+    ? now
+    : calendar.getNextWorkingTime(now);
+
+  const [dueAt, urgentAt] = await Promise.all([
+    calculateDueDate(startsAt, tatHours, calendar._id),
+    calculateDueDate(startsAt, tatHours * CALLBACK_URGENT_AT, calendar._id),
+  ]);
+
+  return { startsAt, dueAt, urgentAt, usedCalendar: true };
+}
+
 function syncNextCallback(call: any) {
   const pending = (call.followUps || [])
     .filter((f: any) => f.status === "pending")
-    .map((f: any) => new Date(f.scheduledAt).getTime())
-    .filter((t: number) => !Number.isNaN(t))
-    .sort((a: number, b: number) => a - b);
-  call.callbackAt = pending.length ? new Date(pending[0]) : undefined;
+    .filter((f: any) => !Number.isNaN(new Date(f.scheduledAt).getTime()))
+    .sort(
+      (a: any, b: any) =>
+        new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
+    );
+
+  const next = pending[0];
+  call.callbackAt = next ? new Date(next.scheduledAt) : undefined;
+
+  // When the step turns red. Computed against the working calendar at logging
+  // time and stored, so the marker cannot drift from the due date it was
+  // derived with. Steps predating the ladder carry neither and simply never
+  // turn red early.
+  if (next?.urgentAt) {
+    call.callbackDueSoonAt = new Date(next.urgentAt);
+  } else if (next && Number(next.tatHours) > 0) {
+    const windowMs = Number(next.tatHours) * 60 * 60 * 1000;
+    call.callbackDueSoonAt = new Date(
+      new Date(next.scheduledAt).getTime() - windowMs * (1 - CALLBACK_URGENT_AT),
+    );
+  } else {
+    call.callbackDueSoonAt = undefined;
+  }
+}
+
+/**
+ * The call-back ladder configured for a project, active steps only, in order.
+ */
+export async function getCallbackTiers(projectId: string) {
+  const project = await Project.findById(projectId).lean();
+  const cfg = resolveSrConfig(project as any);
+  const tat = cfg?.ivr?.callbackTat;
+  const tiers = ((tat?.tiers || []) as any[])
+    .filter((t: any) => t?.isActive !== false)
+    .map((t: any) => ({
+      level: Number(t.level),
+      label: String(t.label || `WIP ${t.level}`),
+      tatHours: Number(t.tatHours),
+    }))
+    .filter((t: any) => Number.isFinite(t.level) && Number.isFinite(t.tatHours))
+    .sort((a: any, b: any) => a.level - b.level) as {
+    level: number;
+    label: string;
+    tatHours: number;
+  }[];
+  return { enabled: tat?.enabled !== false, tiers };
+}
+
+/**
+ * Replace the call-back ladder for a project.
+ *
+ * Steps are renumbered 1..n in the order given, so a manager reordering or
+ * deleting one cannot leave gaps or duplicate levels that the agent selector
+ * would then render ambiguously.
+ */
+export async function saveCallbackTiers(
+  projectId: string,
+  input: { enabled?: boolean; tiers?: any[] },
+) {
+  const project = await Project.findById(projectId);
+  if (!project) throw new SrError("Project not found", 404);
+
+  const cleaned = (Array.isArray(input.tiers) ? input.tiers : [])
+    .map((t: any, i: number) => ({
+      level: i + 1,
+      label: String(t?.label || `WIP ${i + 1}`).trim().slice(0, 40),
+      tatHours: Number(t?.tatHours),
+      isActive: t?.isActive !== false,
+    }))
+    .filter((t) => Number.isFinite(t.tatHours) && t.tatHours > 0);
+
+  if (!cleaned.length) {
+    throw new SrError("At least one call-back step with a TAT is required.", 400);
+  }
+
+  const cfg: any = (project as any).configuration || {};
+  cfg.sr = cfg.sr || {};
+  cfg.sr.ivr = cfg.sr.ivr || {};
+  cfg.sr.ivr.callbackTat = {
+    enabled: input.enabled !== false,
+    tiers: cleaned,
+  };
+  (project as any).configuration = cfg;
+  project.markModified("configuration");
+  await project.save();
+
+  return getCallbackTiers(projectId);
+}
+
+/**
+ * Apply the first step of the call-back ladder to a freshly logged missed call.
+ *
+ * The first attempt is not a judgement call — a missed call always owes the
+ * caller a call back within the first step's TAT — so the agent should find it
+ * already committed rather than having to choose. Later attempts are theirs to
+ * pick, and they can amend this one if the first step was wrong.
+ *
+ * No-ops when the ladder is off, has no steps, or the call already carries a
+ * follow-up, so repeat webhooks for the same call cannot stack duplicates.
+ */
+export async function applyFirstCallbackStep(call: any) {
+  if ((call.followUps || []).length) return;
+
+  const { enabled, tiers } = await getCallbackTiers(String(call.projectId));
+  if (!enabled || !tiers.length) return;
+
+  const first = tiers[0];
+  const deadline = await resolveCallbackDeadline(call.projectId, first.tatHours);
+  call.followUps = call.followUps || [];
+  call.followUps.push({
+    scheduledAt: deadline.dueAt,
+    tatStartsAt: deadline.startsAt,
+    urgentAt: deadline.urgentAt,
+    wipLevel: first.level,
+    wipLabel: first.label,
+    tatHours: first.tatHours,
+    note: "Auto-applied on missed call",
+    status: "pending",
+    createdAt: new Date(),
+  } as any);
+  syncNextCallback(call);
+  await call.save();
+}
+
+/**
+ * Close out any pending call-back once a call is finished with.
+ *
+ * A junked or converted call is not going to be chased, so leaving its step
+ * "pending" leaves it counted as outstanding and eventually shown as overdue —
+ * a breach the agent can do nothing about and did not cause.
+ */
+function cancelPendingCallbacks(call: any, reason: string) {
+  let changed = false;
+  for (const f of call.followUps || []) {
+    if (f.status === "pending") {
+      f.status = "cancelled";
+      f.note = f.note ? `${f.note} · ${reason}` : reason;
+      f.completedAt = new Date();
+      changed = true;
+    }
+  }
+  if (changed) syncNextCallback(call);
+  return changed;
 }
 
 /**
  * Add a WIP / call-back commitment. A caller is often chased several times, so
  * each one is appended — nothing is overwritten.
+ *
+ * The agent chooses the call-frequency step, not a date: the due time is
+ * computed from that step's TAT so the commitment reflects the manager's
+ * policy. The hours in force at the time are stored alongside the level,
+ * because editing the ladder later must not silently rewrite past promises.
  */
 export async function addCallFollowUp(
   id: string,
-  input: { scheduledAt: string; note?: string; actorUserId?: string },
+  input: { wipLevel?: number | string; note?: string; actorUserId?: string },
 ) {
   const call = await CallIntake.findById(id);
   if (!call) throw new SrError("Call not found", 404);
 
-  const when = new Date(String(input.scheduledAt || "").trim());
-  if (Number.isNaN(when.getTime())) {
-    throw new SrError("A valid call-back date is required.", 400);
+  const { tiers } = await getCallbackTiers(String(call.projectId));
+  if (!tiers.length) {
+    throw new SrError(
+      "No call-back steps are configured for this project. Ask an IVR manager to set them up.",
+      400,
+    );
   }
+
+  const requested = Number(input.wipLevel);
+  const tier = Number.isFinite(requested)
+    ? tiers.find((t) => t.level === requested)
+    : undefined;
+  if (!tier) {
+    throw new SrError(
+      `Select a call-back step (${tiers.map((t) => t.label).join(", ")}).`,
+      400,
+    );
+  }
+
+  const deadline = await resolveCallbackDeadline(call.projectId, tier.tatHours);
   call.followUps = call.followUps || [];
   call.followUps.push({
-    scheduledAt: when,
+    scheduledAt: deadline.dueAt,
+    tatStartsAt: deadline.startsAt,
+    urgentAt: deadline.urgentAt,
+    wipLevel: tier.level,
+    wipLabel: tier.label,
+    tatHours: tier.tatHours,
     note: input.note?.trim() || undefined,
     status: "pending",
     createdBy:
@@ -931,7 +1270,7 @@ export async function updateCallFollowUp(
   input: {
     status?: "pending" | "done" | "cancelled";
     outcome?: "answered" | "no_answer" | "busy" | "other";
-    scheduledAt?: string;
+    wipLevel?: number | string;
     note?: string;
     actorUserId?: string;
   },
@@ -943,12 +1282,24 @@ export async function updateCallFollowUp(
   ) as any;
   if (!entry) throw new SrError("Follow-up not found", 404);
 
-  if (input.scheduledAt !== undefined) {
-    const when = new Date(String(input.scheduledAt).trim());
-    if (Number.isNaN(when.getTime())) {
-      throw new SrError("Invalid call-back date.", 400);
+  // Re-selecting a step re-derives the due time; there is deliberately no way
+  // to type a date, so the ladder stays the single source of the commitment.
+  if (input.wipLevel !== undefined) {
+    const { tiers } = await getCallbackTiers(String(call.projectId));
+    const tier = tiers.find((t) => t.level === Number(input.wipLevel));
+    if (!tier) {
+      throw new SrError(
+        `Select a call-back step (${tiers.map((t) => t.label).join(", ")}).`,
+        400,
+      );
     }
-    entry.scheduledAt = when;
+    const deadline = await resolveCallbackDeadline(call.projectId, tier.tatHours);
+    entry.wipLevel = tier.level;
+    entry.wipLabel = tier.label;
+    entry.tatHours = tier.tatHours;
+    entry.tatStartsAt = deadline.startsAt;
+    entry.urgentAt = deadline.urgentAt;
+    entry.scheduledAt = deadline.dueAt;
   }
   if (input.note !== undefined) entry.note = input.note?.trim() || undefined;
   if (input.outcome) entry.outcome = input.outcome;

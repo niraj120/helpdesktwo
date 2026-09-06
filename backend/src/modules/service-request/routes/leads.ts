@@ -1,5 +1,10 @@
 /**
- * Lead (admission enquiry) routes. Phase 4.
+ * Lead (admission enquiry) routes.
+ *
+ * Leads are an intake channel in their own right, gated like the other
+ * channels (email triage, IVR) rather than by "can raise a PSR". Converting a
+ * lead ends in a PSR, but working the enquiry queue is a separate job from
+ * raising service requests, so SR_PSR_CREATE no longer opens this.
  */
 import { Router } from "express";
 import { authMiddleware } from "../../../middleware/auth";
@@ -15,14 +20,27 @@ import {
 const router = Router();
 router.use(authMiddleware);
 
-router.get(
-  "/",
-  checkPermission(["EMAIL_TRIAGE_ACCESS", "EMAIL_TRIAGE_CONVERT", "SR_PSR_CREATE", "SR_CONFIG_MANAGE"]),
-  listLeads,
+// Reading the queue: anyone who works leads, plus SR admins.
+const READ_LEADS = [
+  "SR_LEADS_ACCESS",
+  "SR_LEADS_MANAGE",
+  "SR_CONFIG_MANAGE",
+];
+// Changing a lead.
+const WRITE_LEADS = ["SR_LEADS_MANAGE", "SR_CONFIG_MANAGE"];
+
+router.get("/", checkPermission(READ_LEADS), listLeads);
+router.post("/", checkPermission(WRITE_LEADS), createLead);
+router.post(
+  "/:id/retry-crm-sync",
+  checkPermission(WRITE_LEADS),
+  retryLeadCrmSync,
 );
-router.post("/", checkPermission(["EMAIL_TRIAGE_CONVERT", "SR_PSR_CREATE", "SR_CONFIG_MANAGE"]), createLead);
-router.post("/:id/retry-crm-sync", checkPermission(["EMAIL_TRIAGE_CONVERT", "SR_PSR_CREATE", "SR_CONFIG_MANAGE"]), retryLeadCrmSync);
-router.put("/:id", checkPermission(["EMAIL_TRIAGE_CONVERT", "SR_PSR_CREATE", "SR_CONFIG_MANAGE"]), updateLead);
-router.delete("/:id", checkPermission("SR_CONFIG_MANAGE"), deleteLead);
+router.put("/:id", checkPermission(WRITE_LEADS), updateLead);
+router.delete(
+  "/:id",
+  checkPermission(["SR_LEADS_DELETE", "SR_CONFIG_MANAGE"]),
+  deleteLead,
+);
 
 export default router;

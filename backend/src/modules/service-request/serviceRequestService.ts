@@ -452,9 +452,22 @@ export async function reopenSr(
   actorId: string,
 ) {
   const ticket = await loadSr(ticketId);
-  if (!canReopen(ticket)) {
+
+  // How many times a request may be re-opened is a project decision
+  // (psr.workflow.lifecycle.reopenLimit), not a constant.
+  const cfg = await getProjectSrConfig(ticket.project);
+  const limit = cfg?.psr?.workflow?.lifecycle?.reopenLimit ?? 1;
+  const used = ticket.reopen?.count ?? 0;
+
+  if (limit <= 0) {
     throw new SrError(
-      "This service request has already been re-opened once.",
+      "Re-opening is switched off for this project.",
+      400,
+    );
+  }
+  if (!canReopen(ticket, limit)) {
+    throw new SrError(
+      `This service request has already been re-opened ${used} time${used === 1 ? "" : "s"} — the limit for this project is ${limit}.`,
       400,
     );
   }
@@ -491,7 +504,15 @@ export async function pslSatisfactionCall(
     calledBy: oid(actorId),
     calledAt: new Date(),
   };
-  if (opts.spoken && opts.parentSatisfied === false && canReopen(ticket)) {
+  // An unhappy parent re-opens automatically, but still within the project's
+  // limit — the auto path must not exceed what an agent is allowed to do.
+  const pslCfg = await getProjectSrConfig(ticket.project);
+  const pslReopenLimit = pslCfg?.psr?.workflow?.lifecycle?.reopenLimit ?? 1;
+  if (
+    opts.spoken &&
+    opts.parentSatisfied === false &&
+    canReopen(ticket, pslReopenLimit)
+  ) {
     ticket.status = SR_STATUS.REOPEN;
     ticket.reopen = {
       count: (ticket.reopen?.count ?? 0) + 1,
@@ -603,6 +624,8 @@ export interface ListSrParams {
   status?: string;
   assignedTo?: string;
   search?: string;
+  /** Comma-separated tags; a request matching ANY of them is returned. */
+  tags?: string;
   createdFrom?: string;
   createdTo?: string;
   updatedFrom?: string;
@@ -649,6 +672,10 @@ const endOfDay = (date: Date): Date => {
 
 const castObjectIdFilter = (value: any): any => {
   if (!value) return value;
+  // An ObjectId is already what we want. Without this it falls through to the
+  // object branch below and gets shallow-copied into a plain object, which
+  // matches nothing — a silent empty result rather than an error.
+  if (value instanceof mongoose.Types.ObjectId) return value;
   if (typeof value === "string" && mongoose.Types.ObjectId.isValid(value)) {
     return new mongoose.Types.ObjectId(value);
   }
@@ -763,6 +790,25 @@ async function applyLinkedIsrFilter(query: any, state?: string) {
   query._id = { ...(query._id || {}), $in: matchingIds };
 }
 
+/**
+ * Tags currently in use on this project's service requests, so the filter can
+ * offer real choices rather than a free-text box that silently matches nothing.
+ */
+export async function listSrTags(projectId?: string, scope?: ProjectScope) {
+  const match: any = { interactionType: { $in: ["PSR", "ISR"] } };
+  if (scope) applyProjectScope(match, "project", projectId, scope);
+  else if (projectId) match.project = projectId;
+
+  const rows = await Ticket.aggregate([
+    { $match: { ...castAggregationObjectIds(match), tags: { $exists: true, $ne: [] } } },
+    { $unwind: "$tags" },
+    { $group: { _id: "$tags", n: { $sum: 1 } } },
+    { $sort: { n: -1 } },
+    { $limit: 200 },
+  ]);
+  return rows.map((r: any) => String(r._id)).filter(Boolean);
+}
+
 export async function listServiceRequests(params: ListSrParams) {
   const page = Math.max(1, Number(params.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(params.limit) || 20));
@@ -824,6 +870,16 @@ export async function listServiceRequests(params: ListSrParams) {
   applyCsvFilter(q, "submissionSource", params.source);
   applyCsvFilter(q, "metadata.classification", params.classification);
   if (params.categoryId) addAnd(q, categoryFilter(params.categoryId));
+
+  // Tag filter. Tagging a batch then filtering on the tag is how a run of
+  // related requests is gathered into one working set, so ANY tag matches.
+  if (params.tags) {
+    const tagList = String(params.tags)
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tagList.length) q.tags = { $in: tagList };
+  }
   applyDateRange(q, "createdAt", params.createdFrom, params.createdTo);
   applyDateRange(q, "updatedAt", params.updatedFrom, params.updatedTo);
   applyDateRange(q, "wip.committedDate", params.wipFrom, params.wipTo);
@@ -911,14 +967,14 @@ export async function listServiceRequests(params: ListSrParams) {
   }
   statusCounts.all = allCount;
 
-  // Linked-ISR rollup: one aggregate over child ISRs for the PSR rows on this
-  // page. done = status Resolved(4)/Closed(5). Inline list powers the popover.
-  const psrIds = (items as any[])
-    .filter((i) => i.interactionType === "PSR")
-    .map((i) => i._id);
-  if (psrIds.length) {
+  // Linked-ISR rollup: one aggregate over child ISRs for the rows on this page.
+  // done = status Resolved(4)/Closed(5). Inline list powers the popover.
+  // ISRs are included alongside PSRs because sub-ISRs let an ISR be a parent
+  // too — restricting this to PSR rows would leave those counts empty.
+  const parentIds = (items as any[]).map((i) => i._id);
+  if (parentIds.length) {
     const rollup = await Ticket.aggregate([
-      { $match: { linkedPsrId: { $in: psrIds } } },
+      { $match: { linkedPsrId: { $in: parentIds } } },
       { $sort: { createdAt: -1 } },
       {
         $group: {
@@ -937,20 +993,114 @@ export async function listServiceRequests(params: ListSrParams) {
         },
       },
     ]);
-    const byPsr = new Map(
+    const byParent = new Map(
       (rollup as any[]).map((r) => [String(r._id), r]),
     );
     for (const it of items as any[]) {
-      const r = byPsr.get(String(it._id));
+      const r = byParent.get(String(it._id));
       it.linkedIsr = { total: r?.total || 0, done: r?.done || 0 };
       it.linkedIsrs = (r?.isrs || []).slice(0, 25);
+    }
+  }
+
+  // The other half of the relation: rows that sit UNDER a parent carry the
+  // parent's number, so a linked ISR reads as linked from the list itself
+  // rather than only from the parent's tab.
+  const linkedParentIds = Array.from(
+    new Set(
+      (items as any[])
+        .map((i) => (i.linkedPsrId ? String(i.linkedPsrId) : null))
+        .filter(Boolean) as string[],
+    ),
+  );
+  if (linkedParentIds.length) {
+    const parents = await Ticket.find({ _id: { $in: linkedParentIds } })
+      .select("ticketNumber interactionType subject")
+      .lean();
+    const byId = new Map(parents.map((p: any) => [String(p._id), p]));
+    for (const it of items as any[]) {
+      if (!it.linkedPsrId) continue;
+      const parent: any = byId.get(String(it.linkedPsrId));
+      if (parent) {
+        it.linkedParent = {
+          _id: String(parent._id),
+          ticketNumber: parent.ticketNumber,
+          interactionType: parent.interactionType,
+          subject: parent.subject,
+        };
+      }
     }
   }
 
   return { items, total, page, limit, statusCounts };
 }
 
-/** ISRs linked to a parent ticket (normal ticket or PSR). */
+/**
+ * Walk up the linked-ISR chain from `startId` and report every ancestor.
+ * Sub-ISRs make the parent/child relation a chain rather than one level, so a
+ * link has to be checked for the cycle it would create (A under B under A) and
+ * for runaway depth.
+ */
+async function linkedAncestors(startId: string): Promise<string[]> {
+  const seen: string[] = [];
+  let cursor: string | null = startId;
+  // Depth cap doubles as a stop for any cycle already present in the data.
+  for (let i = 0; cursor && i < MAX_ISR_CHAIN_DEPTH + 1; i++) {
+    if (seen.includes(cursor)) break;
+    seen.push(cursor);
+    const doc: any = await Ticket.findById(cursor).select("linkedPsrId").lean();
+    cursor = doc?.linkedPsrId ? String(doc.linkedPsrId) : null;
+  }
+  return seen;
+}
+
+/** How deep a sub-ISR chain may go, counting the root parent as level 1. */
+const MAX_ISR_CHAIN_DEPTH = 5;
+
+/**
+ * Guard for attaching an ISR beneath another ISR ("sub-ISR").
+ *
+ * A parent that is a normal ticket or PSR is always fine — that is the flat
+ * relation the feature started as. An ISR parent turns it into a chain, so it
+ * is allowed only where the project opted in, and never when it would close a
+ * loop or run past the depth cap. Shared by the link path and by creation with
+ * a linkedParentTicketId, so both enforce one set of rules.
+ *
+ * `childId` is omitted when the child does not exist yet (creation).
+ */
+export async function assertIsrParentAllowed(
+  parentTicketId: string,
+  parentInteractionType: string | undefined,
+  projectId: string,
+  childId?: string,
+): Promise<void> {
+  if (parentInteractionType !== "ISR") return;
+
+  const project = await Project.findById(projectId).lean();
+  const cfg = resolveSrConfig(project as any);
+  if (!cfg?.isr?.linkFromIsr?.enabled) {
+    throw new SrError(
+      "Linking an ISR under another ISR is not enabled for this project",
+      400,
+    );
+  }
+
+  const ancestors = await linkedAncestors(parentTicketId);
+  if (childId && ancestors.includes(String(childId))) {
+    throw new SrError(
+      "That would create a loop — the parent already sits under this ISR",
+      400,
+    );
+  }
+  if (ancestors.length >= MAX_ISR_CHAIN_DEPTH) {
+    throw new SrError(
+      `Sub-ISR chains are limited to ${MAX_ISR_CHAIN_DEPTH} levels`,
+      400,
+    );
+  }
+}
+
+/** ISRs linked to a parent ticket (normal ticket, PSR, or another ISR). */
 export async function listLinkedIsrs(parentTicketId: string, scope?: ProjectScope) {
   if (!mongoose.Types.ObjectId.isValid(parentTicketId)) {
     throw new SrError("Invalid parent ticket id", 400);
@@ -958,7 +1108,7 @@ export async function listLinkedIsrs(parentTicketId: string, scope?: ProjectScop
   const parent = await Ticket.findById(parentTicketId)
     .select("interactionType project")
     .lean();
-  if (!parent || (parent as any).interactionType === "ISR") {
+  if (!parent) {
     throw new SrError("Parent ticket not found", 404);
   }
   if (scope && !canAccessProject(scope, (parent as any).project)) {
@@ -986,6 +1136,9 @@ export async function linkIsrToPsr(
   ) {
     throw new SrError("Invalid id", 400);
   }
+  if (String(isrId) === String(parentTicketId)) {
+    throw new SrError("An ISR cannot be linked to itself", 400);
+  }
   const isr = await Ticket.findById(isrId);
   if (!isr || isr.interactionType !== "ISR") {
     throw new SrError("ISR not found", 404);
@@ -993,12 +1146,19 @@ export async function linkIsrToPsr(
   const parent = await Ticket.findById(parentTicketId)
     .select("interactionType project")
     .lean();
-  if (!parent || (parent as any).interactionType === "ISR") {
+  if (!parent) {
     throw new SrError("Parent ticket not found", 404);
   }
   if (String(isr.project) !== String((parent as any).project)) {
     throw new SrError("ISR and parent ticket belong to different projects", 400);
   }
+
+  await assertIsrParentAllowed(
+    String(parentTicketId),
+    (parent as any).interactionType,
+    String(isr.project),
+    String(isrId),
+  );
   if (scope && !canAccessProject(scope, isr.project)) {
     throw new SrError("ISR not found", 404);
   }
@@ -1020,6 +1180,9 @@ export async function getServiceRequest(
     .populate("assignedTo", "firstName lastName fullName email")
     .populate("createdBy", "firstName lastName fullName email")
     .populate("cc", "firstName lastName fullName email")
+    // The parent this SR sits under, so the detail screen can say what it
+    // belongs to instead of the relation only being visible from the parent.
+    .populate("linkedPsrId", "ticketNumber interactionType subject status")
     .lean();
   if (!ticket) throw new SrError("Service request not found", 404);
   const it = (ticket as any).interactionType;

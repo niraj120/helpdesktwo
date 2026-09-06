@@ -5,6 +5,7 @@ import { srStyles, srButton } from "../../utils/srTheme";
 import { useProjectContext } from "../../contexts/ProjectContext";
 import { api } from "../../utils/api";
 import { serviceRequestApi } from "../../services/serviceRequests";
+import { useSocket } from "../../hooks/useSocket";
 import { PERMISSIONS } from "../../constants/permissions";
 import { usePermissions } from "../../hooks/usePermissions";
 
@@ -52,6 +53,11 @@ interface Call {
   convertedTicketNumber?: string;
   callbackAt?: string;
   followUps?: {
+    wipLevel?: number;
+    wipLabel?: string;
+    tatHours?: number;
+    tatStartsAt?: string;
+    urgentAt?: string;
     _id: string;
     scheduledAt: string;
     note?: string;
@@ -123,9 +129,11 @@ const IVRCalls: React.FC<{
     PERMISSIONS.IVR_TRIAGE_CONVERT,
     PERMISSIONS.SR_PSR_CREATE,
   ]);
+  // Handing a call to someone else is separate from being able to work one:
+  // converting a call does not imply moving other people's queue around.
   const canReassign = hasAnyPermission([
+    PERMISSIONS.IVR_CALL_REASSIGN,
     PERMISSIONS.IVR_AGENT_MANAGE,
-    PERMISSIONS.IVR_TRIAGE_CONVERT,
   ]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [agents, setAgents] = useState<any[]>([]);
@@ -134,6 +142,9 @@ const IVRCalls: React.FC<{
   const { currentProjectId } = useProjectContext();
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [projectId, setProjectId] = useState(currentProjectId || "");
+  // Call-back state filter: every call still owing one, and the two slices an
+  // agent works from first.
+  const [wipFilter, setWipFilter] = useState("");
   const [callType, setCallType] = useState("all");
   const [registered, setRegistered] = useState("all");
   const [mine, setMine] = useState(false);
@@ -208,21 +219,43 @@ const IVRCalls: React.FC<{
     try {
       const r = await serviceRequestApi.ivr.list({
         projectId: projectId || undefined,
+        wip: wipFilter || undefined,
         callType,
         registered,
         assignedTo: mine ? "me" : undefined,
       });
       const items = r.items || [];
+      setCanSeeAll((r as any)?.canSeeAllCalls !== false);
       rememberRows(items, options?.silent);
       setRows(items);
     } catch (e) {
       console.error(e);
       setRows([]);
     }
-  }, [callType, projectId, registered, mine, rememberRows]);
+  }, [callType, projectId, registered, mine, wipFilter, rememberRows]);
   useEffect(() => {
     load();
   }, [load]);
+
+  // Live list. A missed call has to reach the agent without anyone thinking to
+  // refresh — the call is already ticking against its TAT by the time it
+  // appears. Reload quietly and let the existing unread highlight mark what is
+  // new, the same way the ticket list behaves.
+  const socketRooms = useMemo(
+    () => (projectId ? [`project-tickets-${projectId}`] : ["all-tickets"]),
+    [projectId],
+  );
+  useSocket({
+    rooms: socketRooms,
+    events: {
+      "ivr-call-update": () => {
+        // Re-query rather than splicing the payload in: the row has to respect
+        // the tab, caller and WIP filters currently applied, which only the
+        // server knows how to evaluate.
+        load({ silent: true });
+      },
+    },
+  });
 
   useEffect(() => {
     const refreshSilently = () => load({ silent: true });
@@ -260,11 +293,17 @@ const IVRCalls: React.FC<{
       setAgents([]);
       return;
     }
-    api
-      .get("/users", { params: { project: projectId, isActive: true, limit: 1000 } })
-      .then((r) => setAgents((r as any).data?.data || []))
+    // IVR agents only — the general user list would offer people who never
+    // take calls, and a call parked on one of them is effectively lost.
+    if (!canReassign) {
+      setAgents([]);
+      return;
+    }
+    serviceRequestApi.ivr
+      .assignableAgents(projectId)
+      .then((r: any) => setAgents(r?.data || []))
       .catch(() => setAgents([]));
-  }, [projectId]);
+  }, [projectId, canReassign]);
 
   const toggleSelect = (id: string) =>
     setSelectedIds((prev) => {
@@ -369,23 +408,168 @@ const IVRCalls: React.FC<{
   };
 
   // WIP / call-back log. Drafts are keyed by call id so one open editor never
-  // writes into another row.
+  // writes into another row. The agent picks how soon to chase the caller
+  // again (the call-frequency step); its TAT decides the due time, so there is
+  // deliberately no date entry here.
   const [cbDraft, setCbDraft] = useState<Record<string, string>>({});
+  // Re-render once a minute so the countdown stays honest without a reload.
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
+  // The API decides whether this caller sees the whole project's calls; it
+  // pins the list to their own either way, so this only controls what the
+  // filter row offers.
+  const [canSeeAll, setCanSeeAll] = useState(true);
+  const [tiers, setTiers] = useState<
+    { level: number; label: string; tatHours: number }[]
+  >([]);
   const [savingCb, setSavingCb] = useState<string | null>(null);
   const [openLog, setOpenLog] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!projectId) return;
+    (async () => {
+      try {
+        const r = await serviceRequestApi.ivr.callbackTat(projectId);
+        setTiers(r?.data?.tiers || []);
+      } catch (e) {
+        console.error(e);
+        setTiers([]);
+      }
+    })();
+  }, [projectId]);
+
+  /**
+   * The step to offer next. The first is applied automatically when a missed
+   * call lands, so the agent is normally choosing the SECOND attempt onward —
+   * default to the step after the highest already logged rather than making
+   * them re-pick from the top of the ladder.
+   */
+  const nextTierFor = (call: Call) => {
+    const used = (call.followUps || [])
+      .map((f) => Number(f.wipLevel))
+      .filter((n) => Number.isFinite(n));
+    const highest = used.length ? Math.max(...used) : 0;
+    return (
+      tiers.find((t) => t.level === highest + 1) ||
+      tiers[tiers.length - 1] ||
+      null
+    );
+  };
+
+  /**
+   * How far through its TAT the pending call-back is, and what that should
+   * look like. Green while there is room, amber past halfway, red once 80% of
+   * the step's TAT has gone — the same threshold the "Running out" filter uses,
+   * so the colour and the filter never disagree.
+   */
+  const callbackState = (call: Call) => {
+    if (!call.callbackAt) return null;
+    const due = new Date(call.callbackAt).getTime();
+    const pending = (call.followUps || [])
+      .filter((f) => f.status === "pending")
+      .sort(
+        (a, b) =>
+          new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
+      )[0];
+    // The clock may not have started: a call taken outside working hours is
+    // owned immediately, but its TAT begins when the working day opens.
+    const startsAt = pending?.tatStartsAt
+      ? new Date(pending.tatStartsAt).getTime()
+      : null;
+    if (startsAt && startsAt > now) {
+      return {
+        label:
+          "starts " +
+          new Date(startsAt).toLocaleString(undefined, {
+            day: "numeric",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        pct: 0,
+        step: pending?.wipLabel,
+        due: new Date(call.callbackAt).toLocaleString(),
+        fg: "#475569",
+        bg: "#f1f5f9",
+        br: "#e2e8f0",
+      };
+    }
+
+    const remainingMs = due - now;
+    const overdue = remainingMs < 0;
+
+    // Elapsed share of the TAT. Measured against the window the server
+    // actually used (start -> due), so working-hours TATs read correctly
+    // instead of being compared to plain elapsed hours.
+    const windowMs = startsAt ? due - startsAt : Number(pending?.tatHours || 0) * 3600000;
+    const pct = windowMs > 0 ? 1 - remainingMs / windowMs : overdue ? 1 : 0;
+
+    // The server stamped when this turns red; trust it over recomputing.
+    const urgentAt = pending?.urgentAt ? new Date(pending.urgentAt).getTime() : null;
+    const isUrgent = urgentAt ? now >= urgentAt : pct >= 0.8;
+
+    const level = overdue
+      ? "overdue"
+      : isUrgent
+        ? "urgent"
+        : pct >= 0.5
+          ? "warn"
+          : "ok";
+
+    const colors = {
+      ok: { fg: "#047857", bg: "#ecfdf5", br: "#a7f3d0" },
+      warn: { fg: "#b45309", bg: "#fffbeb", br: "#fde68a" },
+      urgent: { fg: "#b91c1c", bg: "#fef2f2", br: "#fecaca" },
+      overdue: { fg: "#ffffff", bg: "#b91c1c", br: "#b91c1c" },
+    }[level];
+
+    const abs = Math.abs(remainingMs);
+    const h = Math.floor(abs / 3600000);
+    const m = Math.floor((abs % 3600000) / 60000);
+    const clock = h > 0 ? h + "h " + m + "m" : m + "m";
+
+    return {
+      label: overdue ? "overdue by " + clock : clock + " left",
+      pct: Math.max(0, Math.min(1, pct)),
+      step: pending?.wipLabel,
+      due: new Date(call.callbackAt).toLocaleString(),
+      ...colors,
+    };
+  };
+
+  const changeFollowUpStep = async (
+    call: Call,
+    followUpId: string,
+    level: number,
+  ) => {
+    setSavingCb(call._id);
+    try {
+      await serviceRequestApi.ivr.updateFollowUp(call._id, followUpId, {
+        wipLevel: level,
+      });
+      setMsg("Call-back step changed.");
+      load();
+    } catch (e: any) {
+      setMsg(e?.response?.data?.message || "Could not change the step.");
+    } finally {
+      setSavingCb(null);
+    }
+  };
+
   const addFollowUp = async (call: Call) => {
-    const draft = cbDraft[call._id];
-    if (!draft) {
-      setMsg("Pick a date and time first.");
+    // Nothing picked means "the step the ladder says comes next".
+    const level = cbDraft[call._id] || String(nextTierFor(call)?.level || "");
+    if (!level) {
+      setMsg("No call-back steps are configured for this project.");
       return;
     }
     setSavingCb(call._id);
     try {
-      // datetime-local has no timezone; new Date() reads it as local time,
-      // which is what the agent meant.
       await serviceRequestApi.ivr.addFollowUp(call._id, {
-        scheduledAt: new Date(draft).toISOString(),
+        wipLevel: Number(level),
       });
       setMsg("Follow-up added.");
       setCbDraft((prev) => {
@@ -525,9 +709,47 @@ const IVRCalls: React.FC<{
             </button>
           ))}
           <span style={{ width: 1, background: "#e5e7eb", margin: "0 4px" }} />
-          <button style={tab(mine)} onClick={() => setMine((v) => !v)}>
-            My calls
-          </button>
+          {[
+            { v: "wip", l: "In WIP" },
+            { v: "due_soon", l: "Running out" },
+            { v: "overdue", l: "Overdue" },
+          ].map((t) => (
+            <button
+              key={t.v}
+              style={tab(wipFilter === t.v)}
+              onClick={() => setWipFilter(wipFilter === t.v ? "" : t.v)}
+              title={
+                t.v === "wip"
+                  ? "Calls with an outstanding call-back"
+                  : t.v === "due_soon"
+                    ? "Past 80% of the step's TAT — act now"
+                    : "The call-back time has passed"
+              }
+            >
+              {t.l}
+            </button>
+          ))}
+          {canSeeAll && (
+            <>
+              <span style={{ width: 1, background: "#e5e7eb", margin: "0 4px" }} />
+              <button style={tab(mine)} onClick={() => setMine((v) => !v)}>
+                My calls
+              </button>
+            </>
+          )}
+          {!canSeeAll && (
+            <span
+              style={{
+                fontSize: 12,
+                color: "#64748b",
+                alignSelf: "center",
+                marginLeft: 4,
+              }}
+              title="You see the calls assigned to you. An IVR manager can widen this."
+            >
+              Showing your assigned calls
+            </span>
+          )}
           {!hideProjectSelector && (
             <select style={{ ...ctrl, marginLeft: "auto" }} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
               <option value="">All projects</option>
@@ -594,8 +816,20 @@ const IVRCalls: React.FC<{
           </div>
         )}
 
-        <div style={card}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        {/* The row is wide — recording player, call-back selector and the
+            action buttons together exceed any laptop viewport. Scroll the
+            table inside its own card rather than letting it push the page
+            sideways: without this the rows run past the card's border and the
+            whole layout shears once you scroll horizontally. */}
+        <div style={{ ...card, padding: 0, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto", width: "100%" }}>
+            <table
+              style={{
+                width: "100%",
+                minWidth: 1500,
+                borderCollapse: "collapse",
+              }}
+            >
             <thead>
               <tr>
                 <th style={th}>Caller Info</th>
@@ -612,7 +846,19 @@ const IVRCalls: React.FC<{
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td style={{ ...td, color: "#9ca3af" }} colSpan={10}>No calls.</td></tr>
+                <tr>
+                  <td style={{ ...td, color: "#9ca3af" }} colSpan={12}>
+                    {/* Say why it is empty. A filter returning nothing looks
+                        identical to a broken filter otherwise. */}
+                    {wipFilter === "due_soon"
+                      ? "No call-backs are past 80% of their TAT right now."
+                      : wipFilter === "overdue"
+                        ? "No call-backs are overdue."
+                        : wipFilter === "wip"
+                          ? "No calls have an outstanding call-back."
+                          : "No calls."}
+                  </td>
+                </tr>
               ) : (
                 rows.map((c) => {
                   const cs = CALL_STATUS_META[c.callStatus] || CALL_STATUS_META.new;
@@ -695,31 +941,52 @@ const IVRCalls: React.FC<{
                         {c.callType === "missed" ? (
                           <>
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <input
-                                type="datetime-local"
+                              <select
                                 value={cbDraft[c._id] ?? ""}
-                                disabled={savingCb === c._id}
+                                disabled={savingCb === c._id || !tiers.length}
                                 onChange={(event) =>
                                   setCbDraft((prev) => ({ ...prev, [c._id]: event.target.value }))
                                 }
-                                title="Schedule another call-back"
+                                title={
+                                  tiers.length
+                                    ? "How soon to call back — the TAT is set by this step"
+                                    : "No call-back steps configured — ask an IVR manager"
+                                }
                                 style={{
                                   border: "1px solid #e5e7eb",
                                   borderRadius: 8,
                                   padding: "5px 8px",
                                   fontSize: 12,
                                   color: "#111827",
+                                  minWidth: 150,
                                 }}
-                              />
+                              >
+                                <option value="">
+                                  {tiers.length
+                                    ? nextTierFor(c)
+                                      ? "Next: " +
+                                        nextTierFor(c)!.label +
+                                        " — " +
+                                        nextTierFor(c)!.tatHours +
+                                        "h"
+                                      : "Call back in..."
+                                    : "No steps configured"}
+                                </option>
+                                {tiers.map((t) => (
+                                  <option key={t.level} value={t.level}>
+                                    {t.label} — {t.tatHours}h
+                                  </option>
+                                ))}
+                              </select>
                               <button
                                 onClick={() => addFollowUp(c)}
-                                disabled={savingCb === c._id || !cbDraft[c._id]}
+                                disabled={savingCb === c._id || !tiers.length}
                                 title="Add this follow-up to the log"
                                 style={{
                                   ...srButton("neutral"),
                                   padding: "6px 10px",
-                                  opacity: cbDraft[c._id] ? 1 : 0.5,
-                                  cursor: cbDraft[c._id] ? "pointer" : "not-allowed",
+                                  opacity: tiers.length ? 1 : 0.5,
+                                  cursor: tiers.length ? "pointer" : "not-allowed",
                                 }}
                               >
                                 + Add
@@ -743,21 +1010,57 @@ const IVRCalls: React.FC<{
                               </button>
                             </div>
 
-                            {c.callbackAt ? (
-                              <div
-                                style={{
-                                  fontSize: 11,
-                                  marginTop: 4,
-                                  color:
-                                    new Date(c.callbackAt) < new Date()
-                                      ? "#b91c1c"
-                                      : "#475569",
-                                }}
-                              >
-                                Next: {new Date(c.callbackAt).toLocaleString()}
-                                {new Date(c.callbackAt) < new Date() ? " · overdue" : ""}
-                              </div>
-                            ) : null}
+                            {(() => {
+                              const cb = callbackState(c);
+                              if (!cb) return null;
+                              return (
+                                <div
+                                  style={{ marginTop: 6 }}
+                                  title={
+                                    (cb.step ? cb.step + " · " : "") +
+                                    "due " +
+                                    cb.due
+                                  }
+                                >
+                                  <div
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 5,
+                                      padding: "2px 8px",
+                                      borderRadius: 999,
+                                      fontSize: 11,
+                                      fontWeight: 700,
+                                      color: cb.fg,
+                                      background: cb.bg,
+                                      border: "1px solid " + cb.br,
+                                    }}
+                                  >
+                                    {cb.step ? <span>{cb.step}</span> : null}
+                                    <span>{cb.label}</span>
+                                  </div>
+                                  {/* How much of the TAT has been consumed. */}
+                                  <div
+                                    style={{
+                                      height: 3,
+                                      borderRadius: 999,
+                                      background: "#e5e7eb",
+                                      marginTop: 4,
+                                      overflow: "hidden",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        height: "100%",
+                                        width: Math.round(cb.pct * 100) + "%",
+                                        background:
+                                          cb.fg === "#ffffff" ? "#b91c1c" : cb.fg,
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })()}
 
                             {c.followUps?.length ? (
                               <button
@@ -798,6 +1101,22 @@ const IVRCalls: React.FC<{
                                   )
                                   .map((f) => (
                                     <div key={f._id} style={{ fontSize: 11, color: "#475569" }}>
+                                      {f.wipLabel ? (
+                                        <span
+                                          style={{
+                                            fontWeight: 700,
+                                            color: "#4338ca",
+                                            marginRight: 4,
+                                          }}
+                                          title={
+                                            f.tatHours
+                                              ? "TAT " + f.tatHours + "h when logged"
+                                              : undefined
+                                          }
+                                        >
+                                          {f.wipLabel}
+                                        </span>
+                                      ) : null}
                                       <span style={{ fontWeight: 600 }}>
                                         {new Date(f.scheduledAt).toLocaleString()}
                                       </span>{" "}
@@ -842,6 +1161,35 @@ const IVRCalls: React.FC<{
                                           >
                                             cancel
                                           </button>
+                                          {/* The first step is applied
+                                              automatically, so it has to be
+                                              changeable if it was wrong. */}
+                                          <select
+                                            value={f.wipLevel ?? ""}
+                                            disabled={savingCb === c._id}
+                                            onChange={(event) =>
+                                              changeFollowUpStep(
+                                                c,
+                                                f._id,
+                                                Number(event.target.value),
+                                              )
+                                            }
+                                            title="Change the call-back step"
+                                            style={{
+                                              marginLeft: 4,
+                                              fontSize: 10,
+                                              border: "1px solid #e5e7eb",
+                                              borderRadius: 6,
+                                              padding: "1px 4px",
+                                            }}
+                                          >
+                                            <option value="">step...</option>
+                                            {tiers.map((t) => (
+                                              <option key={t.level} value={t.level}>
+                                                {t.label} ({t.tatHours}h)
+                                              </option>
+                                            ))}
+                                          </select>
                                         </>
                                       ) : null}
                                     </div>
@@ -919,7 +1267,8 @@ const IVRCalls: React.FC<{
                 })
               )}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
 
         {selected && (

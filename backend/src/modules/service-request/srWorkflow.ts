@@ -106,6 +106,11 @@ export function validateWipCommittedDate(
 }
 
 /** Parent/PSL may re-open only once. */
-export function canReopen(ticket: { reopen?: { count?: number } }): boolean {
-  return (ticket.reopen?.count ?? 0) < 1;
+export function canReopen(
+  ticket: { reopen?: { count?: number } },
+  limit = 1,
+): boolean {
+  // A limit of 0 disables re-opening; anything higher allows that many.
+  const allowed = Number.isFinite(limit) && limit >= 0 ? limit : 1;
+  return (ticket.reopen?.count ?? 0) < allowed;
 }

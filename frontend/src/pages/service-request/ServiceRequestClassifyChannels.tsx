@@ -154,7 +154,7 @@ const ServiceRequestClassifyChannels: React.FC<{
         ))}
         <p style={{ fontSize: 12, color: SR.sub, marginTop: 4 }}>
           Each block is also gated by the matching permission
-          (SR_ASSIGN_EMAILS / SR_PRIORITY_OVERRIDE / SR_OFFLINE_ENTRY).
+          (SR_ASSIGN_EMAILS / SR_CHANGE_PRIORITY / SR_OFFLINE_ENTRY).
         </p>
       </div>
 

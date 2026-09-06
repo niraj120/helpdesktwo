@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { canDo } from "../constants/ticketActionPermissions";
 import DOMPurify from "dompurify";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import PsrDetailLayout from "../components/sr/PsrDetailLayout";
@@ -665,6 +666,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     toLabel: string;
     remark: string;
     remarkDate: string;
+    needsRemark?: boolean;
+    needsDate?: boolean;
+    dateLabel?: string;
   }>({
     open: false,
     targetStatusCode: 0,
@@ -760,10 +764,18 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     !!srConfig?.enabled &&
     !!srConfig?.isr?.enabled &&
     !!srConfig?.isr?.linkFromNormalTickets?.enabled;
+  // Sub-ISRs: an ISR can host its own linked ISRs where the project opts in.
+  // Off by default because it turns the flat parent/child relation into a
+  // chain; the backend caps depth and refuses links that would form a loop.
+  const isrLinkedIsrEnabled =
+    !!ticket &&
+    isIsrTicket &&
+    !!srConfig?.enabled &&
+    !!srConfig?.isr?.enabled &&
+    !!srConfig?.isr?.linkFromIsr?.enabled;
   const linkedIsrTabEnabled =
     !!ticket &&
-    !isIsrTicket &&
-    (isPsrTicket || normalTicketLinkedIsrEnabled) &&
+    (isPsrTicket || normalTicketLinkedIsrEnabled || isrLinkedIsrEnabled) &&
     srTabVisible("linkedisr");
 
   // Fetch hierarchy config to determine if multi-level categories are enabled
@@ -1610,7 +1622,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
   const handleUpdateStatus = async (
     statusOverride?: string | number,
-    closingRemark?: string,
+    statusRemark?: string,
+    committedDate?: string,
   ) => {
     if (!ticket) return;
 
@@ -1637,7 +1650,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     const targetStatusOption = statusOptions.find(
       (s: any) => s.code === statusCode,
     );
-    if (targetStatusOption?.requireClosingRemark && !closingRemark) {
+    // A status may ask for a remark, a committed date, or both.
+    const needsRemark = !!targetStatusOption?.requireClosingRemark;
+    const needsDate = !!targetStatusOption?.requireCommittedDate;
+    if ((needsRemark && !statusRemark) || (needsDate && !committedDate)) {
       setRemarkModal({
         open: true,
         targetStatusCode: statusCode,
@@ -1645,6 +1661,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
         toLabel,
         remark: "",
         remarkDate: new Date().toISOString().slice(0, 10),
+        needsRemark,
+        needsDate,
+        dateLabel:
+          targetStatusOption?.committedDateLabel || "Committed date",
       });
       return;
     }
@@ -1657,7 +1677,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     try {
       const token = localStorage.getItem("authToken");
       const body: any = { status: statusCode };
-      if (closingRemark) body.closingRemark = closingRemark;
+      if (statusRemark) body.statusRemark = statusRemark;
+      if (committedDate) body.committedDate = committedDate;
       console.log("📤 Sending PATCH request with body:", body);
       const response = await axios.patch(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/status`,
@@ -2000,8 +2021,19 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     typeof ticket.assignedTo === "object"
       ? (ticket.assignedTo as any)?._id
       : (ticket.assignedTo as any);
+  // A PSR/ISR is judged by the SR permission set, a normal query by the ticket
+  // set — holding the run of the query desk grants nothing over service
+  // requests. (The backend enforces the same split.)
+  const recordType = (ticket as any)?.interactionType;
+  // A linked ISR sits under a parent ticket. The relation used to be visible
+  // only from the parent's Linked ISRs tab, so a child read as a standalone
+  // ticket; surface it here too.
+  const linkedParent = (() => {
+    const p = (ticket as any)?.linkedPsrId;
+    return p && typeof p === "object" && p.ticketNumber ? p : null;
+  })();
   const canModify =
-    permissions.includes("TICKET_MODIFY_ANY") ||
+    canDo(permissions, "MODIFY_ANY", recordType) ||
     (!!currentUserId && !!ticketAssigneeId && ticketAssigneeId === currentUserId);
   const assigneeName =
     typeof ticket.assignedTo === "object" && ticket.assignedTo
@@ -2019,6 +2051,22 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
               View only — this query is
               {assigneeName ? ` assigned to ${assigneeName}` : " not assigned to you"}
               . You can read it but can't comment, reply, or make changes.
+            </span>
+          </div>
+        )}
+        {/* Parent link — this record was raised under another ticket */}
+        {linkedParent && (
+          <div className="bg-indigo-50 border-b border-indigo-200 px-6 py-2.5 text-sm text-indigo-900 flex items-center gap-2">
+            <span aria-hidden>🔗</span>
+            <span>
+              This {recordType === "ISR" ? "ISR" : "request"} is linked under{" "}
+              <button
+                onClick={() => navigate(detailPathFor(String(linkedParent._id)))}
+                className="font-semibold underline hover:no-underline"
+              >
+                {linkedParent.ticketNumber}
+              </button>
+              {linkedParent.subject ? ` — ${linkedParent.subject}` : ""}
             </span>
           </div>
         )}
@@ -2210,7 +2258,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
               </div>
 
               {/* Right: Merge button */}
-              {permissions.includes("TICKET_MERGE") && !ticket.isMerged && (
+              {canDo(permissions, "MERGE", recordType) && !ticket.isMerged && (
                 <button
                   onClick={() => setShowMergeModal(true)}
                   className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
@@ -3214,11 +3262,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       variant="tab"
                       allowCreate={
                         isPsrTicket ||
-                        !!srConfig?.isr?.linkFromNormalTickets?.createEnabled
+                        (isIsrTicket
+                          ? !!srConfig?.isr?.linkFromIsr?.createEnabled
+                          : !!srConfig?.isr?.linkFromNormalTickets?.createEnabled)
                       }
                       allowLink={
                         isPsrTicket ||
-                        !!srConfig?.isr?.linkFromNormalTickets?.linkExistingEnabled
+                        (isIsrTicket
+                          ? !!srConfig?.isr?.linkFromIsr?.linkExistingEnabled
+                          : !!srConfig?.isr?.linkFromNormalTickets
+                              ?.linkExistingEnabled)
                       }
                     />
                   )}
@@ -4974,7 +5027,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       hierarchyConfig.levelCount > 1 &&
                       ticketProjectId ? (
                       <div>
-                        {!(permissions.includes("TICKET_CHANGE_CATEGORY") && canModify) ? (
+                        {!(canDo(permissions, "CHANGE_CATEGORY", recordType) && canModify) ? (
                           <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed">
                             {ticket.categoryHierarchy?.displayPath ||
                               "No category selected"}
@@ -5025,7 +5078,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     ) : (
                       <select
                         disabled={
-                          !(permissions.includes("TICKET_CHANGE_CATEGORY") && canModify)
+                          !(canDo(permissions, "CHANGE_CATEGORY", recordType) && canModify)
                         }
                         value={
                           typeof ticket.category === "object" &&
@@ -5061,7 +5114,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                               ),
                           });
                         }}
-                        className={`w-full px-3 py-2 border rounded-lg ${(permissions.includes("TICKET_CHANGE_CATEGORY") && canModify)
+                        className={`w-full px-3 py-2 border rounded-lg ${(canDo(permissions, "CHANGE_CATEGORY", recordType) && canModify)
                             ? "border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             : "border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed"
                           }`}
@@ -5089,7 +5142,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             : "Unassigned"}
                         </span>
                       </div>
-                      {permissions.includes("TICKET_REASSIGN") && (
+                      {canDo(permissions, "REASSIGN", recordType) && (
                         <button
                           onClick={openReassignModal}
                           className="text-xs px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 transition-colors font-medium"
@@ -5646,26 +5699,34 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                 <span className="font-medium text-blue-700">
                   {remarkModal.toLabel}
                 </span>{" "}
-                requires a remark.
+                {remarkModal.needsRemark && remarkModal.needsDate
+                  ? `requires a remark and a ${(remarkModal.dateLabel || "committed date").toLowerCase()}.`
+                  : remarkModal.needsDate
+                    ? `requires a ${(remarkModal.dateLabel || "committed date").toLowerCase()}.`
+                    : "requires a remark."}
               </p>
 
-              {/* Date picker */}
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={remarkModal.remarkDate}
-                  onChange={(e) =>
-                    setRemarkModal((m) => ({
-                      ...m,
-                      remarkDate: e.target.value,
-                    }))
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
+              {/* Only shown when the status asks for a date — a closing status
+                  usually wants the reason, not a commitment. */}
+              {remarkModal.needsDate && (
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {remarkModal.dateLabel || "Committed date"}{" "}
+                    <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={remarkModal.remarkDate}
+                    onChange={(e) =>
+                      setRemarkModal((m) => ({
+                        ...m,
+                        remarkDate: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              )}
 
               {/* Remark textarea */}
               <div className="mb-5">
@@ -5714,20 +5775,25 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                 </button>
                 <button
                   disabled={
-                    remarkModal.remark.trim().length < 10 ||
-                    !remarkModal.remarkDate
+                    (remarkModal.needsRemark !== false &&
+                      remarkModal.remark.trim().length < 10) ||
+                    (!!remarkModal.needsDate && !remarkModal.remarkDate)
                   }
                   onClick={() => {
-                    if (
-                      remarkModal.remark.trim().length < 10 ||
-                      !remarkModal.remarkDate
-                    )
-                      return;
-                    const combinedRemark = `[${remarkModal.remarkDate}] ${remarkModal.remark.trim()}`;
+                    const remarkMissing =
+                      remarkModal.needsRemark !== false &&
+                      remarkModal.remark.trim().length < 10;
+                    const dateMissing =
+                      !!remarkModal.needsDate && !remarkModal.remarkDate;
+                    if (remarkMissing || dateMissing) return;
                     setRemarkModal((m) => ({ ...m, open: false }));
+                    // Sent as two fields: the remark explains, the date
+                    // commits. Packing them into one string is what filed WIP
+                    // commitments under closingRemark.
                     handleUpdateStatus(
                       remarkModal.targetStatusCode,
-                      combinedRemark,
+                      remarkModal.remark.trim() || undefined,
+                      remarkModal.needsDate ? remarkModal.remarkDate : undefined,
                     );
                   }}
                   className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

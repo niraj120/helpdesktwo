@@ -225,6 +225,14 @@ export const SR_CONFIG_DEFAULTS: SrConfig = {
       createEnabled: true,
       linkExistingEnabled: true,
     },
+    // Sub-ISRs: raising or attaching an ISR underneath another ISR. Off by
+    // default — it turns a flat parent/child relation into a chain, so a
+    // project opts in deliberately.
+    linkFromIsr: {
+      enabled: false,
+      createEnabled: true,
+      linkExistingEnabled: true,
+    },
   },
   wip: {
     maxRevisions: 3,
@@ -245,7 +253,19 @@ export const SR_CONFIG_DEFAULTS: SrConfig = {
   },
   email: { enabled: false, tatHours: 8, level2Hours: 12 },
   emailJunk: { senders: [] },
-  ivr: { enabled: false },
+  ivr: {
+    enabled: false,
+    // Call-back ladder. The agent picks how soon the caller is chased again
+    // (the "call frequency"); the TAT on that step sets the due time, so the
+    // commitment follows the manager's policy rather than the agent's guess.
+    callbackTat: {
+      enabled: true,
+      tiers: [
+        { level: 1, label: "WIP 1", tatHours: 4, isActive: true },
+        { level: 2, label: "WIP 2", tatHours: 2, isActive: true },
+      ],
+    },
+  },
   classifyChannels: SR_DEFAULT_CLASSIFY_CHANNELS,
   blocks: {
     parentLookup: {
@@ -541,6 +561,10 @@ export function resolveSrConfig(raw: any): SrConfig {
     },
     isr: {
       enabled: sr.isr?.enabled ?? false,
+      linkFromIsr: {
+        ...SR_CONFIG_DEFAULTS.isr.linkFromIsr,
+        ...(sr.isr?.linkFromIsr || {}),
+      },
       linkFromNormalTickets: {
         ...SR_CONFIG_DEFAULTS.isr.linkFromNormalTickets,
         ...(sr.isr?.linkFromNormalTickets || {}),
@@ -586,7 +610,21 @@ export function resolveSrConfig(raw: any): SrConfig {
       level2Hours:
         sr.email?.level2Hours ?? SR_CONFIG_DEFAULTS.email.level2Hours,
     },
-    ivr: { enabled: !!sr.ivr?.enabled },
+    ivr: {
+      ...(sr.ivr || {}),
+      enabled: !!sr.ivr?.enabled,
+      callbackTat: {
+        ...SR_CONFIG_DEFAULTS.ivr.callbackTat,
+        ...(sr.ivr?.callbackTat || {}),
+        // An empty tier list would leave agents nothing to choose, so fall
+        // back to the defaults rather than rendering a dead selector.
+        tiers:
+          Array.isArray(sr.ivr?.callbackTat?.tiers) &&
+          sr.ivr.callbackTat.tiers.length
+            ? sr.ivr.callbackTat.tiers
+            : SR_CONFIG_DEFAULTS.ivr.callbackTat.tiers,
+      },
+    },
     emailJunk: {
       senders: Array.isArray(sr.emailJunk?.senders)
         ? sr.emailJunk.senders.map((s: any) => String(s).trim().toLowerCase()).filter(Boolean)

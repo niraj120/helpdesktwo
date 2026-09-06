@@ -380,6 +380,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "FIELDS_VIEW_TICKET_FIELDS",
     description: "Can view ticket field configurations",
     category: "fields-forms",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   {
     module: "Fields & Forms",
@@ -387,6 +388,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "FIELDS_MANAGE_TICKET_FIELDS",
     description: "Can create and manage custom ticket fields",
     category: "fields-forms",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   {
     module: "Fields & Forms",
@@ -394,6 +396,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "FIELDS_MANAGE_TICKET_FORMS",
     description: "Can customize ticket submission forms",
     category: "fields-forms",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   {
     module: "Fields & Forms",
@@ -401,6 +404,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "FIELDS_MANAGE_ACTIVITY_FIELDS",
     description: "Can create and manage activity fields",
     category: "fields-forms",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   {
     module: "Fields & Forms",
@@ -408,6 +412,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "FIELDS_MANAGE_USER_FIELDS",
     description: "Can create and manage custom user fields",
     category: "fields-forms",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   {
     module: "Fields & Forms",
@@ -415,6 +420,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "FIELDS_MANAGE_CONTACT_FIELDS",
     description: "Can create and manage contact group fields",
     category: "fields-forms",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   {
     module: "Fields & Forms",
@@ -422,6 +428,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "FIELDS_MANAGE_DEPENDENCIES",
     description: "Can configure field dependencies and conditional logic",
     category: "fields-forms",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   // =====================================================
   // TICKET AUTOMATION CATEGORY
@@ -432,6 +439,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "AUTOMATION_VIEW",
     description: "Can view automation rules",
     category: "ticket-automation",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   {
     module: "Ticket Automation",
@@ -439,6 +447,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "AUTOMATION_MANAGE_AUTO_ASSIGN",
     description: "Can configure automatic ticket assignment rules",
     category: "ticket-automation",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   {
     module: "Ticket Automation",
@@ -446,6 +455,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "AUTOMATION_MANAGE_CREATE_TRIGGERS",
     description: "Can create triggers that run when tickets are created",
     category: "ticket-automation",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   {
     module: "Ticket Automation",
@@ -453,6 +463,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "AUTOMATION_MANAGE_UPDATE_TRIGGERS",
     description: "Can create triggers that run when tickets are updated",
     category: "ticket-automation",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   {
     module: "Ticket Automation",
@@ -460,6 +471,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "AUTOMATION_MANAGE_TIME_TRIGGERS",
     description: "Can create time-based automation triggers",
     category: "ticket-automation",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   {
     module: "Ticket Automation",
@@ -467,6 +479,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "AUTOMATION_TOGGLE",
     description: "Can enable or disable automation rules",
     category: "ticket-automation",
+    isActive: false, // ⛔ NO FEATURE - nothing in the codebase reads this
   },
   // =====================================================
   // APPROVAL PROCESS CATEGORY
@@ -501,12 +514,17 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     category: "approval-process",
   },
   // Approval Inbox (Approver Interface)
+  //
+  // The approval module currently ships workflow CRUD only — there is no
+  // approval inbox endpoint and no history view, so neither code below gates
+  // anything. Re-activate them when those screens actually land.
   {
     module: "Approval Process",
     name: "Approve/Reject Tickets",
     code: "APPROVAL_TICKETS_APPROVE_REJECT",
     description: "Can approve or reject tickets in approval inbox",
     category: "approval-process",
+    isActive: false, // ⛔ NO FEATURE - no approval inbox exists yet
   },
   {
     module: "Approval Process",
@@ -514,6 +532,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "APPROVAL_HISTORY_VIEW",
     description: "Can view approval history and audit trail",
     category: "approval-process",
+    isActive: false, // ⛔ NO FEATURE - no approval history view exists yet
   },
   // =====================================================
   // SLA & ESCALATION CATEGORY
@@ -631,8 +650,176 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     category: "ticket-configuration",
   },
   // =====================================================
-  // SERVICE REQUEST CATEGORY (PSR / ISR) — Phase 0 foundation
+  // SERVICE REQUEST CATEGORY (PSR / ISR)
+  //
+  // Scope: SR *configuration* and the channel-agent capabilities (IVR, mailbox,
+  // email triage) only. PSR and ISR are Ticket documents distinguished by
+  // `interactionType`, so every record-level action on them — view, create,
+  // reply, comment, attach, status, priority, assign, reassign, close, reopen,
+  // cancel, delegate, link, merge, delete — is governed by the TICKET_*
+  // permissions in the Tickets module. The SR_* codes below that duplicated a
+  // ticket action are retired; see the per-code replacement notes.
   // =====================================================
+  // Leads (admission enquiries) are their own intake channel, like email triage
+  // and IVR — working them is not implied by being able to raise a PSR.
+  // IVR call-back ladder. The manager sets the policy (how long each step
+  // allows); the agent only picks which step applies to this call.
+  {
+    module: "Service Request",
+    name: "Reassign IVR Calls",
+    code: "IVR_CALL_REASSIGN",
+    description:
+      "Can move IVR calls from one IVR agent to another. Without it an agent works their own queue but cannot hand calls around.",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "View All IVR Calls",
+    code: "IVR_VIEW_ALL_CALLS",
+    description:
+      "Can see every IVR call in the project. Without it, an agent's inbox is limited to the calls assigned to them.",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Configure IVR Call-back TAT",
+    code: "IVR_TAT_CONFIG",
+    description:
+      "Can define the IVR call-back ladder — the WIP steps and the TAT hours each one allows",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Log IVR Call-back",
+    code: "IVR_CALLBACK_SET",
+    description:
+      "Can log a call-back on an IVR call by selecting a call-frequency step; the due time comes from that step's TAT",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Access Leads",
+    code: "SR_LEADS_ACCESS",
+    description:
+      "Can open the Leads queue and read admission enquiries",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Manage Leads",
+    code: "SR_LEADS_MANAGE",
+    description:
+      "Can create and edit leads, and retry a failed CRM sync",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Delete Leads",
+    code: "SR_LEADS_DELETE",
+    description: "Can permanently delete a lead",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Modify Any Service Request",
+    code: "SR_MODIFY_ANY",
+    description:
+      "Can act on ANY PSR/ISR regardless of assignee (supervisor capability). Without it, agents can only work the service requests assigned to them.",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Edit Service Request",
+    code: "SR_EDIT",
+    description: "Can edit a service request's subject, description and tags",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Reply to Service Request",
+    code: "SR_REPLY",
+    description: "Can post a reply on a PSR/ISR thread and send email replies",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Comment on Service Request",
+    code: "SR_ADD_COMMENT",
+    description: "Can add internal comments and notes on a PSR/ISR",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Add Service Request Attachments",
+    code: "SR_ADD_ATTACHMENT",
+    description: "Can attach files to a PSR/ISR",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Delete Service Request Attachments",
+    code: "SR_DELETE_ATTACHMENT",
+    description: "Can remove attachments from a PSR/ISR",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Change Service Request Status",
+    code: "SR_CHANGE_STATUS",
+    description: "Can move a PSR/ISR between Open, WIP and Resolved",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Change Service Request Priority",
+    code: "SR_CHANGE_PRIORITY",
+    description:
+      "Can set or override a PSR/ISR priority and its scheduled dispatch date",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Change Service Request Category",
+    code: "SR_CHANGE_CATEGORY",
+    description: "Can recategorise a PSR/ISR",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Escalate Service Request",
+    code: "SR_ESCALATE",
+    description: "Can escalate a PSR/ISR to a higher level",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Assign Service Request",
+    code: "SR_ASSIGN",
+    description: "Can assign a PSR/ISR to an agent",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Bulk Update Service Requests",
+    code: "SR_BULK_UPDATE",
+    description: "Can apply bulk actions across multiple PSR/ISR records",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Export Service Requests",
+    code: "SR_EXPORT",
+    description: "Can export PSR/ISR records to CSV/Excel",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Access Service Requests",
+    code: "SR_ACCESS",
+    description:
+      "Can open the Service Requests area (PSR/ISR lists, detail and settings entry points). What the holder may then do inside an SR is governed by the TICKET_* permissions.",
+    category: "service-request",
+  },
   {
     module: "Service Request",
     name: "View All Service Requests",
@@ -644,7 +831,8 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     module: "Service Request",
     name: "View Own Service Requests",
     code: "SR_VIEW_OWN",
-    description: "Can view PSR/ISR tickets created by self",
+    description:
+      "Can view PSR/ISR tickets created by self or assigned to self",
     category: "service-request",
   },
   {
@@ -654,6 +842,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     description:
       "Can view PSR/ISR tickets assigned to self for working/resolution",
     category: "service-request",
+    isActive: false, // ⛔ RETIRED - use TICKET_VIEW_OWN
   },
   {
     module: "Service Request",
@@ -668,6 +857,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "SR_PSR_RECEIVE",
     description: "Eligible to be assigned PSRs (forms the PSR assignment pool)",
     category: "service-request",
+    isActive: false, // ⛔ RETIRED - use TICKET_VIEW_OWN
   },
   {
     module: "Service Request",
@@ -682,6 +872,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: "SR_ISR_RECEIVE",
     description: "Eligible to be assigned ISRs (forms the ISR assignment pool)",
     category: "service-request",
+    isActive: false, // ⛔ RETIRED - use TICKET_VIEW_OWN
   },
   {
     module: "Service Request",
@@ -771,6 +962,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     description:
       "Can manually override priority and schedule a dispatch date on an SR",
     category: "service-request",
+    isActive: false, // ⛔ RETIRED - use TICKET_CHANGE_PRIORITY
   },
   {
     module: "Service Request",
@@ -1455,6 +1647,56 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     description: "Can export tickets to CSV/Excel",
     category: "tickets",
   },
+  // Lifecycle actions shared by every interactionType (normal query, ISR, PSR).
+  // Service Requests are Ticket documents, so the record-level actions live here
+  // rather than under Service Request — that module only carries SR settings and
+  // the channel-agent capabilities (IVR, mailbox, email triage).
+  {
+    module: "Tickets",
+    name: "Reply to Ticket",
+    code: "TICKET_REPLY",
+    description:
+      "Can send an outbound email reply on a ticket, query, ISR or PSR",
+    category: "tickets",
+  },
+  {
+    module: "Tickets",
+    name: "Close Ticket",
+    code: "TICKET_CLOSE",
+    description:
+      "Can close a ticket, query, ISR or PSR (including bulk close)",
+    category: "tickets",
+  },
+  {
+    module: "Tickets",
+    name: "Reopen Ticket",
+    code: "TICKET_REOPEN",
+    description: "Can reopen a closed ticket, query, ISR or PSR",
+    category: "tickets",
+  },
+  {
+    module: "Tickets",
+    name: "Cancel Ticket",
+    code: "TICKET_CANCEL",
+    description: "Can cancel a ticket, query, ISR or PSR",
+    category: "tickets",
+  },
+  {
+    module: "Tickets",
+    name: "Delegate Ticket",
+    code: "TICKET_DELEGATE",
+    description:
+      "Can delegate a ticket, query, ISR or PSR to another agent without transferring ownership",
+    category: "tickets",
+  },
+  {
+    module: "Tickets",
+    name: "Link Tickets",
+    code: "TICKET_LINK",
+    description:
+      "Can link related records to a ticket (for example an ISR raised against a PSR)",
+    category: "tickets",
+  },
   // =====================================================
   // OFFLINE MODULE CATEGORY (Student Registration & Offline Ticket Creation)
   // =====================================================
@@ -1673,6 +1915,12 @@ const defaultRoles = [
       "TICKET_MERGE",
       "TICKET_BULK_UPDATE",
       "TICKET_EXPORT",
+      "TICKET_REPLY",
+      "TICKET_CLOSE",
+      "TICKET_REOPEN",
+      "TICKET_CANCEL",
+      "TICKET_DELEGATE",
+      "TICKET_LINK",
       "USER_VIEW_ALL",
       "USER_CREATE",
       "USER_EDIT",
@@ -1730,6 +1978,12 @@ const defaultRoles = [
       "TICKET_MERGE",
       "TICKET_BULK_UPDATE",
       "TICKET_EXPORT",
+      "TICKET_REPLY",
+      "TICKET_CLOSE",
+      "TICKET_REOPEN",
+      "TICKET_CANCEL",
+      "TICKET_DELEGATE",
+      "TICKET_LINK",
       "USER_VIEW_ALL",
       "USER_CREATE",
       "USER_EDIT",
@@ -1783,6 +2037,12 @@ const defaultRoles = [
       "TICKET_MERGE",
       "TICKET_BULK_UPDATE",
       "TICKET_EXPORT",
+      "TICKET_REPLY",
+      "TICKET_CLOSE",
+      "TICKET_REOPEN",
+      "TICKET_CANCEL",
+      "TICKET_DELEGATE",
+      "TICKET_LINK",
       "USER_VIEW_ALL",
       "REPORT_VIEW_TICKETS",
       "REPORT_VIEW_AGENT_PERFORMANCE",
@@ -1816,6 +2076,11 @@ const defaultRoles = [
       "TICKET_CHANGE_STATUS",
       "TICKET_ADD_COMMENT",
       "TICKET_ADD_ATTACHMENT",
+      "TICKET_REPLY",
+      "TICKET_CLOSE",
+      "TICKET_REOPEN",
+      "TICKET_DELEGATE",
+      "TICKET_LINK",
       "OFFLINE_MODULE_ACCESS",
       "OFFLINE_STUDENT_REGISTER",
       "OFFLINE_TICKET_CREATE",

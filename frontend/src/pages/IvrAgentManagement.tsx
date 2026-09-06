@@ -5,6 +5,9 @@ import { tokens, styles, button } from "../theme/oneos";
 import { useProjectContext } from "../contexts/ProjectContext";
 import { api } from "../utils/api";
 import { ivrAgentApi } from "../services/ivrAgents";
+import { serviceRequestApi } from "../services/serviceRequests";
+import { usePermissions } from "../hooks/usePermissions";
+import { PERMISSIONS } from "../constants/permissions";
 
 interface ProjectOpt {
   _id: string;
@@ -42,6 +45,17 @@ const IvrAgentManagement: React.FC = () => {
   const { currentProjectId } = useProjectContext();
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [projectId, setProjectId] = useState(currentProjectId || "");
+
+  // Call-back ladder (WIP steps + TAT). The manager owns this policy; agents
+  // only pick a step from it when logging a call-back.
+  const { hasPermission } = usePermissions();
+  const canConfigureTat = hasPermission(PERMISSIONS.IVR_TAT_CONFIG);
+  const [tatTiers, setTatTiers] = useState<
+    { level?: number; label: string; tatHours: number; isActive: boolean }[]
+  >([]);
+  const [tatEnabled, setTatEnabled] = useState(true);
+  const [tatSaving, setTatSaving] = useState(false);
+  const [tatMsg, setTatMsg] = useState<string | null>(null);
   const [digits, setDigits] = useState<Digit[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(
@@ -89,6 +103,59 @@ const IvrAgentManagement: React.FC = () => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setTatTiers([]);
+      return;
+    }
+    (async () => {
+      try {
+        const r = await serviceRequestApi.ivr.callbackTat(projectId);
+        setTatTiers(
+          (r?.data?.tiers || []).map((t: any) => ({
+            level: t.level,
+            label: t.label,
+            tatHours: t.tatHours,
+            isActive: true,
+          })),
+        );
+        setTatEnabled(r?.data?.enabled !== false);
+      } catch (e) {
+        console.error(e);
+        setTatTiers([]);
+      }
+    })();
+  }, [projectId]);
+
+  const saveTat = async () => {
+    setTatSaving(true);
+    setTatMsg(null);
+    try {
+      const r = await serviceRequestApi.ivr.saveCallbackTat({
+        projectId,
+        enabled: tatEnabled,
+        tiers: tatTiers.map((t) => ({
+          label: t.label,
+          tatHours: Number(t.tatHours),
+          isActive: t.isActive,
+        })),
+      });
+      setTatTiers(
+        (r?.data?.tiers || []).map((t: any) => ({
+          level: t.level,
+          label: t.label,
+          tatHours: t.tatHours,
+          isActive: true,
+        })),
+      );
+      setTatMsg("Call-back steps saved.");
+    } catch (e: any) {
+      setTatMsg(e?.response?.data?.message || "Could not save the steps.");
+    } finally {
+      setTatSaving(false);
+    }
+  };
 
   const buckets = useMemo(
     () => [...digits.map((d) => d.code), OTHER],
@@ -313,6 +380,142 @@ const IvrAgentManagement: React.FC = () => {
             Buckets: {digits.map((d) => d.code).join(", ") || "—"}, other
           </span>
         </div>
+
+        {/* Call-back TAT ladder — the IVR manager's policy. Agents choose a
+            step from this list when logging a call-back; the TAT on the step
+            sets when the call-back is due, so agents never type a date. */}
+        {canConfigureTat && projectId && (
+          <div style={{ ...styles.card, marginBottom: 16, padding: 16 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 4,
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
+                Call-back TAT
+              </h3>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  color: tokens.sub,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={tatEnabled}
+                  onChange={(e) => setTatEnabled(e.target.checked)}
+                />
+                Enabled
+              </label>
+            </div>
+            <p style={{ margin: "0 0 12px", fontSize: 12, color: tokens.sub }}>
+              An agent picks how soon to chase a missed call again; the TAT here
+              decides when it falls due. Steps are numbered in order — the first
+              is the first attempt.
+            </p>
+
+            {tatTiers.map((t, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 8,
+                }}
+              >
+                <span
+                  style={{ width: 28, fontSize: 12, color: tokens.sub }}
+                >{`#${i + 1}`}</span>
+                <input
+                  value={t.label}
+                  onChange={(e) =>
+                    setTatTiers((prev) =>
+                      prev.map((x, xi) =>
+                        xi === i ? { ...x, label: e.target.value } : x,
+                      ),
+                    )
+                  }
+                  placeholder={`WIP ${i + 1}`}
+                  style={{ ...styles.ctrl, maxWidth: 180 }}
+                />
+                <input
+                  type="number"
+                  min={1}
+                  value={t.tatHours}
+                  onChange={(e) =>
+                    setTatTiers((prev) =>
+                      prev.map((x, xi) =>
+                        xi === i
+                          ? { ...x, tatHours: Number(e.target.value) }
+                          : x,
+                      ),
+                    )
+                  }
+                  style={{ ...styles.ctrl, maxWidth: 100 }}
+                />
+                <span style={{ fontSize: 12, color: tokens.sub }}>hours</span>
+                <button
+                  onClick={() =>
+                    setTatTiers((prev) => prev.filter((_, xi) => xi !== i))
+                  }
+                  title="Remove this step"
+                  style={{ ...button("neutral"), padding: "6px 10px" }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button
+                onClick={() =>
+                  setTatTiers((prev) => [
+                    ...prev,
+                    {
+                      label: `WIP ${prev.length + 1}`,
+                      tatHours: 4,
+                      isActive: true,
+                    },
+                  ])
+                }
+                style={{ ...button("neutral"), padding: "8px 12px" }}
+              >
+                + Add step
+              </button>
+              <button
+                onClick={saveTat}
+                disabled={tatSaving || !tatTiers.length}
+                style={{
+                  ...button("primary"),
+                  padding: "8px 14px",
+                  opacity: tatSaving || !tatTiers.length ? 0.6 : 1,
+                }}
+              >
+                {tatSaving ? "Saving…" : "Save steps"}
+              </button>
+              {tatMsg && (
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: tatMsg.startsWith("Could not")
+                      ? "#b91c1c"
+                      : "#047857",
+                    alignSelf: "center",
+                  }}
+                >
+                  {tatMsg}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Agents table */}
         <div style={{ ...styles.card, padding: 0, overflow: "hidden" }}>

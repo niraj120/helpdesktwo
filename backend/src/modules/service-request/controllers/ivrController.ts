@@ -31,6 +31,20 @@ export const ingest = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * Whether this caller sees the whole project's calls or only their own.
+ * Super Admin and IVR managers see everything; a plain agent sees their queue.
+ */
+function canSeeAllCalls(req: AuthRequest): boolean {
+  const role = req.user?.role;
+  if (role?.code === "SUPER_ADMIN") return true;
+  const perms = role?.permissions || [];
+  return ["IVR_VIEW_ALL_CALLS", "IVR_AGENT_MANAGE", "IVR_TAT_CONFIG"].some(
+    (code) =>
+      perms.some((p: any) => (typeof p === "string" ? p : p?.code) === code),
+  );
+}
+
 export const list = async (req: AuthRequest, res: Response) => {
   try {
     // "me" resolves to the logged-in user's id (the "My calls" tab).
@@ -42,13 +56,15 @@ export const list = async (req: AuthRequest, res: Response) => {
       callType: str(req.query.callType),
       registered: str(req.query.registered),
       callStatus: str(req.query.callStatus),
+      wip: str(req.query.wip),
+      restrictToUserId: canSeeAllCalls(req) ? undefined : req.user?.userId,
       search: str(req.query.search),
       assignedTo,
       page: req.query.page ? Number(req.query.page) : undefined,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
       scope: getProjectScope(req),
     });
-    res.json({ success: true, ...data });
+    res.json({ success: true, ...data, canSeeAllCalls: canSeeAllCalls(req) });
   } catch (err) {
     fail(res, err);
   }
@@ -75,6 +91,18 @@ export const convert = async (req: AuthRequest, res: Response) => {
   try {
     const r = await ivr.convertCall(req.params.id, req.body, actorId(req));
     res.json({ success: true, data: r });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/** IVR agents this project's calls may be handed to. */
+export const assignableAgents = async (req: AuthRequest, res: Response) => {
+  try {
+    const data = await ivr.listAssignableIvrAgents(
+      String(req.query.projectId || ""),
+    );
+    res.json({ success: true, data });
   } catch (err) {
     fail(res, err);
   }
@@ -124,11 +152,47 @@ export const resolveOnCall = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * The call-back ladder an agent may choose from. Read-only: agents need it to
+ * render the choices, managers to edit them.
+ */
+export const getCallbackTat = async (req: AuthRequest, res: Response) => {
+  try {
+    const projectId = String(req.query.projectId || "");
+    if (!projectId) {
+      res.status(400).json({ success: false, message: "projectId is required" });
+      return;
+    }
+    const data = await ivr.getCallbackTiers(projectId);
+    res.json({ success: true, data });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/** Replace the call-back ladder for a project (IVR manager). */
+export const updateCallbackTat = async (req: AuthRequest, res: Response) => {
+  try {
+    const projectId = String(req.body?.projectId || "");
+    if (!projectId) {
+      res.status(400).json({ success: false, message: "projectId is required" });
+      return;
+    }
+    const data = await ivr.saveCallbackTiers(projectId, {
+      enabled: req.body?.enabled,
+      tiers: req.body?.tiers,
+    });
+    res.json({ success: true, data });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
 /** Add a WIP / call-back commitment. Each one is appended to the log. */
 export const addFollowUp = async (req: AuthRequest, res: Response) => {
   try {
     const doc = await ivr.addCallFollowUp(req.params.id, {
-      scheduledAt: String(req.body?.scheduledAt || ""),
+      wipLevel: req.body?.wipLevel,
       note: str(req.body?.note),
       actorUserId: actorId(req),
     });
@@ -147,7 +211,7 @@ export const updateFollowUp = async (req: AuthRequest, res: Response) => {
       {
         status: req.body?.status,
         outcome: req.body?.outcome,
-        scheduledAt: str(req.body?.scheduledAt),
+        wipLevel: req.body?.wipLevel,
         note: str(req.body?.note),
         actorUserId: actorId(req),
       },

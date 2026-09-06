@@ -8,6 +8,17 @@ export interface IStatus extends Document {
   isDefault: boolean;
   isClosed: boolean; // Indicates if this status closes the ticket
   requireClosingRemark: boolean; // If true, agent must provide a remark when applying this status
+  /**
+   * Whether applying this status also commits the agent to a date.
+   *
+   * A remark and a date answer different questions: the remark says why, the
+   * date says by when. "Work In Progress" wants both; "Closed" wants only the
+   * remark. Keeping them separate is what stops a WIP commitment being filed
+   * as a closing remark.
+   */
+  requireCommittedDate: boolean;
+  /** What to call that date in the dialog, e.g. "Committed date". */
+  committedDateLabel?: string;
   displayOrder: number;
   description?: string;
   isActive: boolean;
@@ -50,6 +61,14 @@ const StatusSchema = new Schema<IStatus>(
     requireClosingRemark: {
       type: Boolean,
       default: false, // When true, agent must enter a remark before applying this status
+    },
+    requireCommittedDate: {
+      type: Boolean,
+      default: false,
+    },
+    committedDateLabel: {
+      type: String,
+      trim: true,
     },
     displayOrder: {
       type: Number,

@@ -6,6 +6,7 @@ import { AuthRequest } from "../../../middleware/auth";
 import { Lead } from "../../../models/Lead";
 import { applyProjectScope, getProjectScope } from "../../../utils/projectScope";
 import { syncLeadToCrm } from "../services/leadCrmSync";
+import { notifySrActivity } from "../srActivity";
 
 export const listLeads = async (req: AuthRequest, res: Response) => {
   try {
@@ -81,6 +82,8 @@ export const createLead = async (req: AuthRequest, res: Response) => {
       crmSyncStatus: shouldSyncCrm ? "pending" : req.body.crmSyncStatus || "not_required",
       createdBy: req.user?.userId,
     });
+
+    notifySrActivity(req.body.projectId, "leads", lead.enquiryNo || lead.name);
 
     if (!shouldSyncCrm) {
       res.status(201).json({ success: true, data: lead });

@@ -471,124 +471,24 @@ const RBACSetup = () => {
     setExistingDocument(null);
   };
 
-  // Filter permissions based on role type
+  /**
+   * The permission catalogue shown in RBAC Setup.
+   *
+   * This used to filter the API response against a hardcoded list of code
+   * prefixes and a per-role-type prefix map. Any permission whose prefix was
+   * missing from that list — CALL_*, MDM_*, PSR_*, and every code added since
+   * the list was last edited — silently disappeared from this screen even
+   * though it existed, was grantable, and was enforced by the API. An admin had
+   * no way to tell a permission that does not exist from one the UI was hiding.
+   *
+   * The API already returns exactly the grantable set (`isActive: true`), so it
+   * is the single source of truth here: no prefix allowlist, nothing hidden.
+   * Retiring a permission is done by deactivating it in the catalogue, which
+   * removes it from this screen for every role type at once.
+   */
   const getFilteredPermissions = (
     permissions: GroupedPermissions,
-    roleType: string,
-  ): GroupedPermissions => {
-    const filtered: GroupedPermissions = {};
-
-    // Report permissions that are managed internally by the Report module.
-    // REPORT_CREATE_CUSTOM and REPORT_ASSIGN are exposed so sub-admins can be
-    // granted Report Builder + Assign access directly from RBAC Setup.
-    const REPORT_PERMISSIONS_HIDDEN_IN_RBAC = new Set([
-      "REPORT_VIEW_AGENT_PERFORMANCE",
-      "REPORT_VIEW_CSAT",
-      "REPORT_VIEW_SLA",
-      "REPORT_EXPORT",
-      "REPORT_SCHEDULE",
-      "REPORT_DELETE",
-      "REPORT_PERMISSIONS_MANAGE",
-      "REPORT_DATA_POINTS_MANAGE",
-    ]);
-
-    // Define permission categories for each role type
-    // ALL permission prefixes must be listed here to be visible in RBAC Setup
-    const allPermissionPrefixes = [
-      "RBAC",
-      "USER",
-      "PROJECT",
-      "TICKET",
-      "KB_",
-      "FAQ",
-      "FEEDBACK",
-      "AUDIT",
-      "OFFLINE",
-      "STUDENT",
-      "FIELDS",
-      "SLA",
-      "AUTOMATION",
-      "REPORT",
-      "INTEGRATION",
-      "FORM",
-      "WORKFLOW",
-      "APPROVAL",
-      "MASTER_DATA",
-      "TICKET_CONFIG",
-      "DASHBOARD",
-      "ASSET",
-      "MY_ASSETS",
-      "EMAIL",
-      "EMAIL_TRIAGE",
-      "SR_",
-      "IVR_TRIAGE",
-      "ESCALATION",
-      "TOKEN",
-      "DESK",
-      "ATTENDANCE",
-    ];
-
-    const rolePermissionMap: Record<string, string[]> = {
-      super_admin: allPermissionPrefixes,
-      manager: [
-        "USER",
-        "TICKET",
-        "KB_",
-        "FAQ",
-        "FEEDBACK",
-        "AUDIT",
-        "OFFLINE",
-        "STUDENT",
-        "REPORT",
-        "ASSET",
-        "MY_ASSETS",
-        "EMAIL",
-        "EMAIL_TRIAGE",
-        "SR_",
-        "IVR_TRIAGE",
-        "TOKEN",
-        "DESK",
-        "ATTENDANCE",
-      ],
-      agent: [
-        "TICKET",
-        "KB_",
-        "FAQ",
-        "FEEDBACK",
-        "OFFLINE",
-        "STUDENT",
-        "MY_ASSETS",
-        "EMAIL_TRIAGE",
-        "SR_",
-        "IVR_TRIAGE",
-        "TOKEN",
-        "DESK",
-      ],
-      student: ["TICKET", "FAQ", "OFFLINE", "STUDENT", "SR_"],
-      custom: allPermissionPrefixes, // All permissions available for custom roles
-    };
-
-    const allowedPrefixes =
-      rolePermissionMap[roleType] || rolePermissionMap.custom;
-
-    Object.entries(permissions).forEach(([category, modules]) => {
-      Object.entries(modules).forEach(([module, perms]) => {
-        const filteredPerms = perms.filter((perm) => {
-          // Hide report sub-permissions that are managed by the Report module itself
-          if (REPORT_PERMISSIONS_HIDDEN_IN_RBAC.has(perm.code)) return false;
-          // Check if permission code starts with any allowed prefix
-          return allowedPrefixes.some((prefix) => perm.code.startsWith(prefix));
-        });
-
-        if (filteredPerms.length > 0) {
-          if (!filtered[category]) filtered[category] = {};
-          filtered[category][module] = filteredPerms;
-        }
-      });
-    });
-
-    return filtered;
-  };
+  ): GroupedPermissions => permissions;
 
   const toggleCategory = (category: string) => {
     const newExpanded = new Set(expandedCategories);
@@ -663,10 +563,7 @@ const RBACSetup = () => {
     );
   });
 
-  const filteredPermissionGroups = getFilteredPermissions(
-    groupedPermissions,
-    formData.roleType,
-  );
+  const filteredPermissionGroups = getFilteredPermissions(groupedPermissions);
   const permissionCategoryStats = Object.entries(filteredPermissionGroups).map(
     ([category, modules]) => {
       const allPermissions = Object.values(modules).flat();
@@ -1829,7 +1726,7 @@ const RBACSetup = () => {
                           fontWeight: "500",
                         }}
                       >
-                        Role Type (filters available permissions)
+                        Role Type
                       </label>
                       <select
                         value={formData.roleType}
@@ -2220,9 +2117,7 @@ const RBACSetup = () => {
                         marginTop: 0,
                       }}
                     >
-                      Permissions{" "}
-                      {formData.roleType !== "custom" &&
-                        `(${formData.roleType.replace("_", " ").toUpperCase()} role)`}
+                      Permissions
                       <span
                         style={{
                           marginLeft: "10px",
