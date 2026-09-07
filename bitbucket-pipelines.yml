@@ -18,16 +18,7 @@ pipelines:
                 node -v &&
                 git checkout dev &&
                 git pull &&
-                # npm ci wipes node_modules and reinstalls the whole tree every
-                # time. Most deploys change no dependencies, so only pay for it
-                # when package-lock.json actually moved.
-                if ! cmp -s package-lock.json .deploy-lock-stamp; then
-                  echo "Dependencies changed - installing" &&
-                  npm ci --no-audit --no-fund --prefer-offline &&
-                  cp package-lock.json .deploy-lock-stamp;
-                else
-                  echo "Dependencies unchanged - skipping npm ci";
-                fi &&
+                npm ci &&
                 npm run build &&
                 pm2 restart helpdesk-frontend:3001 &&
                 echo "Frontend deployed successfully!"
@@ -55,16 +46,7 @@ pipelines:
                 node -v &&
                 git checkout dev &&
                 git pull &&
-                # npm ci wipes node_modules and reinstalls the whole tree every
-                # time. Most deploys change no dependencies, so only pay for it
-                # when package-lock.json actually moved.
-                if ! cmp -s package-lock.json .deploy-lock-stamp; then
-                  echo "Dependencies changed - installing" &&
-                  npm ci --no-audit --no-fund --prefer-offline &&
-                  cp package-lock.json .deploy-lock-stamp;
-                else
-                  echo "Dependencies unchanged - skipping npm ci";
-                fi &&
+                npm ci &&
                 npm run build &&
                 pm2 restart helpdesk-backend:3003 &&
                 echo "Backend deployed successfully!"
@@ -92,16 +74,7 @@ pipelines:
                 node -v &&
                 git checkout Internal-Prod &&
                 git pull &&
-                # npm ci wipes node_modules and reinstalls the whole tree every
-                # time. Most deploys change no dependencies, so only pay for it
-                # when package-lock.json actually moved.
-                if ! cmp -s package-lock.json .deploy-lock-stamp; then
-                  echo "Dependencies changed - installing" &&
-                  npm ci --no-audit --no-fund --prefer-offline &&
-                  cp package-lock.json .deploy-lock-stamp;
-                else
-                  echo "Dependencies unchanged - skipping npm ci";
-                fi &&
+                npm ci &&
                 npm run build &&
                 pm2 restart helpdesk-frontend:3001 &&
                 echo "Frontend deployed successfully!"
@@ -129,16 +102,7 @@ pipelines:
                 node -v &&
                 git checkout Internal-Prod &&
                 git pull &&
-                # npm ci wipes node_modules and reinstalls the whole tree every
-                # time. Most deploys change no dependencies, so only pay for it
-                # when package-lock.json actually moved.
-                if ! cmp -s package-lock.json .deploy-lock-stamp; then
-                  echo "Dependencies changed - installing" &&
-                  npm ci --no-audit --no-fund --prefer-offline &&
-                  cp package-lock.json .deploy-lock-stamp;
-                else
-                  echo "Dependencies unchanged - skipping npm ci";
-                fi &&
+                npm ci &&
                 npm run build &&
                 pm2 restart helpdesk-backend:3003 &&
                 echo "Backend deployed successfully!"

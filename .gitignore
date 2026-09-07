@@ -144,7 +144,3 @@ backend/uploads/tickets/*
 
 # RBAC snapshots taken before permission migrations (contain role data)
 backend/backups/
-
-# Deploy marker: last package-lock.json a server actually installed from.
-# Lets the pipeline skip npm ci when dependencies have not changed.
-.deploy-lock-stamp
