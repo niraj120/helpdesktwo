@@ -1398,6 +1398,37 @@ export async function listServiceRequests(params: ListSrParams) {
     }
   }
 
+  // Merge relations, resolved the same way as the linked parent above: a
+  // secondary carries what it was absorbed into, a primary the ones it took
+  // in — so the list can say so without opening the record.
+  const mergeIds = new Set<string>();
+  for (const it of items as any[]) {
+    if (it.mergedInto) mergeIds.add(String(it.mergedInto));
+    (it.mergedTickets || []).forEach((m: any) => mergeIds.add(String(m)));
+  }
+  if (mergeIds.size) {
+    const related = await Ticket.find({
+      _id: { $in: [...mergeIds].map((id) => oid(id)) },
+    })
+      .select("ticketNumber subject status")
+      .lean();
+    const byId = new Map(related.map((r: any) => [String(r._id), r]));
+    const brief = (id: any) => {
+      const r: any = byId.get(String(id));
+      return r
+        ? { _id: String(r._id), ticketNumber: r.ticketNumber, subject: r.subject }
+        : null;
+    };
+    for (const it of items as any[]) {
+      if (it.mergedInto) it.mergedIntoTicket = brief(it.mergedInto);
+      if ((it.mergedTickets || []).length) {
+        it.mergedTicketsInfo = (it.mergedTickets || [])
+          .map(brief)
+          .filter(Boolean);
+      }
+    }
+  }
+
   return { items, total, page, limit, statusCounts };
 }
 

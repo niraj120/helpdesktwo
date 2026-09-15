@@ -49,6 +49,10 @@ interface SrRow {
     interactionType?: string;
     subject?: string;
   };
+  /** Set on a secondary: the request it was merged into. */
+  mergedIntoTicket?: { _id: string; ticketNumber: string; subject?: string } | null;
+  /** Set on a primary: the requests merged into it. */
+  mergedTicketsInfo?: { _id: string; ticketNumber: string; subject?: string }[];
   wip?: { committedDate?: string };
   createdAt: string;
   updatedAt?: string;
@@ -1526,7 +1530,8 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                     />
                   </th>
                 )}
-                <th style={th}>Service ID</th>
+                {/* Wide enough for the number on one line plus a merge badge. */}
+                <th style={{ ...th, minWidth: 148 }}>Service ID</th>
                 <th style={th}>Subject</th>
                 <th style={th}>Category</th>
                 <th style={th}>Priority</th>
@@ -1579,7 +1584,13 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                       </td>
                     )}
                     <td style={td}>
-                      <span style={{ color: "#2563EB", fontWeight: 600 }}>
+                      <span
+                        style={{
+                          color: "#2563EB",
+                          fontWeight: 600,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {r.ticketNumber}
                       </span>
                       {/* A linked ISR reads as standalone without this — show
@@ -1609,6 +1620,76 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                           <span style={{ textDecoration: "underline" }}>
                             {r.linkedParent.ticketNumber}
                           </span>
+                        </div>
+                      )}
+                      {/* Merge relations. One compact badge each, never
+                          wrapping — the column is narrow, and a wrapped pill
+                          reads as a blob rather than a label. */}
+                      {r.mergedIntoTicket && (
+                        <div
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(detailPath(r.mergedIntoTicket!._id));
+                          }}
+                          title={`Merged into ${r.mergedIntoTicket.ticketNumber}${
+                            r.mergedIntoTicket.subject
+                              ? ` — ${r.mergedIntoTicket.subject}`
+                              : ""
+                          }`}
+                          style={{
+                            marginTop: 3,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            maxWidth: "100%",
+                            padding: "1px 7px",
+                            borderRadius: 6,
+                            background: "#faf5ff",
+                            border: "1px solid #e9d5ff",
+                            color: "#7c3aed",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <span aria-hidden>→</span>
+                          <span
+                            style={{
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {r.mergedIntoTicket.ticketNumber}
+                          </span>
+                        </div>
+                      )}
+                      {!!r.mergedTicketsInfo?.length && (
+                        <div
+                          title={`Merged in: ${r.mergedTicketsInfo
+                            .map(
+                              (m) =>
+                                `${m.ticketNumber}${m.subject ? ` — ${m.subject}` : ""}`,
+                            )
+                            .join("\n")}`}
+                          style={{
+                            marginTop: 3,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            padding: "1px 7px",
+                            borderRadius: 6,
+                            background: "#f5f3ff",
+                            border: "1px solid #ddd6fe",
+                            color: "#6d28d9",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                            cursor: "help",
+                          }}
+                        >
+                          <span aria-hidden>⧉</span>
+                          {r.mergedTicketsInfo.length} merged
                         </div>
                       )}
                     </td>
