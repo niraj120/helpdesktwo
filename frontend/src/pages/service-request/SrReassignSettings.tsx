@@ -214,6 +214,9 @@ const SrReassignSettings: React.FC<{ projectId: string; embedded?: boolean }> = 
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<SrMessage | null>(null);
 
+  const [reqCanReply, setReqCanReply] = useState(true);
+  const [reqCanComment, setReqCanComment] = useState(true);
+  const [reqCanAttach, setReqCanAttach] = useState(true);
   const [requireDepartment, setRequireDepartment] = useState(false);
   const [restrictToProject, setRestrictToProject] = useState(true);
   const [excludeRoleIds, setExcludeRoleIds] = useState<string[]>([]);
@@ -233,6 +236,10 @@ const SrReassignSettings: React.FC<{ projectId: string; embedded?: boolean }> = 
         .catch(() => null),
     ])
       .then(([cfgRes, rolesRes, deptRes, usersRes]: any[]) => {
+        const rq = cfgRes?.data?.requester || {};
+        setReqCanReply(rq.canReply !== false);
+        setReqCanComment(rq.canComment !== false);
+        setReqCanAttach(rq.canAttach !== false);
         const r = cfgRes?.data?.reassign || {};
         setRequireDepartment(!!r.requireDepartment);
         setRestrictToProject(r.restrictToProject !== false);
@@ -267,6 +274,11 @@ const SrReassignSettings: React.FC<{ projectId: string; embedded?: boolean }> = 
     try {
       await serviceRequestApi.updateConfig(projectId, {
         reassign: { requireDepartment, restrictToProject, excludeRoleIds },
+        requester: {
+          canReply: reqCanReply,
+          canComment: reqCanComment,
+          canAttach: reqCanAttach,
+        },
       });
       setMsg({ type: "ok", text: "Saved." });
     } catch (e: any) {
@@ -286,8 +298,8 @@ const SrReassignSettings: React.FC<{ projectId: string; embedded?: boolean }> = 
 
   return (
     <SrPage
-      title="Reassign & delegate"
-      subtitle="Who the Reassign / Delegate pickers offer on a service request."
+      title="Access & reassign"
+      subtitle="What the raiser may do on their own request, and who the Reassign / Delegate pickers offer."
       embedded={embedded}
       showHeaderWhenEmbedded={false}
     >
@@ -323,6 +335,25 @@ const SrReassignSettings: React.FC<{ projectId: string; embedded?: boolean }> = 
             </span>
           </span>
         </label>
+
+        <label style={label}>The person who raised the request</label>
+        <div style={hint}>
+          A request is worked by its assignee, but whoever raised it answers
+          questions and confirms the outcome. Which statuses they may set is
+          decided per status ("Who may apply it"); these are the everyday actions.
+        </div>
+        {(
+          [
+            ["Reply on their own request", reqCanReply, setReqCanReply],
+            ["Add comments", reqCanComment, setReqCanComment],
+            ["Attach files", reqCanAttach, setReqCanAttach],
+          ] as [string, boolean, (v: boolean) => void][]
+        ).map(([text, value, set]) => (
+          <label key={text} style={check}>
+            <input type="checkbox" checked={value} onChange={(e) => set(e.target.checked)} />
+            <span>{text}</span>
+          </label>
+        ))}
 
         <label style={label}>Never offer these roles</label>
         <div style={hint}>

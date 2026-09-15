@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Ticket } from '../models/Ticket';
-import { canModifyTicket } from '../utils/ticketAuth';
+import { canActOnTicket } from '../utils/ticketAuth';
 
 /**
  * @route   GET /api/tickets/:id/comments
@@ -49,7 +49,7 @@ export const createComment = async (req: Request, res: Response) => {
     }
 
     // Ownership: only the assignee (or TICKET_MODIFY_ANY) may comment.
-    if (!canModifyTicket(String(userId), ticket, reqUser)) {
+    if (!(await canActOnTicket(String(userId), ticket, reqUser, 'comment'))) {
       return res.status(403).json({
         message: 'You can only comment on queries assigned to you',
       });
@@ -103,7 +103,7 @@ export const updateComment = async (req: Request, res: Response) => {
     }
 
     // Ownership: read-only on queries not assigned to you (unless TICKET_MODIFY_ANY)
-    if (!canModifyTicket(String(userId), ticket, reqUser)) {
+    if (!(await canActOnTicket(String(userId), ticket, reqUser, 'comment'))) {
       return res.status(403).json({
         message: 'You can only modify comments on queries assigned to you',
       });
@@ -156,7 +156,7 @@ export const deleteComment = async (req: Request, res: Response) => {
     }
 
     // Ownership: read-only on queries not assigned to you (unless TICKET_MODIFY_ANY)
-    if (!canModifyTicket(String(userId), ticket, reqUser)) {
+    if (!(await canActOnTicket(String(userId), ticket, reqUser, 'comment'))) {
       return res.status(403).json({
         message: 'You can only modify comments on queries assigned to you',
       });

@@ -30,6 +30,9 @@ const cleanRule = (r: any) => {
       : [],
     maxPerTicket: Number.isFinite(max) && max > 0 ? Math.floor(max) : undefined,
     permission: String(r.permission || "").trim() || undefined,
+    allowedActors: Array.isArray(r.allowedActors)
+      ? [...new Set(r.allowedActors.filter((a: any) => ["assignee", "raiser"].includes(a)))]
+      : [],
     assignOnApply: {
       mode,
       roleId: mode === "role" ? oidOrUndef(r.assignOnApply?.roleId) : undefined,

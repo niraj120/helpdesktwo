@@ -17,6 +17,7 @@ export interface StatusRule {
   allowedPrev?: number[];
   maxPerTicket?: number;
   permission?: string;
+  allowedActors?: ("assignee" | "raiser")[];
   assignOnApply?: {
     mode: "keep" | "role" | "user" | "reopenRouting";
     roleId?: string;
@@ -318,6 +319,41 @@ const StatusRulesEditor: React.FC<{
                 style={{ ...ctl, width: 110 }}
               />
               <span style={hint}>e.g. 1 on Re-open = a ticket can be re-opened once.</span>
+            </div>
+
+            {/* Who, by their part in the request, may apply it */}
+            <div style={{ ...row, marginTop: 12, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 13, minWidth: 190, marginTop: 6 }}>
+                Who may apply it
+              </span>
+              <div>
+                {(
+                  [
+                    ["assignee", "The assignee"],
+                    ["raiser", "The person who raised it"],
+                  ] as const
+                ).map(([key, text]) => {
+                  const on = (rule?.allowedActors || []).includes(key);
+                  return (
+                    <label key={key} style={{ ...row, marginTop: 4 }}>
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => {
+                          const cur = new Set(rule?.allowedActors || []);
+                          on ? cur.delete(key) : cur.add(key);
+                          patchRule({ allowedActors: [...cur] as any });
+                        }}
+                      />
+                      {text}
+                    </label>
+                  );
+                })}
+                <span style={hint}>
+                  Tick none to leave it open to anyone holding the permission. Tick
+                  only "the assignee" to stop the raiser moving it themselves.
+                </span>
+              </div>
             </div>
 
             {/* Permission */}

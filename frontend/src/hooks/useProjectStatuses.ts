@@ -22,6 +22,10 @@ export interface ProjectStatus {
   requireRemark: boolean;
   /** The status asks for a committed date when it is applied. */
   requireDate: boolean;
+  /** Earliest the committed date may be: none | created | now. */
+  committedDateMin?: "none" | "created" | "now";
+  /** Furthest ahead the committed date may be, in days. */
+  committedDateMaxDays?: number;
   /** Ask for confirmation before applying. */
   requireConfirmation: boolean;
   /** Part of the re-open cycle (second leg of the progress bar). */
@@ -77,6 +81,8 @@ const fetchStatuses = (projectId: string): Promise<ProjectStatus[]> => {
           displayOrder: Number(s.displayOrder ?? 0),
           requireRemark: !!s.requireClosingRemark,
           requireDate: !!s.requireCommittedDate,
+          committedDateMin: s.committedDateMin || "none",
+          committedDateMaxDays: s.committedDateMaxDays || undefined,
           requireConfirmation: !!s.requireConfirmation,
           isReopen: !!s.isReopen,
           showInProgress: s.showInProgress !== false,
@@ -152,6 +158,8 @@ export const useProjectStatuses = (projectId?: string) => {
         displayOrder: 0,
         requireRemark: false,
         requireDate: false,
+        committedDateMin: "none",
+        committedDateMaxDays: undefined,
         requireConfirmation: false,
         isReopen: false,
         showInProgress: true,

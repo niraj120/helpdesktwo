@@ -114,7 +114,7 @@ function addFollowUp(
   });
 }
 
-async function getProjectSrConfig(projectId: any) {
+export async function getProjectSrConfig(projectId: any) {
   const project = await Project.findById(projectId)
     .select("configuration.sr")
     .lean();
@@ -369,6 +369,7 @@ async function moveByConfig(
       remark: opts.comments,
       committedDate: opts.committedDate,
       user: opts.user ?? null,
+      actorUserId: actorId,
       statuses: opts.statuses,
     });
   } catch (e) {

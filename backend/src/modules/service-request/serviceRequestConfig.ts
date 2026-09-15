@@ -246,6 +246,11 @@ export const SR_CONFIG_DEFAULTS: SrConfig = {
     restrictToProject: true,
     excludeRoleIds: [],
   },
+  requester: {
+    canReply: true,
+    canComment: true,
+    canAttach: true,
+  },
   messages: {
     duplicate:
       "A similar request already exists for this student and sub-category. Please review before creating a new one.",
@@ -588,6 +593,13 @@ export function resolveSrConfig(raw: any): SrConfig {
     reopen: {
       assignToUserId: sr.reopen?.assignToUserId,
       assignToRoleId: sr.reopen?.assignToRoleId,
+    },
+    requester: {
+      canReply: sr.requester?.canReply ?? SR_CONFIG_DEFAULTS.requester.canReply,
+      canComment:
+        sr.requester?.canComment ?? SR_CONFIG_DEFAULTS.requester.canComment,
+      canAttach:
+        sr.requester?.canAttach ?? SR_CONFIG_DEFAULTS.requester.canAttach,
     },
     reassign: {
       requireDepartment:

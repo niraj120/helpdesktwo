@@ -20,7 +20,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { GCSService } from "../services/gcsService";
-import { canModifyTicket } from "../utils/ticketAuth";
+import { canActOnTicket, canModifyTicket } from "../utils/ticketAuth";
 import {
   checkStatusChange,
   planOnEnter,
@@ -3326,7 +3326,14 @@ export const replyToTicket = async (req: Request, res: Response) => {
       populate: { path: "permissions", select: "code name" },
     });
 
-    const canModify = await canModifyTicket(userId, ticket, populatedUser);
+    // Assignee or supervisor as before, plus the person who raised a service
+    // request when the project allows them to reply (SR settings → Requester).
+    const canModify = await canActOnTicket(
+      userId,
+      ticket,
+      populatedUser,
+      "reply",
+    );
 
     if (!isTicketCreator && !canModify) {
       return res.status(403).json({

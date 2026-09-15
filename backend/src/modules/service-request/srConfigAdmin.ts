@@ -19,6 +19,12 @@ export async function getSrConfigForProject(projectId: string) {
 
 export interface SrConfigPatch {
   enabled?: boolean;
+  /** What the person who raised a request may do on it. */
+  requester?: {
+    canReply?: boolean;
+    canComment?: boolean;
+    canAttach?: boolean;
+  };
   /** Who the reassign / delegate pickers offer (see SrReassignConfig). */
   reassign?: {
     requireDepartment?: boolean;
@@ -139,6 +145,9 @@ export async function updateSrConfigForProject(
   if (patch.isr) sr.isr = { ...(sr.isr || {}), ...patch.isr };
   if (patch.wip) sr.wip = { ...(sr.wip || {}), ...patch.wip };
   if (patch.reopen) sr.reopen = { ...(sr.reopen || {}), ...patch.reopen };
+  if (patch.requester) {
+    sr.requester = { ...(sr.requester || {}), ...patch.requester };
+  }
   if (patch.reassign) {
     const next = { ...(sr.reassign || {}), ...patch.reassign };
     if (patch.reassign.excludeRoleIds !== undefined) {

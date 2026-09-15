@@ -18,7 +18,7 @@ const TABS = [
   { key: "general", label: "Configure" },
   { key: "channels", label: "Channels" },
   { key: "routing", label: "Routing" },
-  { key: "reassign", label: "Reassign" },
+  { key: "reassign", label: "Access & Reassign" },
   { key: "forms", label: "Forms" },
   { key: "notifications", label: "Notifications" },
   { key: "layout", label: "Detail Layout" },

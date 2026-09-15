@@ -53,6 +53,7 @@ export const ruleOf = (status: any, scope: RuleScope) =>
         allowedPrev?: number[];
         maxPerTicket?: number;
         permission?: string;
+        allowedActors?: string[];
         assignOnApply?: { mode?: string; roleId?: any; userId?: any };
       }
     | undefined;
@@ -88,6 +89,8 @@ export async function checkStatusChange(opts: {
   remark?: string;
   committedDate?: any;
   user?: { roleCode?: string; permissions?: any[] } | null;
+  /** Who is making the change — for the per-status "who may apply" rule. */
+  actorUserId?: string;
   statuses?: any[];
 }): Promise<StatusCheck> {
   const { ticket, toCode } = opts;
@@ -187,6 +190,30 @@ export async function checkStatusChange(opts: {
         `You need the ${toRule.permission} permission to apply "${to.name}".`,
         403,
       );
+    }
+  }
+
+  // Who may apply it: the assignee, the person who raised it, or anyone —
+  // the project's call, per status. A super admin is never locked out.
+  const actors = toRule?.allowedActors || [];
+  if (actors.length && opts.actorUserId && opts.user?.roleCode !== "SUPER_ADMIN") {
+    const me = String(opts.actorUserId);
+    const assignee = String(
+      (ticket?.assignedTo && (ticket.assignedTo._id || ticket.assignedTo)) || "",
+    );
+    const raiser = String(
+      (ticket?.createdBy && (ticket.createdBy._id || ticket.createdBy)) || "",
+    );
+    const isAssignee = !!assignee && assignee === me;
+    const isRaiser = !!raiser && raiser === me;
+    const ok =
+      (actors.includes("assignee") && isAssignee) ||
+      (actors.includes("raiser") && isRaiser);
+    if (!ok) {
+      const who = actors
+        .map((a) => (a === "assignee" ? "the assignee" : "the person who raised it"))
+        .join(" or ");
+      throw new StatusRuleError(`Only ${who} may apply "${to.name}".`, 403);
     }
   }
 

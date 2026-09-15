@@ -518,6 +518,24 @@ export interface SrReassignConfig {
   excludeRoleIds: string[];
 }
 
+/**
+ * A service request is worked by its assignee, but the person who RAISED it
+ * has a stake too — they answer questions and confirm the outcome. Ownership
+ * otherwise limits every change to the assignee, which leaves the raiser
+ * unable to reply on their own request.
+ *
+ * Which statuses they may set is decided per status ("who may apply this
+ * status"); these are the everyday actions.
+ */
+export interface SrRequesterConfig {
+  /** Reply on their own request. */
+  canReply: boolean;
+  /** Add an internal note / comment. */
+  canComment: boolean;
+  /** Attach a file. */
+  canAttach: boolean;
+}
+
 export interface SrConfig {
   enabled: boolean;
   numbering: {
@@ -543,6 +561,8 @@ export interface SrConfig {
   reopen: SrReopenConfig;
   /** Who the "Reassign / Delegate" pickers offer on a service request. */
   reassign: SrReassignConfig;
+  /** What the person who raised a request may do on it. */
+  requester: SrRequesterConfig;
   /** Editable per-project message templates (duplicate / closure / response). */
   messages: SrMessagesConfig;
   /** Not-happy escalation on negative parent feedback. */

@@ -5,7 +5,7 @@ import path from "path";
 import fs from "fs";
 import { promisify } from "util";
 import { GCSService } from "../services/gcsService";
-import { canModifyTicket } from "../utils/ticketAuth";
+import { canActOnTicket } from "../utils/ticketAuth";
 
 const unlinkAsync = promisify(fs.unlink);
 
@@ -72,7 +72,7 @@ export const uploadAttachment = async (req: Request, res: Response) => {
     }
 
     // Ownership: only the assignee (or TICKET_MODIFY_ANY) may add attachments.
-    if (!canModifyTicket(String(userId), ticket, reqUser)) {
+    if (!(await canActOnTicket(String(userId), ticket, reqUser, "attach"))) {
       return res.status(403).json({
         message: "You can only add attachments to queries assigned to you",
       });
@@ -186,7 +186,7 @@ export const deleteAttachment = async (req: Request, res: Response) => {
     }
 
     // Ownership: only the assignee (or TICKET_MODIFY_ANY) may delete attachments.
-    if (!canModifyTicket(String(userId), ticket, reqUser)) {
+    if (!(await canActOnTicket(String(userId), ticket, reqUser, "attach"))) {
       return res.status(403).json({
         message: "You can only modify attachments on queries assigned to you",
       });

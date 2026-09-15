@@ -99,6 +99,70 @@ const SrLifecyclePanel: React.FC<Props> = ({
     (configured ? !!statusDoc(code)?.requireDate : SR_NEEDS_COMMITTED_DATE.includes(code));
   const [confirming, setConfirming] = useState(false);
 
+  /**
+   * The window the status allows for its committed date (Query Config →
+   * Ticket Statuses). Bounding the field is kinder than refusing the save:
+   * the server applies the same rule either way.
+   */
+  /** Why this date is outside the status's window, or "" when it is fine. */
+  const dateRangeError = (code: number | "", value: string) => {
+    const doc = statusDoc(code);
+    if (!doc || !value) return "";
+    const when = new Date(value);
+    if (Number.isNaN(when.getTime())) return "That is not a valid date.";
+    const label = doc.label || "The committed date";
+    if (doc.committedDateMin === "now" && when.getTime() <= Date.now())
+      return `${label} must be in the future.`;
+    if (
+      doc.committedDateMin === "created" &&
+      ticket?.createdAt &&
+      when.getTime() < new Date(ticket.createdAt).getTime()
+    )
+      return `${label} cannot be before the request was raised.`;
+    const days = Number(doc.committedDateMaxDays);
+    if (days > 0 && when.getTime() > Date.now() + days * 24 * 60 * 60 * 1000)
+      return `${label} may be at most ${days} day${days === 1 ? "" : "s"} ahead.`;
+    return "";
+  };
+
+  const dateBounds = (code: number | "") => {
+    const doc = statusDoc(code);
+    if (!doc) return {};
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const asLocal = (d: Date) =>
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+        d.getHours(),
+      )}:${pad(d.getMinutes())}`;
+    const now = new Date();
+    let min: Date | undefined;
+    if (doc.committedDateMin === "now") min = new Date(now.getTime() + 60000);
+    else if (doc.committedDateMin === "created" && ticket?.createdAt)
+      min = new Date(ticket.createdAt);
+    const days = Number(doc.committedDateMaxDays);
+    const max =
+      days > 0 ? new Date(now.getTime() + days * 24 * 60 * 60 * 1000) : undefined;
+    const say = (d: Date) =>
+      d.toLocaleString(undefined, {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    const hint =
+      min && max
+        ? `Between ${say(min)} and ${say(max)}`
+        : max
+          ? `No later than ${say(max)}`
+          : min
+            ? `Not before ${say(min)}`
+            : "";
+    return {
+      min: min ? asLocal(min) : undefined,
+      max: max ? asLocal(max) : undefined,
+      hint,
+    };
+  };
+
   const [committedDate, setCommittedDate] = useState("");
   const [comment, setComment] = useState("");
   const [displayToParent, setDisplayToParent] = useState(false);
@@ -202,6 +266,12 @@ const SrLifecyclePanel: React.FC<Props> = ({
         type: "err",
         text: `${metaFor(toStatus).label} needs a committed date.`,
       });
+      return;
+    }
+    // Same window the server enforces — say so now rather than after a save.
+    const outOfRange = committedDate ? dateRangeError(toStatus, committedDate) : "";
+    if (outOfRange) {
+      setMsg({ type: "err", text: outOfRange });
       return;
     }
     if ((needsRemark(toStatus) || cancelling || reopening) && !comment.trim()) {
@@ -447,10 +517,30 @@ const SrLifecyclePanel: React.FC<Props> = ({
                 <label style={label}>Committed closure date</label>
                 <input
                   type="datetime-local"
-                  style={{ ...ctrl, width: "100%" }}
+                  style={{
+                    ...ctrl,
+                    width: "100%",
+                    borderColor: dateRangeError(toStatus, committedDate)
+                      ? "#fecaca"
+                      : (ctrl.borderColor as string),
+                  }}
                   value={committedDate}
+                  min={dateBounds(toStatus).min}
+                  max={dateBounds(toStatus).max}
+                  aria-invalid={!!dateRangeError(toStatus, committedDate)}
                   onChange={(e) => setCommittedDate(e.target.value)}
                 />
+                {dateRangeError(toStatus, committedDate) ? (
+                  <span style={{ fontSize: 12, color: "#b91c1c", fontWeight: 600 }}>
+                    {dateRangeError(toStatus, committedDate)}
+                  </span>
+                ) : (
+                  dateBounds(toStatus).hint && (
+                    <span style={{ fontSize: 12, color: SR.muted }}>
+                      {dateBounds(toStatus).hint}
+                    </span>
+                  )
+                )}
               </div>
             )}
           </div>

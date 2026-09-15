@@ -2050,6 +2050,27 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
       return false;
     }
   })();
+  /**
+   * The window a status allows for its committed date. The dialog bounds the
+   * field with it and refuses Apply, so the rule is felt while choosing
+   * rather than after saving — the server enforces the same.
+   */
+  const committedDateWindow = (code?: number) => {
+    const st: any = statusOptions.find((s: any) => Number(s.code) === Number(code));
+    const days = Number(st?.committedDateMaxDays);
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const created = ticket?.createdAt ? new Date(ticket.createdAt) : null;
+    return {
+      min:
+        st?.committedDateMin === "now"
+          ? iso(new Date())
+          : st?.committedDateMin === "created" && created
+            ? iso(created)
+            : undefined,
+      max: days > 0 ? iso(new Date(Date.now() + days * 24 * 60 * 60 * 1000)) : undefined,
+    };
+  };
+
   const queryStatusAllowed = (code: number) => {
     const cur = Number(ticket?.status);
     if (code === cur) return true; // the select still shows where it is now
@@ -2073,6 +2094,24 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   const canModify =
     canDo(permissions, "MODIFY_ANY", recordType) ||
     (!!currentUserId && !!ticketAssigneeId && ticketAssigneeId === currentUserId);
+
+  // The person who RAISED a service request has a stake in it: they answer
+  // questions and confirm the outcome. What they may do is the project's call
+  // (SR settings → Requester); the server applies the same rules.
+  const ticketRaiserId = (() => {
+    const c: any = (ticket as any)?.createdBy;
+    return c ? String(c._id || c) : null;
+  })();
+  const isRaiser = !!currentUserId && ticketRaiserId === currentUserId;
+  const requesterRights = (srConfig as any)?.requester || {};
+  const canReplyOnTicket =
+    canModify || (isSr && isRaiser && requesterRights.canReply !== false);
+  const canCommentOnTicket =
+    canModify || (isSr && isRaiser && requesterRights.canComment !== false);
+  const canAttachOnTicket =
+    canModify || (isSr && isRaiser && requesterRights.canAttach !== false);
+  // Anything the raiser may do keeps the page out of pure read-only mode.
+  const canDoAnything = canModify || canReplyOnTicket || canCommentOnTicket;
   const assigneeName =
     typeof ticket.assignedTo === "object" && ticket.assignedTo
       ? `${(ticket.assignedTo as any).firstName ?? ""} ${(ticket.assignedTo as any).lastName ?? ""}`.trim()
@@ -2082,13 +2121,26 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     <>
       <div className="min-h-screen bg-gray-50">
         {/* Read-only banner when the query isn't assigned to the current agent */}
-        {!canModify && (
+        {!canDoAnything && (
           <div className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 text-sm text-amber-800 flex items-center gap-2">
             <span aria-hidden>🔒</span>
             <span>
               View only — this query is
               {assigneeName ? ` assigned to ${assigneeName}` : " not assigned to you"}
               . You can read it but can't comment, reply, or make changes.
+            </span>
+          </div>
+        )}
+        {!canModify && canDoAnything && (
+          <div className="bg-blue-50 border-b border-blue-200 px-6 py-2.5 text-sm text-blue-900 flex items-center gap-2">
+            <span aria-hidden>✍️</span>
+            <span>
+              You raised this request
+              {assigneeName ? `, and ${assigneeName} is working on it` : ""}. You can
+              {canReplyOnTicket ? " reply" : ""}
+              {canReplyOnTicket && canCommentOnTicket ? " and" : ""}
+              {canCommentOnTicket ? " add comments" : ""}; the status options open to
+              you are set per status.
             </span>
           </div>
         )}
@@ -4388,7 +4440,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       )}
 
                       {/* Reply Button or Form (only when assigned to me / modify-any) */}
-                      {!canModify ? null : !showReplyForm ? (
+                      {!canReplyOnTicket ? null : !showReplyForm ? (
                         <button
                           onClick={handleOpenReplyForm}
                           className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors"
@@ -4559,7 +4611,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     ) : (
                     <select
                       value={ticket.status || ""}
-                      disabled={!canModify}
+                      disabled={!canReplyOnTicket}
                       onChange={(e) => {
                         const value = e.target.value;
                         if (!value) return; // Don't update if no value selected
@@ -4613,7 +4665,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     </label>
                     <select
                       value={ticket.priority.toUpperCase()}
-                      disabled={!canModify}
+                      disabled={!canReplyOnTicket}
                       onChange={(e) => {
                         const newPriorityValue = e.target.value;
                         setNewPriority(newPriorityValue);
@@ -5808,11 +5860,31 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                 <div className="mb-3">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {remarkModal.dateLabel || "Committed date"}{" "}
+                    {(() => {
+                      // The status says how early/late the date may be; show
+                      // and enforce that window here too.
+                      const st: any = statusOptions.find(
+                        (s: any) => Number(s.code) === remarkModal.targetStatusCode,
+                      );
+                      const days = Number(st?.committedDateMaxDays);
+                      const parts: string[] = [];
+                      if (st?.committedDateMin === "now") parts.push("in the future");
+                      else if (st?.committedDateMin === "created")
+                        parts.push("not before the ticket was raised");
+                      if (days > 0) parts.push(`within ${days} day${days === 1 ? "" : "s"}`);
+                      return parts.length ? (
+                        <span className="text-xs font-normal text-gray-500">
+                          ({parts.join(", ")})
+                        </span>
+                      ) : null;
+                    })()}
                     <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="date"
                     value={remarkModal.remarkDate}
+                    min={committedDateWindow(remarkModal.targetStatusCode).min}
+                    max={committedDateWindow(remarkModal.targetStatusCode).max}
                     onChange={(e) =>
                       setRemarkModal((m) => ({
                         ...m,
@@ -5882,7 +5954,18 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   disabled={
                     (remarkModal.needsRemark !== false &&
                       remarkModal.remark.trim().length < 10) ||
-                    (!!remarkModal.needsDate && !remarkModal.remarkDate)
+                    (!!remarkModal.needsDate && !remarkModal.remarkDate) ||
+                    // Outside the window the status allows — the server would
+                    // refuse it, so do not offer to save.
+                    (!!remarkModal.needsDate &&
+                      !!remarkModal.remarkDate &&
+                      (() => {
+                        const w = committedDateWindow(remarkModal.targetStatusCode);
+                        return (
+                          (!!w.min && remarkModal.remarkDate < w.min) ||
+                          (!!w.max && remarkModal.remarkDate > w.max)
+                        );
+                      })())
                   }
                   onClick={() => {
                     const remarkMissing =

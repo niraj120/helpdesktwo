@@ -22,6 +22,12 @@ export interface IStatusRule {
   maxPerTicket?: number;
   /** Permission code the user must hold to apply this status (empty = anyone who may change status). */
   permission?: string;
+  /**
+   * Who may apply it, by their part in the request: the assignee, the person
+   * who raised it, or anyone holding the permission. Empty = no restriction,
+   * which is how it has always behaved.
+   */
+  allowedActors?: ("assignee" | "raiser")[];
   /** Who the ticket goes to when this status is applied. */
   assignOnApply?: {
     mode: "keep" | "role" | "user" | "reopenRouting";
@@ -86,6 +92,7 @@ const StatusRuleSchema = new Schema(
     allowedPrev: [{ type: Number }],
     maxPerTicket: { type: Number, min: 0 },
     permission: { type: String, trim: true },
+    allowedActors: [{ type: String, enum: ["assignee", "raiser"] }],
     assignOnApply: {
       type: new Schema(
         {

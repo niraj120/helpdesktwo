@@ -38,6 +38,44 @@ export function hasModifyAnyTicket(user: any, interactionType?: string | null): 
  * Whether `user` (with role.permissions) may mutate `ticket`.
  * `ticket.assignedTo` may be a raw ObjectId or a populated { _id } document.
  */
+/**
+ * Whether `user` may take an everyday action on `ticket`: the ownership rule
+ * above, plus — on a service request — the person who RAISED it, when the
+ * project allows that action (SR settings → Requester).
+ *
+ * Async because it reads the project's SR config; every call site already
+ * awaits or is inside an async handler.
+ */
+export async function canActOnTicket(
+  userId: string,
+  ticket: any,
+  user: any,
+  action: "reply" | "comment" | "attach",
+): Promise<boolean> {
+  if (canModifyTicket(userId, ticket, user)) return true;
+
+  const it = ticket?.interactionType;
+  if (it !== "PSR" && it !== "ISR") return false;
+
+  const raiser = ticket?.createdBy?._id || ticket?.createdBy;
+  if (!raiser || String(raiser) !== String(userId)) return false;
+
+  try {
+    const {
+      getProjectSrConfig,
+    } = require("../modules/service-request/serviceRequestService");
+    const cfg = await getProjectSrConfig(
+      ticket?.metadata?.projectId || ticket?.project,
+    );
+    const r = cfg?.requester || {};
+    if (action === "reply") return r.canReply !== false;
+    if (action === "comment") return r.canComment !== false;
+    return r.canAttach !== false;
+  } catch {
+    return false;
+  }
+}
+
 export function canModifyTicket(
   userId: string,
   ticket: any,
