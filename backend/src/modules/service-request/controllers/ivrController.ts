@@ -222,6 +222,43 @@ export const updateFollowUp = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * How a call to the caller went. Advances the WIP ladder: answered closes it,
+ * not connected / asked to call back apply the next step.
+ */
+export const logAttempt = async (req: AuthRequest, res: Response) => {
+  try {
+    const r = await ivr.logCallAttempt(req.params.id, {
+      outcome: str(req.body?.outcome),
+      note: str(req.body?.note),
+      callbackRequestedAt: str(req.body?.callbackRequestedAt),
+      actorUserId: actorId(req),
+    });
+    res.status(201).json({
+      success: true,
+      data: r.call,
+      applied: r.applied,
+      kept: r.kept,
+    });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/** Add an agent note ("asked to call back at 2 PM"). Append-only. */
+export const addComment = async (req: AuthRequest, res: Response) => {
+  try {
+    const doc = await ivr.addCallComment(req.params.id, {
+      text: str(req.body?.text),
+      callbackRequestedAt: str(req.body?.callbackRequestedAt),
+      actorUserId: actorId(req),
+    });
+    res.status(201).json({ success: true, data: doc });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
 /** Outbound Click-to-Call: ring the agent, then dial the caller back. */
 export const clickToCall = async (req: AuthRequest, res: Response) => {
   try {

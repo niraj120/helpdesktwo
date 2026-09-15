@@ -239,9 +239,10 @@ const cardSpan = (width: Width) =>
       ? "col-span-1 lg:col-span-6"
       : "col-span-1 lg:col-span-4";
 
-const psrOnly = new Set(["linkedIsr", "parentStudent"]);
-// Never rendered as a page card — the lifecycle actions (status / reassign /
-// delegate / PSL call) live exclusively in the "PSL Call" tab.
+// Parent-facing cards: an ISR is internal and has no parent or PSL.
+const psrOnly = new Set(["linkedIsr", "parentStudent", "pslAssignment"]);
+// Never rendered as a page card — the lifecycle actions (status / close /
+// re-open / cancel / delegate) sit in the detail page's sidebar under Status.
 const pageHidden = new Set(["lifecycleActions"]);
 
 const PsrDetailLayout: React.FC<{

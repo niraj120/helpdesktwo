@@ -52,6 +52,39 @@ export const serviceRequestApi = {
     api.delete(`${base}/bulk`, { data: { ticketIds: ids } }).then((r) => r.data),
   merge: (primaryId: string, ticketIds: string[]) =>
     api.post(`${base}/${primaryId}/merge`, { ticketIds }).then((r) => r.data),
+  /**
+   * A project's priorities. They are configured under SLA & Escalation, where
+   * each priority is an SLA rule (its response/resolution targets), so that is
+   * the list to offer — with the priority master as a fallback for projects
+   * that use it instead.
+   */
+  projectPriorities: async (projectId: string) => {
+    try {
+      const r: any = await api.get("/sla-rules", {
+        params: { projectId, isActive: true },
+      });
+      const rules = Array.isArray(r?.data?.data) ? r.data.data : [];
+      const fromSla = rules
+        .filter((x: any) => x?.isActive !== false && x?.name)
+        .map((x: any) => ({
+          value: String(x.name).trim().toUpperCase(),
+          label: String(x.name).trim(),
+          isDefault: !!x.isDefault,
+        }));
+      if (fromSla.length) return fromSla;
+    } catch {
+      /* fall through to the priority master */
+    }
+    const r: any = await api.get("/priorities/active", { params: { projectId } });
+    return (Array.isArray(r?.data?.data) ? r.data.data : [])
+      .filter((p: any) => p?.code || p?.name)
+      .map((p: any) => ({
+        value: String(p.code || p.name).trim().toUpperCase(),
+        label: String(p.name || p.code).trim(),
+        isDefault: !!p.isDefault,
+      }));
+  },
+
   activePriorities: (projectId?: string) =>
     api
       .get("/priorities/active", { params: { projectId } })
@@ -98,6 +131,14 @@ export const serviceRequestApi = {
     api.post(`${base}/${id}/parent-close`, body).then((r) => r.data),
   pslCall: (id: string, body: any) =>
     api.post(`${base}/${id}/psl-call`, body).then((r) => r.data),
+
+  // Who a service request may be reassigned / delegated to (SR settings decide
+  // which users appear, and whether a department must be picked first).
+  assignees: (params: {
+    projectId: string;
+    departmentId?: string;
+    search?: string;
+  }) => api.get(`${base}/assignees`, { params }).then((r) => r.data),
 
   // Per-project SR config (enable + WIP limits)
   getConfig: (projectId: string) =>
@@ -198,6 +239,22 @@ export const serviceRequestApi = {
     // Outbound Click-to-Call: rings the agent, then dials the caller back.
     clickToCall: (id: string, body?: { destinationNumber?: string }) =>
       api.post(`/ivr/calls/${id}/click-to-call`, body || {}).then((r) => r.data),
+    // How a call to the caller went. The server closes the live WIP and, for
+    // not_connected / callback_requested, applies the next ladder step.
+    logAttempt: (
+      id: string,
+      body: {
+        outcome: "answered" | "not_connected" | "callback_requested";
+        note?: string;
+        callbackRequestedAt?: string;
+      },
+    ) => api.post(`/ivr/calls/${id}/attempts`, body).then((r) => r.data),
+    // Agent note on a call. Append-only. callbackRequestedAt is the time the
+    // caller asked for — shown to the next agent, it does not move the TAT.
+    addComment: (
+      id: string,
+      body: { text: string; callbackRequestedAt?: string },
+    ) => api.post(`/ivr/calls/${id}/comments`, body).then((r) => r.data),
   },
 
   // Leads (admission enquiries)

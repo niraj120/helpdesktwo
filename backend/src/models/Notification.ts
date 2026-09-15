@@ -74,12 +74,13 @@ const notificationSchema = new Schema<INotification>(
         "sr_child_case",
         "sr_reopened",
         "sr_closed",
+        "ivr_call_assigned",
       ],
       required: true,
     },
     entityType: {
       type: String,
-      enum: ["ticket", "kb_article", "comment"],
+      enum: ["ticket", "kb_article", "comment", "ivr_call"],
       required: true,
     },
     entityId: {

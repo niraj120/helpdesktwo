@@ -19,6 +19,12 @@ export async function getSrConfigForProject(projectId: string) {
 
 export interface SrConfigPatch {
   enabled?: boolean;
+  /** Who the reassign / delegate pickers offer (see SrReassignConfig). */
+  reassign?: {
+    requireDepartment?: boolean;
+    restrictToProject?: boolean;
+    excludeRoleIds?: string[];
+  };
   numbering?: Partial<
     Record<
       "PSR" | "ISR",
@@ -133,6 +139,13 @@ export async function updateSrConfigForProject(
   if (patch.isr) sr.isr = { ...(sr.isr || {}), ...patch.isr };
   if (patch.wip) sr.wip = { ...(sr.wip || {}), ...patch.wip };
   if (patch.reopen) sr.reopen = { ...(sr.reopen || {}), ...patch.reopen };
+  if (patch.reassign) {
+    const next = { ...(sr.reassign || {}), ...patch.reassign };
+    if (patch.reassign.excludeRoleIds !== undefined) {
+      next.excludeRoleIds = (patch.reassign.excludeRoleIds || []).map(String);
+    }
+    sr.reassign = next;
+  }
   if (patch.messages)
     sr.messages = { ...(sr.messages || {}), ...patch.messages };
   if (patch.feedback)

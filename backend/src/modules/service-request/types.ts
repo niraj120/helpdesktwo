@@ -501,6 +501,23 @@ export interface IvrCallbackTier {
   isActive: boolean;
 }
 
+/**
+ * Reassign / delegate search on a service request.
+ *
+ * The people offered are always helpdesk users — a request can only be
+ * assigned to someone who can sign in and work it. Which of them appear is a
+ * project decision: students and parents have accounts too and must never be
+ * offered, and a large project usually wants the department picked first.
+ */
+export interface SrReassignConfig {
+  /** Pick a department before any user is listed. */
+  requireDepartment: boolean;
+  /** Only users who belong to this project (off = any active user). */
+  restrictToProject: boolean;
+  /** Roles never offered — e.g. Student, Parent. */
+  excludeRoleIds: string[];
+}
+
 export interface SrConfig {
   enabled: boolean;
   numbering: {
@@ -524,6 +541,8 @@ export interface SrConfig {
   };
   wip: SrWipConfig;
   reopen: SrReopenConfig;
+  /** Who the "Reassign / Delegate" pickers offer on a service request. */
+  reassign: SrReassignConfig;
   /** Editable per-project message templates (duplicate / closure / response). */
   messages: SrMessagesConfig;
   /** Not-happy escalation on negative parent feedback. */

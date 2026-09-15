@@ -87,3 +87,37 @@ export const requireTicketAction =
       return;
     }
   };
+
+/**
+ * Same idea for endpoints that take the ticket as a QUERY parameter and may be
+ * called for any of several actions — e.g. the assignable-agent list, which
+ * both Assign and Reassign use. With a ticket id, the permission follows that
+ * record's type (SR_* for a PSR/ISR, TICKET_* for a query); without one there
+ * is no record to judge, so the TICKET_* codes apply as before.
+ */
+export const requireTicketActionAnyOf =
+  (actions: TicketAction[], queryKey = "ticketId"): RequestHandler =>
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      if (isSuperAdmin(req)) return next();
+
+      const id = (req.query as any)?.[queryKey];
+      let interactionType: string | undefined;
+      if (id && typeof id === "string" && /^[a-f0-9]{24}$/i.test(id)) {
+        const ticket = await Ticket.findById(id).select("interactionType").lean();
+        interactionType = (ticket as any)?.interactionType;
+      }
+      const codes = actions.flatMap((a) => permissionsFor(a, interactionType));
+      if (holds(req, codes)) return next();
+
+      res.status(403).json({
+        success: false,
+        message: `Forbidden: requires one of ${codes.join(", ")}`,
+      });
+      return;
+    } catch (err) {
+      console.error("Ticket action permission check failed:", err);
+      res.status(500).json({ success: false, message: "Internal server error" });
+      return;
+    }
+  };

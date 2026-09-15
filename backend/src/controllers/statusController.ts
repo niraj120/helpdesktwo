@@ -2,6 +2,50 @@ import { Request, Response } from "express";
 import { Status } from "../models/Status";
 import { Project } from "../models/Project";
 import { AuthRequest } from "../middleware/auth";
+import mongoose from "mongoose";
+
+const STATUS_FIELDS =
+  "name code color isDefault isClosed displayOrder description isActive projectId requireClosingRemark requireCommittedDate committedDateLabel committedDateMin committedDateMaxDays requireConfirmation isReopen showInProgress rules";
+
+const oidOrUndef = (v: any) =>
+  v && mongoose.Types.ObjectId.isValid(String(v))
+    ? new mongoose.Types.ObjectId(String(v))
+    : undefined;
+
+/** Normalise one per-record-type rule set from the settings form. */
+const cleanRule = (r: any) => {
+  if (!r || typeof r !== "object") return undefined;
+  const max = Number(r.maxPerTicket);
+  const mode = ["keep", "role", "user", "reopenRouting"].includes(r.assignOnApply?.mode)
+    ? r.assignOnApply.mode
+    : "keep";
+  return {
+    restrictNext: !!r.restrictNext,
+    allowedNext: Array.isArray(r.allowedNext)
+      ? [...new Set(r.allowedNext.map(Number).filter(Number.isFinite))]
+      : [],
+    restrictPrev: !!r.restrictPrev,
+    allowedPrev: Array.isArray(r.allowedPrev)
+      ? [...new Set(r.allowedPrev.map(Number).filter(Number.isFinite))]
+      : [],
+    maxPerTicket: Number.isFinite(max) && max > 0 ? Math.floor(max) : undefined,
+    permission: String(r.permission || "").trim() || undefined,
+    assignOnApply: {
+      mode,
+      roleId: mode === "role" ? oidOrUndef(r.assignOnApply?.roleId) : undefined,
+      userId: mode === "user" ? oidOrUndef(r.assignOnApply?.userId) : undefined,
+    },
+  };
+};
+
+/** Both rule sets; either may be left out (= not configured for that type). */
+const cleanRules = (rules: any) => {
+  if (!rules || typeof rules !== "object") return undefined;
+  const out: any = {};
+  if (rules.query) out.query = cleanRule(rules.query);
+  if (rules.sr) out.sr = cleanRule(rules.sr);
+  return Object.keys(out).length ? out : undefined;
+};
 
 // Get all statuses across all projects (for debugging/admin)
 export const getAllStatuses = async (req: AuthRequest, res: Response) => {
@@ -50,9 +94,7 @@ export const getStatusesByProject = async (req: AuthRequest, res: Response) => {
 
     const statuses = await Status.find(filter)
       .sort({ displayOrder: 1, name: 1 })
-      .select(
-        "name code color isDefault isClosed displayOrder description isActive projectId requireClosingRemark requireCommittedDate committedDateLabel",
-      );
+      .select(STATUS_FIELDS);
 
     console.log(
       `🏷️  Found ${statuses.length} statuses for project ${projectId}`,
@@ -94,8 +136,14 @@ export const createStatus = async (req: AuthRequest, res: Response) => {
       requireClosingRemark,
       requireCommittedDate,
       committedDateLabel,
+      committedDateMin,
+      committedDateMaxDays,
       displayOrder,
       description,
+      requireConfirmation,
+      isReopen,
+      showInProgress,
+      rules,
     } = req.body;
     const userId = req.user?.userId;
 
@@ -145,6 +193,15 @@ export const createStatus = async (req: AuthRequest, res: Response) => {
       requireClosingRemark: requireClosingRemark || false,
       requireCommittedDate: requireCommittedDate || false,
       committedDateLabel: committedDateLabel || undefined,
+      committedDateMin: ["none", "created", "now"].includes(committedDateMin)
+        ? committedDateMin
+        : "none",
+      committedDateMaxDays:
+        Number(committedDateMaxDays) > 0 ? Math.floor(Number(committedDateMaxDays)) : undefined,
+      requireConfirmation: !!requireConfirmation,
+      isReopen: !!isReopen,
+      showInProgress: showInProgress !== false,
+      rules: cleanRules(rules),
       displayOrder: displayOrder || 0,
       description,
       createdBy: userId,
@@ -180,9 +237,15 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
       requireClosingRemark,
       requireCommittedDate,
       committedDateLabel,
+      committedDateMin,
+      committedDateMaxDays,
       displayOrder,
       description,
       isActive,
+      requireConfirmation,
+      isReopen,
+      showInProgress,
+      rules,
     } = req.body;
     const userId = req.user?.userId;
 
@@ -220,14 +283,35 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
       $set.requireCommittedDate = requireCommittedDate;
     if (committedDateLabel !== undefined)
       $set.committedDateLabel = committedDateLabel;
+    if (committedDateMin !== undefined)
+      $set.committedDateMin = ["none", "created", "now"].includes(committedDateMin)
+        ? committedDateMin
+        : "none";
+    if (committedDateMaxDays !== undefined)
+      $set.committedDateMaxDays =
+        Number(committedDateMaxDays) > 0
+          ? Math.floor(Number(committedDateMaxDays))
+          : undefined;
     if (displayOrder !== undefined) $set.displayOrder = displayOrder;
     if (description !== undefined) $set.description = description;
     if (isActive !== undefined) $set.isActive = isActive;
+    if (requireConfirmation !== undefined)
+      $set.requireConfirmation = !!requireConfirmation;
+    if (isReopen !== undefined) $set.isReopen = !!isReopen;
+    if (showInProgress !== undefined) $set.showInProgress = !!showInProgress;
+    // Rules switched off for every record type → remove them, back to the
+    // unconfigured (old) behaviour; $set with undefined would leave them.
+    let clearRules = false;
+    if (rules !== undefined) {
+      const cleaned = cleanRules(rules);
+      if (cleaned) $set.rules = cleaned;
+      else clearRules = true;
+    }
 
     // Use findByIdAndUpdate so ALL fields — including those absent from old docs — are written atomically
     const updated = await Status.findByIdAndUpdate(
       statusId,
-      { $set },
+      clearRules ? { $set, $unset: { rules: 1 } } : { $set },
       { new: true, runValidators: true },
     );
 

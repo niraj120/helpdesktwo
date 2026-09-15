@@ -69,7 +69,8 @@ export interface IChangeHistory {
   newValue: string; // New value
   changedBy: mongoose.Types.ObjectId; // User who made the change
   changedAt: Date;
-  changeType: "update" | "add" | "remove" | "reassigned"; // Type of change
+  // "remark" = the note given with a status change (WIP reason, closing remark).
+  changeType: "update" | "add" | "remove" | "reassigned" | "remark"; // Type of change
   // Reassignment-specific fields (only populated when changeType === 'reassigned')
   reassignmentReason?: string; // Reason for reassignment
   reassignmentCategory?: string; // Category from predefined list
@@ -337,7 +338,7 @@ const ChangeHistorySchema = new Schema({
   changedAt: { type: Date, default: Date.now },
   changeType: {
     type: String,
-    enum: ["update", "add", "remove", "reassigned"],
+    enum: ["update", "add", "remove", "reassigned", "remark"],
     default: "update",
   },
   // Reassignment-specific fields

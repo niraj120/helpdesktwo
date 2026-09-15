@@ -101,7 +101,7 @@ export interface ICallIntake extends Document {
     note?: string;
     status: "pending" | "done" | "cancelled";
     /** How the follow-up call went, recorded when it is closed out. */
-    outcome?: "answered" | "no_answer" | "busy" | "other";
+    outcome?: "answered" | "no_answer" | "busy" | "callback_requested" | "other";
     createdBy?: mongoose.Types.ObjectId;
     createdAt: Date;
     completedBy?: mongoose.Types.ObjectId;
@@ -131,12 +131,44 @@ export interface ICallIntake extends Document {
     agentNumber?: string;
     callerId?: string;
     destinationNumber?: string;
+    /** Agent's display name, snapshotted when the call is placed. */
+    agentName?: string;
     status: "initiated" | "answered" | "missed" | "failed";
     initiatedBy?: mongoose.Types.ObjectId;
     initiatedAt: Date;
     /** Terminal webhook status stamp. */
     completedAt?: Date;
     message?: string;
+    /**
+     * What the provider reported for THIS attempt. Each call-back is its own
+     * call with its own recording, so these live on the attempt — the inbound
+     * call's recordingUrl is never touched by an outbound webhook.
+     */
+    externalId?: string;
+    recordingUrl?: string;
+    durationSeconds?: number;
+    answerStamp?: Date;
+    endStamp?: Date;
+    providerCallStatus?: string;
+  }[];
+  /**
+   * Agent notes on the call — "asked to call back at 2 PM", "wrong number",
+   * "father will visit Monday". Append-only: a note is a record of what was
+   * said, so it is never edited or replaced. Copied onto the ticket on
+   * conversion with the rest of the call's history.
+   */
+  comments?: {
+    _id?: mongoose.Types.ObjectId;
+    text: string;
+    /**
+     * When the caller asked to be called back, if they named a time. Recorded
+     * as what the caller asked for; the call-back ladder still owns the TAT.
+     */
+    callbackRequestedAt?: Date;
+    createdBy?: mongoose.Types.ObjectId;
+    /** Snapshotted so the log reads the same after the user is renamed/removed. */
+    createdByName?: string;
+    createdAt: Date;
   }[];
   /** Convenience mirror of the most recent outboundCalls entry status. */
   lastOutboundStatus?: "initiated" | "answered" | "missed" | "failed";
@@ -247,7 +279,7 @@ const CallIntakeSchema = new Schema<ICallIntake>(
         },
         outcome: {
           type: String,
-          enum: ["answered", "no_answer", "busy", "other"],
+          enum: ["answered", "no_answer", "busy", "callback_requested", "other"],
         },
         createdBy: { type: Schema.Types.ObjectId, ref: "User" },
         createdAt: { type: Date, default: Date.now },
@@ -272,10 +304,26 @@ const CallIntakeSchema = new Schema<ICallIntake>(
           enum: ["initiated", "answered", "missed", "failed"],
           default: "initiated",
         },
+        agentName: { type: String },
         initiatedBy: { type: Schema.Types.ObjectId, ref: "User" },
         initiatedAt: { type: Date, default: Date.now },
         completedAt: { type: Date },
         message: { type: String },
+        externalId: { type: String },
+        recordingUrl: { type: String },
+        durationSeconds: { type: Number },
+        answerStamp: { type: Date },
+        endStamp: { type: Date },
+        providerCallStatus: { type: String },
+      },
+    ],
+    comments: [
+      {
+        text: { type: String, required: true, maxlength: 2000 },
+        callbackRequestedAt: { type: Date },
+        createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+        createdByName: { type: String },
+        createdAt: { type: Date, default: Date.now },
       },
     ],
     lastOutboundStatus: {

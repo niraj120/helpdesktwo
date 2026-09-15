@@ -51,6 +51,12 @@ function fail(res: Response, err: any) {
     .json({ success: false, message: err?.message || "Server error" });
 }
 
+/** The actor's role code + permissions, for per-status permission rules. */
+const actorUser = (req: AuthRequest) => ({
+  roleCode: req.user?.role?.code,
+  permissions: req.user?.role?.permissions || [],
+});
+
 function hasPerm(req: AuthRequest, code: string): boolean {
   const role = req.user?.role;
   if (
@@ -152,6 +158,7 @@ export const changeStatus = async (req: AuthRequest, res: Response) => {
         committedDate: req.body.committedDate,
         comments: req.body.comments,
         displayToParent: req.body.displayToParent,
+        user: actorUser(req),
       },
     );
     res.json({ success: true, data: ticket });
@@ -166,8 +173,26 @@ export const close = async (req: AuthRequest, res: Response) => {
       req.params.id,
       actorId(req),
       req.body.comments,
+      actorUser(req),
     );
     res.json({ success: true, data: ticket });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/** Users this service request may be reassigned / delegated to. */
+export const assignees = async (req: AuthRequest, res: Response) => {
+  try {
+    const data = await srSvc.listSrAssignees({
+      projectId: String(req.query.projectId || ""),
+      departmentId: req.query.departmentId
+        ? String(req.query.departmentId)
+        : undefined,
+      search: req.query.search ? String(req.query.search) : undefined,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    });
+    res.json({ success: true, ...data });
   } catch (err) {
     fail(res, err);
   }
@@ -223,10 +248,18 @@ export const parentClose = async (req: AuthRequest, res: Response) => {
 
 export const reopen = async (req: AuthRequest, res: Response) => {
   try {
+    // Staff re-opening a request must say why — it undoes a closure and hands
+    // the request to the Principal. (A parent re-open comes through the ticket
+    // route with its own wording.)
+    if (!String(req.body?.reason || "").trim()) {
+      res.status(400).json({ success: false, message: "Give a reason for re-opening." });
+      return;
+    }
     const ticket = await srSvc.reopenSr(
       req.params.id,
       { reason: req.body.reason },
       actorId(req),
+      actorUser(req),
     );
     res.json({ success: true, data: ticket });
   } catch (err) {
@@ -321,6 +354,7 @@ export const cancel = async (req: AuthRequest, res: Response) => {
     const ticket = await srSvc.cancelSr(req.params.id, actorId(req), {
       reason: req.body.reason,
       replacementSrId: req.body.replacementSrId,
+      user: actorUser(req),
     });
     res.json({ success: true, data: ticket });
   } catch (err) {
@@ -604,7 +638,14 @@ export const parentLookup = async (req: AuthRequest, res: Response) => {
           const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
           mongoQuery = { $or: searchFields.map((f: string) => ({ [f]: { $regex: re } })) };
         }
-        const rows = await col.find(mongoQuery, { projection: { _id: 0, _key: 0 } }).limit(25).toArray();
+        // One row = one guardian→student mapping, so a parent with three
+        // children is three rows. Fetch enough rows to cover a family, then
+        // group by parent and collect the students as children[] — otherwise
+        // the same parent is offered several times, each showing one child.
+        const rows = await col
+          .find(mongoQuery, { projection: { _id: 0, _key: 0 } })
+          .limit(200)
+          .toArray();
         // Map to ParentOpt format — find name/mobile/email from column names
         const findCol = (row: any, ...patterns: string[]) => {
           for (const p of patterns) {
@@ -613,15 +654,64 @@ export const parentLookup = async (req: AuthRequest, res: Response) => {
           }
           return "";
         };
-        const data = rows.map((row: any) => ({
-          name: (findCol(row, "first name", "first_name") + " " + findCol(row, "last name", "last_name")).trim() || findCol(row, "name") || "—",
-          mobile: findCol(row, "mobile", "phone", "contact"),
-          email: findCol(row, "email"),
-          school: findCol(row, "school", "centre"),
-          parentCode: findCol(row, "guardian id", "guardian_id", "parent id", "parent_id"),
-          children: [],
-          _raw: row, // include full row for flexible display
-        })).filter((r: any) => r.name !== "—" || r.mobile || r.email);
+        const parentMap = new Map<string, any>();
+        for (const row of rows as any[]) {
+          const name =
+            (findCol(row, "parent master - first name", "first name", "first_name") +
+              " " +
+              findCol(row, "parent master - last name", "last name", "last_name")).trim() ||
+            findCol(row, "parent master - name", "name") ||
+            "—";
+          const mobile = findCol(row, "parent master - mobile", "mobile", "phone", "contact");
+          const email = findCol(row, "parent master - email", "email");
+          const parentCode = findCol(
+            row,
+            "parent master - id",
+            "guardian mapping master - guardian id",
+            "guardian id",
+            "guardian_id",
+            "parent id",
+            "parent_id",
+          );
+          if (name === "—" && !mobile && !email) continue;
+
+          const studentId = findCol(row, "student master - id", "student id", "student_id");
+          const studentName =
+            (findCol(row, "student master - first name", "student first") +
+              " " +
+              findCol(row, "student master - last name", "student last")).trim();
+          const grade = findCol(row, "grade", "class", "standard");
+
+          const key = parentCode || `${name}|${mobile}`;
+          const entry =
+            parentMap.get(key) ||
+            parentMap
+              .set(key, {
+                name,
+                mobile,
+                email,
+                school: findCol(row, "school", "centre"),
+                parentCode,
+                children: [] as any[],
+                _raw: row, // full row for flexible display
+              })
+              .get(key);
+          if (
+            (studentName || studentId) &&
+            !entry.children.some(
+              (c: any) =>
+                (studentId && c.id === studentId) ||
+                (!studentId && c.name === studentName),
+            )
+          ) {
+            entry.children.push({
+              id: studentId || undefined,
+              name: studentName || undefined,
+              grade: grade || undefined,
+            });
+          }
+        }
+        const data = Array.from(parentMap.values()).slice(0, 25);
         res.json({ success: true, data, source: { name: (table as any).name || "PSR Builder" }, lookupSource: "psr_builder" });
         return;
       } catch (err: any) {

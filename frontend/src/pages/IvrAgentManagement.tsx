@@ -3,6 +3,7 @@ import DashboardLayout from "../components/DashboardLayout";
 import PageHeader from "../components/ui/PageHeader";
 import { tokens, styles, button } from "../theme/oneos";
 import { useProjectContext } from "../contexts/ProjectContext";
+import { useProjectScope } from "../hooks/useProjectScope";
 import { api } from "../utils/api";
 import { ivrAgentApi } from "../services/ivrAgents";
 import { serviceRequestApi } from "../services/serviceRequests";
@@ -43,8 +44,12 @@ const OTHER = "other";
 
 const IvrAgentManagement: React.FC = () => {
   const { currentProjectId } = useProjectContext();
+  const { isProjectPortal, lockedProjectId } = useProjectScope();
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
-  const [projectId, setProjectId] = useState(currentProjectId || "");
+  const [pickedProjectId, setPickedProjectId] = useState(currentProjectId || "");
+
+  // Inside the portal the URL fixes the project; elsewhere the picker decides.
+  const projectId = isProjectPortal ? lockedProjectId || "" : pickedProjectId;
 
   // Call-back ladder (WIP steps + TAT). The manager owns this policy; agents
   // only pick a step from it when logging a call-back.
@@ -70,6 +75,8 @@ const IvrAgentManagement: React.FC = () => {
   );
 
   useEffect(() => {
+    // The portal has nothing to pick from, so it never asks for the list.
+    if (isProjectPortal) return;
     (async () => {
       try {
         const res = await api.get("/projects", { params: { limit: 100 } });
@@ -80,7 +87,7 @@ const IvrAgentManagement: React.FC = () => {
         console.error(e);
       }
     })();
-  }, []);
+  }, [isProjectPortal]);
 
   const load = async () => {
     if (!projectId) {
@@ -330,8 +337,14 @@ const IvrAgentManagement: React.FC = () => {
   const th = styles.th;
   const td = styles.td;
 
+  // The portal already draws the DashboardLayout chrome around its routes;
+  // wrapping again there would nest a second sidebar/header.
+  const Shell: React.ElementType = isProjectPortal
+    ? React.Fragment
+    : DashboardLayout;
+
   return (
-    <DashboardLayout>
+    <Shell>
       <div style={{ ...styles.page, maxWidth: "none" }}>
         <PageHeader
           title="IVR Agents"
@@ -360,22 +373,26 @@ const IvrAgentManagement: React.FC = () => {
           </div>
         )}
 
-        {/* Project picker */}
+        {/* Project picker — hidden in the portal, where the URL fixes the project */}
         <div style={{ ...styles.card, display: "flex", gap: 12, alignItems: "center" }}>
-          <label style={styles.label}>Project</label>
-          <select
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            style={{ ...styles.ctrl, minWidth: 280 }}
-          >
-            <option value="">Select a project…</option>
-            {projects.map((p) => (
-              <option key={p._id} value={p._id}>
-                {p.name}
-                {p.code ? ` (${p.code})` : ""}
-              </option>
-            ))}
-          </select>
+          {!isProjectPortal && (
+            <>
+              <label style={styles.label}>Project</label>
+              <select
+                value={pickedProjectId}
+                onChange={(e) => setPickedProjectId(e.target.value)}
+                style={{ ...styles.ctrl, minWidth: 280 }}
+              >
+                <option value="">Select a project…</option>
+                {projects.map((p) => (
+                  <option key={p._id} value={p._id}>
+                    {p.name}
+                    {p.code ? ` (${p.code})` : ""}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           <span style={{ fontSize: 12, color: tokens.sub, marginLeft: "auto" }}>
             Buckets: {digits.map((d) => d.code).join(", ") || "—"}, other
           </span>
@@ -538,7 +555,9 @@ const IvrAgentManagement: React.FC = () => {
               {!projectId ? (
                 <tr>
                   <td style={{ ...td, color: tokens.muted }} colSpan={buckets.length + 5}>
-                    Pick a project to manage its IVR agents.
+                    {isProjectPortal
+                      ? "Loading this project's IVR agents..."
+                      : "Pick a project to manage its IVR agents."}
                   </td>
                 </tr>
               ) : agents.length === 0 ? (
@@ -711,7 +730,7 @@ const IvrAgentManagement: React.FC = () => {
           flash={flash}
         />
       )}
-    </DashboardLayout>
+    </Shell>
   );
 };
 

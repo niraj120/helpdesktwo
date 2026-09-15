@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import { CallIntake, RequesterType } from "../../models/CallIntake";
 import { Ticket } from "../../models/Ticket";
 import { IvrIngestLog } from "../../models/IvrIngestLog";
+import { Notification } from "../../models/Notification";
 import { User } from "../../models/User";
 import { Project } from "../../models/Project";
 import PsrTable from "../../models/psr/PsrTable";
@@ -167,6 +168,48 @@ async function matchCaller(
   };
 }
 
+/**
+ * Tell the agent a call has landed in their queue — a browser push and the
+ * live socket event, the same delivery the query desk uses. A missed call is
+ * already ticking against its call-back TAT, so it cannot wait for someone to
+ * open the inbox.
+ *
+ * Best-effort: a notification must never fail an intake.
+ */
+async function notifyCallAssignee(call: any) {
+  try {
+    if (!call?.assignedTo) return;
+    const who = call.callerName
+      ? `${call.callerName} (${call.callerMobile})`
+      : call.callerMobile || "unknown number";
+    const title =
+      call.callType === "missed" ? "Missed call to return" : "IVR call assigned";
+
+    await Notification.create({
+      recipientUserId: new mongoose.Types.ObjectId(String(call.assignedTo)),
+      projectId: call.projectId,
+      triggerType: "ivr_call_assigned",
+      entityType: "ivr_call",
+      entityId: call._id,
+      title,
+      body: `${who}${call.didLabel ? ` · ${call.didLabel}` : ""}`,
+      deepLinkUrl: `/service-requests?tab=ivr`,
+    } as any);
+
+    const { createNotification } = require("../../controllers/notificationController");
+    await createNotification({
+      userId: new mongoose.Types.ObjectId(String(call.assignedTo)),
+      projectId: call.projectId,
+      type: "info",
+      title,
+      message: `${who}${call.didLabel ? ` · ${call.didLabel}` : ""}`,
+      link: `/service-requests?tab=ivr`,
+    });
+  } catch (e: any) {
+    console.warn("[ivr] call notification failed:", e?.message || e);
+  }
+}
+
 export async function ingestCall(input: IngestCallInput) {
   const existing = await CallIntake.findOne({ externalId: input.externalId });
   if (existing) return existing; // idempotent
@@ -232,6 +275,8 @@ export async function ingestCall(input: IngestCallInput) {
       console.error("[ivr] answered-call assign failed:", e);
     }
   }
+
+  await notifyCallAssignee(call);
 
   // Keep open inboxes current — same event the webhook path emits.
   try {
@@ -431,6 +476,61 @@ export async function ingestSmartflowWebhook(input: {
     status: "received",
   });
 
+  // A call-back WE placed (Click-to-Call) comes back through this same
+  // webhook, carrying our correlation token. It is not a new inbound call: it
+  // belongs to the call being chased, and its recording/duration go on that
+  // attempt. Checked before anything else — before the inbound-shape checks
+  // below, which an outbound leg need not satisfy — so a call-back can never
+  // surface as a second row in the inbox or be round-robined as a missed call.
+  const customIdentifier = firstString(
+    payload.custom_identifier,
+    payload.customIdentifier,
+  );
+  const refId = firstString(payload.ref_id, payload.refId);
+  if (customIdentifier || refId) {
+    const providerStatus = s(payload.call_status);
+    let parent: any = null;
+    try {
+      parent = await correlateOutboundWebhook({
+        customIdentifier,
+        refId,
+        status:
+          normalizeCallType(providerStatus) === "missed" ? "missed" : "answered",
+        message: providerStatus,
+        externalId: firstString(payload.call_id, payload.uuid, payload.call_uuid),
+        recordingUrl: s(payload.recording_url),
+        durationSeconds: n(payload.duration) ?? n(payload.billsec),
+        answerStamp: dt(payload.answer_stamp),
+        endStamp: dt(payload.end_stamp),
+        providerCallStatus: providerStatus,
+      });
+    } catch (e) {
+      console.error("[ivr] outbound correlation failed:", e);
+    }
+    if (parent) {
+      log.status = "processed";
+      log.message = "outbound call-back attached to its call";
+      log.callIntakeId = parent._id as any;
+      await log.save();
+      try {
+        const { getIo } = require("../../socket/ioInstance");
+        const { emitIvrCallUpdate } = require("../../socket/socketHandlers");
+        const io = getIo();
+        if (io) {
+          emitIvrCallUpdate(io, String(parent.projectId), {
+            type: "call-updated",
+            call: parent.toObject ? parent.toObject() : parent,
+          });
+        }
+      } catch (e) {
+        console.error("[ivr] socket emit failed:", e);
+      }
+      return { ignored: false, call: parent, logId: log._id };
+    }
+    // Carries a token but matches none of our attempts — not ours; fall
+    // through and treat it as an ordinary inbound call.
+  }
+
   const callToNumber = resolveCallToNumber(payload);
   if (!callToNumber) {
     log.status = "ignored";
@@ -508,27 +608,6 @@ export async function ingestSmartflowWebhook(input: {
   log.callIntakeId = call._id as any;
   await log.save();
 
-  // If this webhook is the outcome of one of OUR Click-to-Call originates,
-  // stitch its terminal status back onto the CallIntake that spawned it. TATA
-  // echoes our correlation token as custom_identifier; ref_id is the fallback.
-  const customIdentifier = firstString(
-    payload.custom_identifier,
-    payload.customIdentifier,
-  );
-  const refId = firstString(payload.ref_id, payload.refId);
-  if (customIdentifier || refId) {
-    try {
-      await correlateOutboundWebhook({
-        customIdentifier,
-        refId,
-        status: call.callType === "missed" ? "missed" : "answered",
-        message: providerCallStatus,
-      });
-    } catch (e) {
-      console.error("[ivr] outbound correlation failed:", e);
-    }
-  }
-
   // Missed calls are round-robined to IVR agents (once, on first sight).
   if (call.callType === "missed" && !call.assignmentStatus) {
     try {
@@ -551,6 +630,8 @@ export async function ingestSmartflowWebhook(input: {
       console.error("[ivr] answered-call assign failed:", e);
     }
   }
+  await notifyCallAssignee(call);
+
   // Tell any open IVR inbox about the call so the list updates itself rather
   // than waiting for someone to hit refresh. Emitted after assignment so the
   // row arrives with its owner and first call-back step already set.
@@ -639,6 +720,10 @@ export async function listCalls(params: ListCallParams) {
   }
   const [items, total] = await Promise.all([
     CallIntake.find(q)
+      // Raw provider payloads are for debugging a single call, never the list.
+      .select("-rawPayload -lastPayload")
+      // Who owns the call — the inbox shows the agent's name on every row.
+      .populate("assignedTo", "firstName lastName email")
       .sort({ receivedAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -649,7 +734,9 @@ export async function listCalls(params: ListCallParams) {
 }
 
 export async function getCall(id: string) {
-  const call = await CallIntake.findById(id).lean();
+  const call = await CallIntake.findById(id)
+    .populate("assignedTo", "firstName lastName email")
+    .lean();
   if (!call) throw new SrError("Call not found", 404);
   return call;
 }
@@ -876,6 +963,9 @@ export async function buildCallHistoryEntries(
     if (o.agentUserId) ids.add(String(o.agentUserId));
     if (o.initiatedBy) ids.add(String(o.initiatedBy));
   }
+  for (const c of call.comments || []) {
+    if (c.createdBy && !c.createdByName) ids.add(String(c.createdBy));
+  }
   const users = ids.size
     ? await User.find({ _id: { $in: [...ids].map((i) => oid(i)) } })
         .select("firstName lastName email")
@@ -932,13 +1022,27 @@ export async function buildCallHistoryEntries(
 
   // 2. Outbound call-back attempts (Click-to-Call).
   for (const o of call.outboundCalls || []) {
+    const secs = Number(o.durationSeconds) || 0;
     push(
-      `Call-back placed by ${nameOf(o.initiatedBy || o.agentUserId)} at ${fmt(
+      `Call-back placed by ${o.agentName || nameOf(o.initiatedBy || o.agentUserId)} at ${fmt(
         o.initiatedAt,
       )} to ${o.destinationNumber || call.callerMobile} — ${String(
         o.status || "initiated",
-      ).toUpperCase()}${o.message ? ` (${o.message})` : ""}.`,
+      ).toUpperCase()}${o.message ? ` (${o.message})` : ""}` +
+        (secs ? `, ${Math.floor(secs / 60)}m ${secs % 60}s` : "") +
+        (o.recordingUrl ? `. Recording: ${o.recordingUrl}` : "."),
       o.initiatedAt || new Date(),
+    );
+  }
+
+  // Agent notes, as written.
+  for (const c of call.comments || []) {
+    push(
+      `Note by ${c.createdByName || nameOf(c.createdBy)}: "${c.text}"` +
+        (c.callbackRequestedAt
+          ? ` — caller asked for a call-back at ${fmt(c.callbackRequestedAt)}.`
+          : ""),
+      c.createdAt || new Date(),
     );
   }
 
@@ -966,6 +1070,7 @@ export async function buildCallHistoryEntries(
   push(
     `Converted to a service request from the IVR inbox. ` +
       `${(call.outboundCalls || []).length} call-back attempt(s), ` +
+      `${(call.comments || []).length} note(s), ` +
       `${(call.followUps || []).length} follow-up(s) logged` +
       (pending ? `, ${pending} still pending.` : "."),
     new Date(),
@@ -1055,7 +1160,7 @@ async function resolveCallbackDeadline(projectId: any, tatHours: number) {
   return { startsAt, dueAt, urgentAt, usedCalendar: true };
 }
 
-function syncNextCallback(call: any) {
+export function syncNextCallback(call: any) {
   const pending = (call.followUps || [])
     .filter((f: any) => f.status === "pending")
     .filter((f: any) => !Number.isNaN(new Date(f.scheduledAt).getTime()))
@@ -1239,6 +1344,10 @@ export async function addCallFollowUp(
   }
 
   const deadline = await resolveCallbackDeadline(call.projectId, tier.tatHours);
+  // Only one WIP is ever live. A new step replaces whatever was still owed —
+  // stacking them left several "pending" steps on one call, each ticking and
+  // each able to go overdue for a caller who is only being chased once.
+  cancelPendingCallbacks(call, "Superseded by a new call-back step");
   call.followUps = call.followUps || [];
   call.followUps.push({
     scheduledAt: deadline.dueAt,
@@ -1317,6 +1426,249 @@ export async function updateCallFollowUp(
     }
   }
   syncNextCallback(call);
+  await call.save();
+  return call;
+}
+
+/**
+ * The WIP level a call is currently on: the live (pending) step, else the last
+ * step that was worked (done). Cancelled steps are ignored. 0 = never on one.
+ */
+export function currentWipLevel(followUps: any[]): number {
+  const at = (f: any) => new Date(f.createdAt || f.scheduledAt || 0).getTime();
+  const pick = (status: string) =>
+    followUps
+      .filter((f) => f.status === status && Number.isFinite(Number(f.wipLevel)))
+      .sort((a, b) => at(b) - at(a))[0];
+  const step = pick("pending") || pick("done");
+  return step ? Number(step.wipLevel) : 0;
+}
+
+export type AttemptOutcome = "answered" | "not_connected" | "callback_requested";
+
+const ATTEMPT_LABEL: Record<AttemptOutcome, string> = {
+  answered: "Answered",
+  not_connected: "Not connected",
+  callback_requested: "Caller asked to call back",
+};
+
+/**
+ * Record how a call to the caller went, and move the WIP ladder accordingly.
+ * This is the one place the ladder advances once the first step is on.
+ *
+ *   answered            → the live WIP is done; no new step. The call stays
+ *                         open for the agent to convert or resolve.
+ *   not_connected       → the live WIP is closed as "no answer" and the NEXT
+ *                         step is applied (WIP 1 → WIP 2 …), TAT from the ladder.
+ *   callback_requested  → same as not_connected — the next step still applies.
+ *                         The time the caller asked for is kept on the note as
+ *                         a detail for whoever calls; it does not move the TAT.
+ *
+ * At most one WIP is live afterwards. Past the last step the last step repeats.
+ */
+export async function logCallAttempt(
+  id: string,
+  input: {
+    outcome?: string;
+    note?: string;
+    callbackRequestedAt?: string | Date;
+    actorUserId?: string;
+  },
+) {
+  const outcome = input.outcome as AttemptOutcome;
+  if (!ATTEMPT_LABEL[outcome]) {
+    throw new SrError(
+      "Pick how the call went: answered, not connected, or asked to call back.",
+      400,
+    );
+  }
+
+  let requestedAt: Date | undefined;
+  if (input.callbackRequestedAt) {
+    requestedAt = new Date(input.callbackRequestedAt);
+    if (Number.isNaN(requestedAt.getTime()))
+      throw new SrError("The requested call-back time is not a valid date.", 400);
+  }
+  if (outcome === "callback_requested" && !requestedAt) {
+    throw new SrError("Add the time the caller asked to be called at.", 400);
+  }
+  const note = String(input.note || "").trim();
+  if (note.length > 2000)
+    throw new SrError("Notes are limited to 2000 characters.", 400);
+
+  const call = await CallIntake.findById(id);
+  if (!call) throw new SrError("Call not found", 404);
+  if (call.callStatus === "converted" || call.callStatus === "junk") {
+    throw new SrError("This call is already closed out.", 400);
+  }
+
+  const actor =
+    input.actorUserId && mongoose.Types.ObjectId.isValid(input.actorUserId)
+      ? oid(input.actorUserId)
+      : undefined;
+  const now = new Date();
+
+  // The step this attempt answers: the live WIP (the latest logged, if older
+  // data still has several). With none live, the last step that actually ran —
+  // cancelled/superseded steps never count, or a correction or a clean-up
+  // would push the caller further up the ladder than they have been chased.
+  const currentLevel = currentWipLevel(call.followUps || []);
+
+  // The live WIP (latest logged, if older data still stacks several) and the
+  // ladder it sits on.
+  const at = (f: any) => new Date(f.createdAt || f.scheduledAt || 0).getTime();
+  const pendingSteps = ((call.followUps || []) as any[])
+    .filter((f) => f.status === "pending")
+    .sort((x, y) => at(y) - at(x));
+  const live = pendingSteps[0];
+  const ladder =
+    outcome === "answered"
+      ? { enabled: false, tiers: [] as { level: number; label: string; tatHours: number }[] }
+      : await getCallbackTiers(String(call.projectId));
+  const lastLevel = ladder.tiers.length
+    ? ladder.tiers[ladder.tiers.length - 1].level
+    : 0;
+
+  // Already on the last step: its clock keeps running. Re-applying it would
+  // hand out a fresh TAT on every unanswered attempt, so a caller could be
+  // "chased" for ever without the step ever going overdue.
+  const holdLive =
+    outcome !== "answered" &&
+    ladder.enabled &&
+    ladder.tiers.length > 0 &&
+    !!live &&
+    Number(live.wipLevel) >= lastLevel;
+
+  // 1. Close out what this call answers — every pending step, except the live
+  //    one when it is being held on the last step.
+  const followOutcome =
+    outcome === "answered"
+      ? "answered"
+      : outcome === "not_connected"
+        ? "no_answer"
+        : "callback_requested";
+  let closed = 0;
+  for (const f of pendingSteps) {
+    if (holdLive && f === live) continue;
+    f.status = "done";
+    f.outcome = followOutcome;
+    f.completedAt = now;
+    f.completedBy = actor;
+    closed++;
+  }
+
+  // 2. Not reached, and not yet on the last step → the next step up.
+  let applied: { level: number; label: string; tatHours: number } | null = null;
+  if (outcome !== "answered" && !holdLive && ladder.enabled && ladder.tiers.length) {
+    const tier =
+      ladder.tiers.find((t) => t.level === currentLevel + 1) ||
+      ladder.tiers[ladder.tiers.length - 1];
+    const deadline = await resolveCallbackDeadline(call.projectId, tier.tatHours);
+    call.followUps = call.followUps || [];
+    call.followUps.push({
+      scheduledAt: deadline.dueAt,
+      tatStartsAt: deadline.startsAt,
+      urgentAt: deadline.urgentAt,
+      wipLevel: tier.level,
+      wipLabel: tier.label,
+      tatHours: tier.tatHours,
+      note: `Applied after: ${ATTEMPT_LABEL[outcome]}`,
+      status: "pending",
+      createdBy: actor,
+      createdAt: now,
+    } as any);
+    applied = tier;
+  }
+  const kept = holdLive
+    ? {
+        level: Number(live.wipLevel),
+        label: String(live.wipLabel || `WIP ${live.wipLevel}`),
+        dueAt: live.scheduledAt as Date,
+      }
+    : null;
+
+  // 3. The agent's note. Written when there is something to say, or when no
+  //    WIP was open to carry the outcome — so every attempt leaves a trace.
+  // Held on the last step, nothing else records this attempt — the note must.
+  if (note || requestedAt || !closed || holdLive) {
+    let createdByName: string | undefined;
+    if (actor) {
+      const u: any = await User.findById(actor)
+        .select("firstName lastName email")
+        .lean();
+      createdByName =
+        [u?.firstName, u?.lastName].filter(Boolean).join(" ") ||
+        u?.email ||
+        undefined;
+    }
+    call.comments = call.comments || [];
+    call.comments.push({
+      text: note ? `${ATTEMPT_LABEL[outcome]} — ${note}` : ATTEMPT_LABEL[outcome],
+      callbackRequestedAt: requestedAt,
+      createdBy: actor,
+      createdByName,
+      createdAt: now,
+    } as any);
+  }
+
+  syncNextCallback(call);
+  await call.save();
+  return { call, applied, kept };
+}
+
+/**
+ * Add an agent note to a call. Append-only — a note records what the caller
+ * said, so none is ever edited or replaced.
+ *
+ * `callbackRequestedAt` is the time the caller asked for ("call me at 2 PM").
+ * It is kept as the caller's request, shown to whoever picks the call up
+ * next; it does not move the call-back ladder's TAT, which stays the
+ * manager's policy.
+ */
+export async function addCallComment(
+  id: string,
+  input: {
+    text?: string;
+    callbackRequestedAt?: string | Date;
+    actorUserId?: string;
+  },
+) {
+  const text = String(input.text || "").trim();
+  if (!text) throw new SrError("Write a note first.", 400);
+  if (text.length > 2000)
+    throw new SrError("Notes are limited to 2000 characters.", 400);
+
+  let requestedAt: Date | undefined;
+  if (input.callbackRequestedAt) {
+    requestedAt = new Date(input.callbackRequestedAt);
+    if (Number.isNaN(requestedAt.getTime()))
+      throw new SrError("The requested call-back time is not a valid date.", 400);
+  }
+
+  const call = await CallIntake.findById(id);
+  if (!call) throw new SrError("Call not found", 404);
+
+  let createdByName: string | undefined;
+  let createdBy: mongoose.Types.ObjectId | undefined;
+  if (input.actorUserId && mongoose.Types.ObjectId.isValid(input.actorUserId)) {
+    createdBy = oid(input.actorUserId);
+    const u: any = await User.findById(createdBy)
+      .select("firstName lastName email")
+      .lean();
+    createdByName =
+      [u?.firstName, u?.lastName].filter(Boolean).join(" ") ||
+      u?.email ||
+      undefined;
+  }
+
+  call.comments = call.comments || [];
+  call.comments.push({
+    text,
+    callbackRequestedAt: requestedAt,
+    createdBy,
+    createdByName,
+    createdAt: new Date(),
+  } as any);
   await call.save();
   return call;
 }

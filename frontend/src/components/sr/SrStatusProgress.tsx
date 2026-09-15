@@ -5,6 +5,11 @@ import {
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/solid";
 import { useProjectStatuses } from "../../hooks/useProjectStatuses";
+import {
+  SR_STATUS,
+  SR_MAIN_PATH,
+  SR_REOPEN_PATH,
+} from "../../constants/srWorkflow";
 import { SR } from "../../utils/srTheme";
 
 /**
@@ -54,38 +59,90 @@ const SrStatusProgress: React.FC<{
   // Statuses come from the project's status master (SLA & Escalation), already
   // filtered to active and sorted by displayOrder by the API.
   const { statuses } = useProjectStatuses(projectId);
-  const visible: Step[] = useMemo(
-    () =>
-      statuses.map((s) => ({
-        code: s.code,
-        label: s.label,
-        color: s.color,
-        isClosed: s.isClosed,
-      })),
+  const status = Number(ticket?.status);
+  const reopens = Number(ticket?.reopen?.count ?? 0);
+  const byCode = useMemo(
+    () => new Map(statuses.map((st) => [st.code, st])),
     [statuses],
   );
+  const toStep = (code: number): Step => {
+    const st = byCode.get(code)!;
+    return { code, label: st.label, color: st.color, isClosed: st.isClosed };
+  };
 
-  const status = Number(ticket?.status);
+  // The bar follows the request's actual path and only ever moves forward. A
+  // re-open is a second leg that continues after the first closure (e.g.
+  // Closed → Re-open → Re-Opened WIP → Closed) instead of jumping back to an
+  // earlier step, and re-open steps are not drawn until one happens.
+  //
+  // Which statuses form that leg, and which are drawn at all, is set on each
+  // status in Query Config ("Part of the re-open cycle", "Show as a step of the
+  // progress bar"). A project that has not set them falls back to the SR
+  // module's built-in path.
+  const configured = statuses.some((st) => st.isReopen);
+  const current0 = byCode.get(status);
+  const reopened =
+    reopens > 0 ||
+    (configured
+      ? !!current0?.isReopen
+      : status === SR_STATUS.REOPEN || status === SR_STATUS.REOPEN_WIP);
+
+  const { visible, offPath } = useMemo(() => {
+    let main: number[];
+    let reopenLeg: number[];
+    if (configured) {
+      const shown = statuses.filter((st) => st.showInProgress);
+      main = shown.filter((st) => !st.isReopen).map((st) => st.code);
+      const closing = shown.find((st) => st.isClosed && !st.isReopen);
+      reopenLeg = [
+        ...shown.filter((st) => st.isReopen).map((st) => st.code),
+        ...(closing ? [closing.code] : []),
+      ];
+    } else {
+      main = SR_MAIN_PATH.filter((c) => byCode.has(c));
+      reopenLeg = SR_REOPEN_PATH.filter((c) => byCode.has(c));
+    }
+    const path = reopened ? [...main, ...reopenLeg] : main;
+    // The current status is not a drawn step (e.g. Cancelled): show the path
+    // with no active step and name the status in the header.
+    return {
+      visible: path.map(toStep),
+      offPath: !path.includes(status),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [byCode, statuses, reopened, status, configured]);
+
+  const cancelled = offPath && !!current0?.isClosed;
   const total = visible.length;
 
   // No status master for this project → nothing to draw. Never fall back to a
   // built-in ladder; the master is the only source.
   if (!total) return null;
 
-  const currentIndex = Math.max(
-    0,
-    visible.findIndex((s) => Number(s.code) === status),
-  );
-  const current = visible[currentIndex];
+  // A closing step appears twice on a re-opened request; the final closure is
+  // the later one. Off the path, no step is active.
+  const currentIndex = offPath
+    ? -1
+    : reopened && current0?.isClosed
+      ? visible.map((st) => st.code).lastIndexOf(status)
+      : visible.findIndex((st) => Number(st.code) === status);
+  const current = currentIndex >= 0 ? visible[currentIndex] : undefined;
+  const statusLabel = byCode.get(status)?.label || String(ticket?.status ?? "");
 
   const breached = !!(
     ticket?.roleLevelSLA?.breachedAt || ticket?.ticketLevelSLA?.breachedAt
   );
   // "Closed" is whatever the master marks as closing the ticket.
-  const closed = !!ticket?.closedAt || !!current?.isClosed;
+  // From the current step — closedAt survives a re-open, so it cannot say
+  // whether the request is closed now.
+  const closed = cancelled || !!current?.isClosed;
   const failed = breached && !closed;
 
-  const pct = total > 1 ? Math.round((currentIndex / (total - 1)) * 100) : 100;
+  const pct = currentIndex < 0
+    ? 0
+    : total > 1
+      ? Math.round((currentIndex / (total - 1)) * 100)
+      : 100;
   // Colours follow the master too, so a recoloured status recolours the bar.
   const headColor = failed
     ? RED
@@ -144,7 +201,23 @@ const SrStatusProgress: React.FC<{
             }}
           >
             {failed && <ExclamationTriangleIcon style={{ width: 18, height: 18 }} />}
-            {current?.label || status}
+            {current?.label || statusLabel}
+            {reopens > 0 && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: "#b45309",
+                  background: "#fffbeb",
+                  border: "1px solid #fde68a",
+                  borderRadius: 9999,
+                  padding: "2px 8px",
+                }}
+                title="Times this request has been re-opened"
+              >
+                Re-opened ×{reopens}
+              </span>
+            )}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
@@ -159,7 +232,13 @@ const SrStatusProgress: React.FC<{
               background: failed ? RED_SOFT : "#ecfdf5",
             }}
           >
-            {failed ? "Needs attention" : closed ? "Complete" : `${pct}% complete`}
+            {cancelled
+              ? "Cancelled"
+              : failed
+                ? "Needs attention"
+                : closed
+                  ? "Complete"
+                  : `${pct}% complete`}
           </span>
           <ChevronDownIcon
             style={{
@@ -237,7 +316,7 @@ const SrStatusProgress: React.FC<{
 
             return (
               <div
-                key={step.code}
+                key={`${step.code}-${i}`}
                 style={{
                   display: "flex",
                   flexDirection: "column",

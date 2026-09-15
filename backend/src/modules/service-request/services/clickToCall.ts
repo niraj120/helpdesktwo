@@ -55,6 +55,8 @@ export async function initiateClickToCall(
     .select("tataAgentNumber firstName lastName")
     .lean();
   const agentNumber = cleanNumber(agent?.tataAgentNumber);
+  const agentName =
+    [agent?.firstName, agent?.lastName].filter(Boolean).join(" ") || undefined;
   if (!agentNumber)
     throw new SrError(
       "Your SmartFlo agent number is not configured. Set it on your user profile before placing calls.",
@@ -102,6 +104,7 @@ export async function initiateClickToCall(
       customIdentifier,
       agentUserId: new mongoose.Types.ObjectId(input.actorUserId),
       agentNumber,
+      agentName,
       callerId,
       destinationNumber: destination,
       status: "initiated",
@@ -127,6 +130,7 @@ export async function initiateClickToCall(
         customIdentifier,
         agentUserId: new mongoose.Types.ObjectId(input.actorUserId),
         agentNumber,
+        agentName,
         callerId,
         destinationNumber: destination,
         status: "failed",
@@ -150,17 +154,30 @@ export async function initiateClickToCall(
 
 /**
  * Stitch a SmartFlo webhook back to the outbound attempt that spawned it, using
- * the echoed custom_identifier (or ref_id). Updates the matching outboundCalls
- * entry's terminal status. Best-effort — returns true if a match was updated.
+ * the echoed custom_identifier (or ref_id).
+ *
+ * Everything the provider reports about the call-back — outcome, duration,
+ * recording — is written onto THAT attempt. A caller chased three times ends
+ * up with one inbound recording plus one per call-back, side by side on the
+ * same call; nothing overwrites anything.
+ *
+ * Returns the CallIntake the attempt belongs to, or null when the webhook is
+ * not one of ours (so the caller can treat it as a fresh inbound call).
  */
 export async function correlateOutboundWebhook(params: {
   customIdentifier?: string;
   refId?: string;
   status: "answered" | "missed" | "failed";
   message?: string;
-}): Promise<boolean> {
+  externalId?: string;
+  recordingUrl?: string;
+  durationSeconds?: number;
+  answerStamp?: Date;
+  endStamp?: Date;
+  providerCallStatus?: string;
+}) {
   const { customIdentifier, refId, status } = params;
-  if (!customIdentifier && !refId) return false;
+  if (!customIdentifier && !refId) return null;
 
   const or: any[] = [];
   if (customIdentifier)
@@ -168,20 +185,32 @@ export async function correlateOutboundWebhook(params: {
   if (refId) or.push({ "outboundCalls.refId": refId });
 
   const call = await CallIntake.findOne({ $or: or });
-  if (!call || !call.outboundCalls) return false;
+  if (!call || !call.outboundCalls) return null;
 
   const entry = call.outboundCalls.find(
     (o) =>
       (customIdentifier && o.customIdentifier === customIdentifier) ||
       (refId && o.refId === refId),
   );
-  if (!entry) return false;
+  if (!entry) return null;
 
-  entry.status = status;
+  // The provider can send more than one webhook for a call (per leg, or a late
+  // CDR). Once a call has connected it stays connected, and a later payload
+  // that lacks a field must not blank what an earlier one supplied.
+  if (entry.status !== "answered") entry.status = status;
   entry.completedAt = new Date();
   if (params.message) entry.message = params.message;
-  call.lastOutboundStatus = status;
+  if (params.externalId) entry.externalId = params.externalId;
+  if (params.recordingUrl) entry.recordingUrl = params.recordingUrl;
+  if (params.durationSeconds !== undefined)
+    entry.durationSeconds = params.durationSeconds;
+  if (params.answerStamp) entry.answerStamp = params.answerStamp;
+  if (params.endStamp) entry.endStamp = params.endStamp;
+  if (params.providerCallStatus)
+    entry.providerCallStatus = params.providerCallStatus;
+
+  call.lastOutboundStatus = entry.status;
   call.lastOutboundAt = new Date();
   await call.save();
-  return true;
+  return call;
 }

@@ -42,7 +42,9 @@ import TicketAssignment from "./TicketAssignment";
 import AgentTicketDetail from "./AgentTicketDetail";
 import AuthenticatedStudentSubmitTicket from "./AuthenticatedStudentSubmitTicket";
 import ServiceRequestsHub from "./service-request/ServiceRequestsHub";
+import ServiceRequestSettingsHub from "./service-request/ServiceRequestSettingsHub";
 import ServiceRequestDetail from "./service-request/ServiceRequestDetail";
+import IvrAgentManagement from "./IvrAgentManagement";
 import { API_CONFIG } from "../config/constants";
 
 interface ProjectBranding {
@@ -1425,7 +1427,9 @@ const ProjectPortalDashboard = () => {
       (p) =>
         p.startsWith("SR_") ||
         p.startsWith("EMAIL_TRIAGE_") ||
-        p.startsWith("IVR_TRIAGE_"),
+        // Covers IVR_TRIAGE_*, IVR_AGENT_MANAGE, IVR_TAT_CONFIG and the rest —
+        // every IVR capability lives inside the service request module.
+        p.startsWith("IVR_"),
     );
 
     return {
@@ -1636,6 +1640,30 @@ const ProjectPortalDashboard = () => {
               ]}
             >
               <ServiceRequestDetail />
+            </ProtectedRoute>
+          }
+        />
+        {/* Service Request settings — scoped to this portal's project */}
+        <Route
+          path="/sr-settings"
+          element={
+            <ProtectedRoute
+              permission={[
+                PERMISSIONS.SR_CONFIG_MANAGE,
+                PERMISSIONS.USER_ASSIGN_ROLE,
+                PERMISSIONS.USER_IMPORT,
+              ]}
+            >
+              <ServiceRequestSettingsHub />
+            </ProtectedRoute>
+          }
+        />
+        {/* IVR Agent Management — digit mapping, round-robin, leaves */}
+        <Route
+          path="/ivr-agents"
+          element={
+            <ProtectedRoute permission={PERMISSIONS.IVR_AGENT_MANAGE}>
+              <IvrAgentManagement />
             </ProtectedRoute>
           }
         />

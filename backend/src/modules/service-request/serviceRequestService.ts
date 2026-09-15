@@ -29,6 +29,12 @@ import {
   DuplicateQuery,
 } from "./srDuplicateDetection";
 import { resolveSrReopenBlock } from "./srMasterData";
+import {
+  checkStatusChange,
+  loadProjectStatuses,
+  planOnEnter,
+  StatusRuleError,
+} from "../../services/statusRules";
 import { renderTemplate } from "./srConditionEngine";
 import { SrNotificationTemplate } from "../../models/SrNotificationTemplate";
 
@@ -42,6 +48,25 @@ export class SrError extends Error {
 }
 
 const oid = (id: string) => new mongoose.Types.ObjectId(id);
+
+/**
+ * Whether a status asks for a remark is the project's call, made once in the
+ * status master (SLA & Escalation → "Require closing remark"). The SR actions
+ * honour the same flag the ticket screens do, so switching it on for Resolved
+ * or Closed covers every path — nothing about which statuses need one is
+ * decided here.
+ */
+async function assertStatusRemark(ticket: any, toStatus: number, remark?: string) {
+  const { Status } = require("../../models/Status");
+  const projectId = ticket?.metadata?.projectId || ticket?.project;
+  if (!projectId) return;
+  const doc: any = await Status.findOne({ projectId, code: toStatus })
+    .select("name requireClosingRemark")
+    .lean();
+  if (doc?.requireClosingRemark && !String(remark || "").trim()) {
+    throw new SrError(`A remark is required before applying "${doc.name}".`, 400);
+  }
+}
 
 async function loadSr(ticketId: string) {
   const ticket = await Ticket.findById(ticketId);
@@ -63,8 +88,9 @@ function recordChange(
   ticket.changeHistory = ticket.changeHistory || [];
   ticket.changeHistory.push({
     field,
-    oldValue: String(oldValue ?? ""),
-    newValue: String(newValue ?? ""),
+    // Both are required by the schema; "None" matches the ticket controller.
+    oldValue: String(oldValue ?? "") || "None",
+    newValue: String(newValue ?? "") || "None",
     changedBy: oid(actorId),
     changedAt: new Date(),
     changeType,
@@ -148,6 +174,36 @@ async function resolveReopenAssignee(
   return null;
 }
 
+/**
+ * Deliver a notification the way the query desk does: a browser push and the
+ * live socket event. The SR module stores its own notification rows, so this
+ * only handles delivery — without it an SR event was silent until the
+ * notifications list was next opened.
+ */
+async function deliverNotification(opts: {
+  userId: any;
+  projectId: any;
+  title: string;
+  body?: string;
+  link?: string;
+  ticketId?: any;
+}) {
+  try {
+    const { createNotification } = require("../../controllers/notificationController");
+    await createNotification({
+      userId: new mongoose.Types.ObjectId(String(opts.userId)),
+      projectId: opts.projectId,
+      type: "info",
+      title: opts.title,
+      message: opts.body || "",
+      ticketId: opts.ticketId,
+      link: opts.link,
+    });
+  } catch (e: any) {
+    console.warn("[sr] notification delivery failed:", e?.message || e);
+  }
+}
+
 // ── CC / assignee notifications ──────────────────────────────────────────────
 const EVENT_TRIGGER: Record<string, string> = {
   created: "sr_task_assigned",
@@ -223,7 +279,22 @@ export async function notifySrWatchers(
       body,
       deepLinkUrl: `/service-requests/${ticket._id}`,
     }));
-    if (docs.length) await Notification.insertMany(docs as any);
+    if (docs.length) {
+      await Notification.insertMany(docs as any);
+      // Push + live socket for each recipient, same as a query event.
+      await Promise.allSettled(
+        docs.map((d) =>
+          deliverNotification({
+            userId: d.recipientUserId,
+            projectId: ticket.project,
+            title,
+            body,
+            link: d.deepLinkUrl,
+            ticketId: ticket._id,
+          }),
+        ),
+      );
+    }
   } catch (e) {
     console.error("[sr] notify error:", e);
   }
@@ -235,9 +306,106 @@ export interface ChangeStatusOpts {
   committedDate?: string | Date;
   comments?: string;
   displayToParent?: boolean;
+  /**
+   * The acting user's role/permissions, for the per-status permission rule.
+   * Omit for a system-driven move (not subject to that rule).
+   */
+  user?: { roleCode?: string; permissions?: any[] } | null;
 }
 
-/** Open↔WIP↔Resolved transitions. Closed/Re-open use their dedicated actions. */
+/**
+ * The project's statuses, and whether the request's current status has SR
+ * rules configured (Query Config → Ticket Statuses). Configured → the
+ * configuration decides every move; not configured → the built-in SR
+ * lifecycle below, exactly as before.
+ */
+async function srStatusConfig(ticket: any) {
+  const statuses: any[] = await loadProjectStatuses(
+    (ticket as any).metadata?.projectId || ticket.project,
+  );
+  const current = statuses.find((s) => Number(s.code) === Number(ticket.status));
+  return { statuses, configured: !!current?.rules?.sr };
+}
+
+const toSrError = (e: any) =>
+  e instanceof StatusRuleError ? new SrError(e.message, e.status) : e;
+
+/** Record a WIP commitment, validated against the project's WIP date rules. */
+async function applyWipCommitment(ticket: any, opts: ChangeStatusOpts, actorId: string) {
+  const committed = opts.committedDate ? new Date(opts.committedDate) : null;
+  const cfg = await getProjectSrConfig(ticket.project);
+  const rev = ticket.wip?.revisionCount ?? 0;
+  const v = validateWipCommittedDate(committed as Date, rev, new Date(), cfg);
+  if (!v.ok) throw new SrError(v.error!, 400);
+
+  const wip = (ticket.wip = ticket.wip || {});
+  wip.committedDate = committed!;
+  wip.revisionCount = rev + 1;
+  wip.reminderSentAt = undefined;
+  wip.history = wip.history || [];
+  wip.history.push({
+    committedDate: committed!,
+    setBy: oid(actorId),
+    setAt: new Date(),
+    reason: opts.comments,
+  });
+}
+
+const reopenRoutingFor = (ticket: any) => () =>
+  resolveReopenAssignee(ticket.project, ticket.category, (ticket as any).metadata?.centerId);
+
+/** A status move decided entirely by the configured SR rules. */
+async function moveByConfig(
+  ticket: any,
+  toStatus: number,
+  actorId: string,
+  opts: ChangeStatusOpts & { statuses: any[]; followUpText?: string },
+) {
+  let check: Awaited<ReturnType<typeof checkStatusChange>>;
+  try {
+    check = await checkStatusChange({
+      ticket,
+      toCode: toStatus,
+      remark: opts.comments,
+      committedDate: opts.committedDate,
+      user: opts.user ?? null,
+      statuses: opts.statuses,
+    });
+  } catch (e) {
+    throw toSrError(e);
+  }
+
+  if (check.to.requireCommittedDate) await applyWipCommitment(ticket, opts, actorId);
+
+  const plan = await planOnEnter(ticket, check, actorId, reopenRoutingFor(ticket));
+  if (plan.reopen) ticket.reopen = plan.reopen;
+  if (plan.clearClosedAt) ticket.closedAt = undefined;
+  else if (check.to.isClosed) ticket.closedAt = new Date();
+  if (plan.assignedTo) ticket.assignedTo = plan.assignedTo;
+  if (toStatus === SR_STATUS.RESOLVED && !ticket.resolvedAt) ticket.resolvedAt = new Date();
+
+  recordChange(ticket, "status", ticket.status, toStatus, actorId);
+  ticket.status = toStatus;
+  addFollowUp(
+    ticket,
+    opts.followUpText ?? opts.comments ?? "",
+    actorId,
+    !!opts.displayToParent || !!check.to.isClosed,
+  );
+  await ticket.save();
+  await notifySrWatchers(
+    ticket,
+    check.isReopenMove ? "reopened" : check.to.isClosed ? "closed" : "status_change",
+    actorId,
+  );
+  return ticket;
+}
+
+/**
+ * Change an SR's status. With SR rules configured this covers every move but
+ * Cancel (which records a reason and replacement); otherwise Open↔WIP↔Resolved,
+ * with Closed/Re-open on their dedicated actions.
+ */
 export async function changeSrStatus(
   ticketId: string,
   toStatus: number,
@@ -247,6 +415,18 @@ export async function changeSrStatus(
   const ticket = await loadSr(ticketId);
   const from = ticket.status;
 
+  const { statuses, configured } = await srStatusConfig(ticket);
+  if (configured) {
+    if (toStatus === SR_STATUS.CANCEL) {
+      throw new SrError(
+        "Use Cancel SR — it records the reason and any replacement request.",
+        400,
+      );
+    }
+    return moveByConfig(ticket, toStatus, actorId, { ...opts, statuses });
+  }
+
+  // ── Built-in lifecycle (no SR rules configured for this status) ──
   if (toStatus === SR_STATUS.CLOSED || toStatus === SR_STATUS.REOPEN) {
     throw new SrError(
       "Use the dedicated close / re-open action for this transition.",
@@ -258,31 +438,9 @@ export async function changeSrStatus(
   if (!transition) {
     throw new SrError(`Illegal status transition (${from} → ${toStatus}).`, 400);
   }
+  await assertStatusRemark(ticket, toStatus, opts.comments);
 
-  if (transition.committedDateRequired) {
-    const committed = opts.committedDate ? new Date(opts.committedDate) : null;
-    const cfg = await getProjectSrConfig(ticket.project);
-    const rev = ticket.wip?.revisionCount ?? 0;
-    const v = validateWipCommittedDate(
-      committed as Date,
-      rev,
-      new Date(),
-      cfg,
-    );
-    if (!v.ok) throw new SrError(v.error!, 400);
-
-    const wip = (ticket.wip = ticket.wip || {});
-    wip.committedDate = committed!;
-    wip.revisionCount = rev + 1;
-    wip.reminderSentAt = undefined;
-    wip.history = wip.history || [];
-    wip.history.push({
-      committedDate: committed!,
-      setBy: oid(actorId),
-      setAt: new Date(),
-      reason: opts.comments,
-    });
-  }
+  if (transition.committedDateRequired) await applyWipCommitment(ticket, opts, actorId);
 
   if (toStatus === SR_STATUS.RESOLVED && !ticket.resolvedAt) {
     ticket.resolvedAt = new Date();
@@ -296,17 +454,29 @@ export async function changeSrStatus(
   return ticket;
 }
 
-/** Resolved → Closed by closure-access (school/SSD/RE-Cell/VP/Principal). */
+/** Close an SR (Resolved → Closed on the built-in lifecycle). */
 export async function closeSr(
   ticketId: string,
   actorId: string,
   comments?: string,
+  user?: ChangeStatusOpts["user"],
 ) {
   const ticket = await loadSr(ticketId);
+  const { statuses, configured } = await srStatusConfig(ticket);
+  if (configured) {
+    return moveByConfig(ticket, SR_STATUS.CLOSED, actorId, {
+      comments,
+      user,
+      displayToParent: true,
+      statuses,
+    });
+  }
+
   const transition = getTransition(ticket.status, SR_STATUS.CLOSED);
   if (!transition) {
     throw new SrError("Only a resolved SR can be closed.", 400);
   }
+  await assertStatusRemark(ticket, SR_STATUS.CLOSED, comments);
   recordChange(ticket, "status", ticket.status, SR_STATUS.CLOSED, actorId);
   ticket.status = SR_STATUS.CLOSED;
   ticket.closedAt = new Date();
@@ -314,6 +484,78 @@ export async function closeSr(
   await ticket.save();
   await notifySrWatchers(ticket, "closed", actorId);
   return ticket;
+}
+
+/**
+ * The people a service request may be handed to — helpdesk users, since only
+ * someone who can sign in can work the request.
+ *
+ * Which of them appear is the project's decision (SR settings → Reassign):
+ * roles that must never be offered (students, parents), whether the department
+ * is chosen first, and whether the search is limited to this project's users.
+ */
+export async function listSrAssignees(params: {
+  projectId: string;
+  departmentId?: string;
+  search?: string;
+  limit?: number;
+}) {
+  const { projectId } = params;
+  if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+    throw new SrError("A valid projectId is required.", 400);
+  }
+  const cfg = await getProjectSrConfig(projectId);
+  const rules = cfg?.reassign || ({} as any);
+  const requireDepartment = !!rules.requireDepartment;
+
+  // Department first: no department, no list — rather than a list the agent
+  // is meant to ignore.
+  if (requireDepartment && !params.departmentId) {
+    return { requireDepartment, needsDepartment: true, users: [] as any[] };
+  }
+
+  const q: any = { isActive: true };
+  if (rules.restrictToProject !== false) q.projects = oid(projectId);
+
+  const excluded = (rules.excludeRoleIds || [])
+    .filter((id: string) => mongoose.Types.ObjectId.isValid(String(id)))
+    .map((id: string) => oid(String(id)));
+  if (excluded.length) q.role = { $nin: excluded };
+
+  if (params.departmentId && mongoose.Types.ObjectId.isValid(params.departmentId)) {
+    const dept = oid(params.departmentId);
+    q.$and = [
+      {
+        $or: [
+          { departmentRef: dept },
+          { "projectDepartments.departmentRef": dept },
+        ],
+      },
+    ];
+  }
+
+  const search = String(params.search || "").trim();
+  if (search) {
+    const rx = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    (q.$and = q.$and || []).push({
+      $or: [
+        { firstName: rx },
+        { lastName: rx },
+        { fullName: rx },
+        { email: rx },
+        { employeeCode: rx },
+      ],
+    });
+  }
+
+  const users = await User.find(q)
+    .select("firstName lastName fullName email employeeCode department departmentRef role")
+    .populate("role", "name code")
+    .sort({ firstName: 1, lastName: 1 })
+    .limit(Math.min(100, Math.max(1, Number(params.limit) || 25)))
+    .lean();
+
+  return { requireDepartment, needsDepartment: false, users };
 }
 
 export interface ReassignOpts {
@@ -440,6 +682,16 @@ async function notifyManagerOnNegativeFeedback(
       }. Please follow up.`,
       deepLinkUrl: `/service-requests/${ticket._id}`,
     } as any);
+    await deliverNotification({
+      userId: managerId,
+      projectId: ticket.project,
+      title: `Unhappy parent feedback — ${ticket.ticketNumber}`,
+      body: `Parent was not satisfied${
+        opts.rating != null ? ` (rated ${opts.rating})` : ""
+      }. Please follow up.`,
+      link: `/service-requests/${ticket._id}`,
+      ticketId: ticket._id,
+    });
   } catch (e) {
     console.error("[sr] negative-feedback notify error:", e);
   }
@@ -450,8 +702,21 @@ export async function reopenSr(
   ticketId: string,
   opts: { reason?: string },
   actorId: string,
+  user?: ChangeStatusOpts["user"],
 ) {
   const ticket = await loadSr(ticketId);
+
+  // Configured: the Re-open status's own rules decide the limit, permission
+  // and who it goes to.
+  const { statuses, configured } = await srStatusConfig(ticket);
+  if (configured) {
+    return moveByConfig(ticket, SR_STATUS.REOPEN, actorId, {
+      comments: opts.reason,
+      followUpText: `Re-opened: ${opts.reason || ""}`,
+      user,
+      statuses,
+    });
+  }
 
   // How many times a request may be re-opened is a project decision
   // (psr.workflow.lifecycle.reopenLimit), not a constant.
@@ -471,8 +736,12 @@ export async function reopenSr(
       400,
     );
   }
+  await assertStatusRemark(ticket, SR_STATUS.REOPEN, opts.reason);
   recordChange(ticket, "status", ticket.status, SR_STATUS.REOPEN, actorId);
   ticket.status = SR_STATUS.REOPEN;
+  // No longer closed — screens that read closedAt must not keep treating it
+  // as finished (the ticket re-open clears it the same way).
+  ticket.closedAt = undefined;
   ticket.reopen = {
     count: (ticket.reopen?.count ?? 0) + 1,
     reopenedBy: oid(actorId),
@@ -497,6 +766,14 @@ export async function pslSatisfactionCall(
   actorId: string,
 ) {
   const ticket = await loadSr(ticketId);
+  // The PSL call records a conversation with the PARENT; an ISR is raised
+  // internally and has none.
+  if (ticket.interactionType !== "PSR") {
+    throw new SrError(
+      "A PSL call applies to a parent service request (PSR) only.",
+      400,
+    );
+  }
   ticket.pslCall = {
     spoken: !!opts.spoken,
     parentSatisfied: opts.parentSatisfied,
@@ -506,20 +783,47 @@ export async function pslSatisfactionCall(
   };
   // An unhappy parent re-opens automatically, but still within the project's
   // limit — the auto path must not exceed what an agent is allowed to do.
-  const pslCfg = await getProjectSrConfig(ticket.project);
-  const pslReopenLimit = pslCfg?.psr?.workflow?.lifecycle?.reopenLimit ?? 1;
-  if (
-    opts.spoken &&
-    opts.parentSatisfied === false &&
-    canReopen(ticket, pslReopenLimit)
-  ) {
+  let reopenPlan: Awaited<ReturnType<typeof planOnEnter>> | null = null;
+  if (opts.spoken && opts.parentSatisfied === false) {
+    const { statuses, configured } = await srStatusConfig(ticket);
+    if (configured) {
+      // Same rules as a manual re-open (limit, assignment); a system move, so
+      // not subject to the permission rule. Over the limit → no re-open.
+      try {
+        const check = await checkStatusChange({
+          ticket,
+          toCode: SR_STATUS.REOPEN,
+          remark: opts.comments || "Parent not satisfied on the PSL call.",
+          user: null,
+          statuses,
+        });
+        reopenPlan = await planOnEnter(ticket, check, actorId, reopenRoutingFor(ticket));
+      } catch (e) {
+        if (!(e instanceof StatusRuleError)) throw e;
+      }
+    } else {
+      const pslCfg = await getProjectSrConfig(ticket.project);
+      const pslReopenLimit = pslCfg?.psr?.workflow?.lifecycle?.reopenLimit ?? 1;
+      if (canReopen(ticket, pslReopenLimit)) {
+        reopenPlan = {
+          reopen: {
+            count: (ticket.reopen?.count ?? 0) + 1,
+            reopenedBy: oid(actorId),
+            reopenedAt: new Date(),
+          },
+        };
+      }
+    }
+  }
+  if (reopenPlan) {
+    // Recorded as a status change too, so it counts toward the limit.
+    recordChange(ticket, "status", ticket.status, SR_STATUS.REOPEN, actorId);
     ticket.status = SR_STATUS.REOPEN;
-    ticket.reopen = {
-      count: (ticket.reopen?.count ?? 0) + 1,
-      reopenedBy: oid(actorId),
-      reopenedAt: new Date(),
-    };
+    if (reopenPlan.reopen) ticket.reopen = reopenPlan.reopen;
+    ticket.closedAt = undefined;
+    if (reopenPlan.assignedTo) ticket.assignedTo = reopenPlan.assignedTo;
   } else if (opts.spoken && opts.parentSatisfied === true) {
+    recordChange(ticket, "status", ticket.status, SR_STATUS.CLOSED, actorId);
     ticket.status = SR_STATUS.CLOSED;
     ticket.closedAt = ticket.closedAt || new Date();
   }
@@ -554,14 +858,30 @@ export async function pslSatisfactionCall(
 export async function cancelSr(
   ticketId: string,
   actorId: string,
-  opts: { reason: string; replacementSrId?: string },
+  opts: {
+    reason: string;
+    replacementSrId?: string;
+    user?: ChangeStatusOpts["user"];
+  },
 ) {
   const ticket = await loadSr(ticketId);
   const reason = (opts.reason || "").trim();
   if (!reason) throw new SrError("A cancellation reason is required.", 400);
 
-  const transition = getTransition(ticket.status, SR_STATUS.CANCEL);
-  if (!transition) {
+  const { statuses, configured } = await srStatusConfig(ticket);
+  if (configured) {
+    try {
+      await checkStatusChange({
+        ticket,
+        toCode: SR_STATUS.CANCEL,
+        remark: reason,
+        user: opts.user ?? null,
+        statuses,
+      });
+    } catch (e) {
+      throw toSrError(e);
+    }
+  } else if (!getTransition(ticket.status, SR_STATUS.CANCEL)) {
     throw new SrError(
       "This service request cannot be cancelled from its current status.",
       400,

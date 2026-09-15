@@ -16,6 +16,8 @@ import HierarchyConfigManager from "./HierarchyConfigManager";
 import FormFieldBuilder from "./FormFieldBuilder";
 import { FormFieldSchema } from "../utils/conditionEngine";
 import { usePermissions } from "../hooks/usePermissions";
+import StatusRulesEditor, { StatusRule } from "./StatusRulesEditor";
+import { invalidateProjectStatuses } from "../hooks/useProjectStatuses";
 
 interface TicketStatus {
   _id?: string;
@@ -27,7 +29,13 @@ interface TicketStatus {
   requireClosingRemark: boolean;
   requireCommittedDate?: boolean;
   committedDateLabel?: string;
+  committedDateMin?: "none" | "created" | "now";
+  committedDateMaxDays?: number;
   displayOrder: number;
+  requireConfirmation?: boolean;
+  isReopen?: boolean;
+  showInProgress?: boolean;
+  rules?: { query?: StatusRule; sr?: StatusRule };
 }
 
 interface TicketCategory {
@@ -686,13 +694,23 @@ const TicketSettings: React.FC = () => {
           requireClosingRemark: editingStatus.requireClosingRemark,
           requireCommittedDate: editingStatus.requireCommittedDate ?? false,
           committedDateLabel: editingStatus.committedDateLabel || undefined,
+          committedDateMin: editingStatus.committedDateMin || "none",
+          committedDateMaxDays: editingStatus.committedDateMaxDays || undefined,
           displayOrder: editingStatus.displayOrder,
+          requireConfirmation: !!editingStatus.requireConfirmation,
+          isReopen: !!editingStatus.isReopen,
+          showInProgress: editingStatus.showInProgress !== false,
+          // Sent as-is; a type left unconfigured is omitted (= old behaviour).
+          rules: editingStatus.rules || {},
         }),
       });
 
       const data = await response.json();
 
       if (data.success) {
+        // Screens cache the status list per project — drop it so the new
+        // rules apply without a page reload.
+        invalidateProjectStatuses(projectId);
         // Reload statuses from server
         await loadStatuses();
         setShowStatusModal(false);
@@ -1193,6 +1211,9 @@ const TicketSettings: React.FC = () => {
                               Code: {status.code}
                               {status.isDefault && " • Default"}
                               {status.isClosed && " • Closes Ticket"}
+                              {status.isReopen && " • Re-open cycle"}
+                              {status.rules?.sr && " • SR rules"}
+                              {status.rules?.query && " • Query rules"}
                             </div>
                           </div>
                           <button
@@ -1244,6 +1265,8 @@ const TicketSettings: React.FC = () => {
                         alignItems: "center",
                         justifyContent: "center",
                         zIndex: 1000,
+                        // Room to breathe so the dialog never touches the edges.
+                        padding: "24px 16px",
                       }}
                     >
                       <div
@@ -1253,6 +1276,10 @@ const TicketSettings: React.FC = () => {
                           padding: "24px",
                           width: "500px",
                           maxWidth: "90%",
+                          // The form is taller than a laptop screen once the
+                          // rules section is open — scroll inside the dialog.
+                          maxHeight: "calc(100vh - 48px)",
+                          overflowY: "auto",
                         }}
                       >
                         <h3
@@ -1492,7 +1519,91 @@ const TicketSettings: React.FC = () => {
                               }}
                             />
                           )}
+                          {/* How early or late the agent may commit. A
+                              commitment before the ticket existed is never
+                              meaningful, but which rule applies is the
+                              project's call. */}
+                          {editingStatus.requireCommittedDate && (
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "10px",
+                                marginTop: "8px",
+                                marginLeft: "24px",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <label style={{ fontSize: "12px", color: "#6b7280" }}>
+                                Earliest allowed
+                                <select
+                                  value={editingStatus.committedDateMin || "none"}
+                                  onChange={(e) =>
+                                    setEditingStatus({
+                                      ...editingStatus,
+                                      committedDateMin: e.target
+                                        .value as TicketStatus["committedDateMin"],
+                                    })
+                                  }
+                                  style={{
+                                    display: "block",
+                                    marginTop: "4px",
+                                    padding: "8px 10px",
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: "8px",
+                                    fontSize: "13px",
+                                    minWidth: "230px",
+                                  }}
+                                >
+                                  <option value="none">Any date</option>
+                                  <option value="created">
+                                    Not before the ticket was raised
+                                  </option>
+                                  <option value="now">Must be in the future</option>
+                                </select>
+                              </label>
+                              <label style={{ fontSize: "12px", color: "#6b7280" }}>
+                                Furthest ahead (days)
+                                <input
+                                  type="number"
+                                  min={0}
+                                  placeholder="No limit"
+                                  value={editingStatus.committedDateMaxDays ?? ""}
+                                  onChange={(e) =>
+                                    setEditingStatus({
+                                      ...editingStatus,
+                                      committedDateMaxDays:
+                                        e.target.value === ""
+                                          ? undefined
+                                          : Math.max(0, Number(e.target.value)),
+                                    })
+                                  }
+                                  style={{
+                                    display: "block",
+                                    marginTop: "4px",
+                                    padding: "8px 10px",
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: "8px",
+                                    fontSize: "13px",
+                                    width: "130px",
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          )}
                         </div>
+
+                        {/* How the status behaves — allowed next statuses,
+                            limits, permission, assignment — per record type. */}
+                        <StatusRulesEditor
+                          status={editingStatus}
+                          allStatuses={statuses.map((st) => ({
+                            code: Number(st.code),
+                            name: st.name,
+                          }))}
+                          onChange={(patch) =>
+                            setEditingStatus({ ...editingStatus, ...patch })
+                          }
+                        />
 
                         <div
                           style={{
@@ -1500,6 +1611,12 @@ const TicketSettings: React.FC = () => {
                             gap: "12px",
                             marginTop: "24px",
                             justifyContent: "flex-end",
+                            // Stays reachable while the form scrolls.
+                            position: "sticky",
+                            bottom: "-24px",
+                            background: "white",
+                            padding: "12px 0",
+                            borderTop: "1px solid #f1f5f9",
                           }}
                         >
                           <button

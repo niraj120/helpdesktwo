@@ -22,6 +22,11 @@ import fs from "fs";
 import { GCSService } from "../services/gcsService";
 import { canModifyTicket } from "../utils/ticketAuth";
 import {
+  checkStatusChange,
+  planOnEnter,
+  StatusRuleError,
+} from "../services/statusRules";
+import {
   sendTicketCreatedEmail,
   sendStudentWelcomeEmail,
   sendTicketAssignedEmail,
@@ -142,6 +147,19 @@ const emitTicketRealtimeUpdate = async (
 /**
  * Helper function to track changes in ticket history
  */
+/**
+ * Service requests (PSR/ISR) move through their own lifecycle — WIP commitment,
+ * re-open limit, Principal on re-open, parent closure — enforced in the SR
+ * module. The generic ticket status endpoints know none of that, so a PSR/ISR
+ * sent through them would skip every rule (unlimited re-opens, no committed
+ * date, no remark). They refuse or re-route SR records instead.
+ */
+const isSrRecord = (ticket: any) =>
+  ticket?.interactionType === "PSR" || ticket?.interactionType === "ISR";
+
+const SR_LIFECYCLE_MESSAGE =
+  "Service requests change status through the Service Request actions (Update status / Close / Re-open), which apply the WIP, remark and re-open rules.";
+
 const trackChange = async (
   ticket: any,
   field: string,
@@ -3677,6 +3695,24 @@ export const closeTicket = async (req: Request, res: Response) => {
       });
     }
 
+    // A service request closed by the parent is the SR's final (parent)
+    // closure — recorded as such, not as a bare status flip.
+    if (isSrRecord(ticket)) {
+      try {
+        const { parentCloseSr } = require("../modules/service-request/serviceRequestService");
+        const closed = await parentCloseSr(
+          String(ticket._id),
+          { satisfied: true, comments: req.body?.comments || "Closed by the parent." },
+          userId,
+        );
+        return res.status(200).json({ success: true, data: closed });
+      } catch (e: any) {
+        return res
+          .status(e?.status || 500)
+          .json({ success: false, message: e?.message || "Failed to close" });
+      }
+    }
+
     // Close the ticket (5 = closed)
     ticket.status = 5;
     ticket.closedAt = new Date();
@@ -3800,6 +3836,24 @@ export const reopenTicket = async (req: Request, res: Response) => {
       });
     }
 
+    // A service request re-opened by the parent goes through the SR re-open:
+    // it counts against the project's limit and routes to the Principal.
+    if (isSrRecord(ticket)) {
+      try {
+        const { reopenSr } = require("../modules/service-request/serviceRequestService");
+        const reopened = await reopenSr(
+          String(ticket._id),
+          { reason: req.body?.reason || "Re-opened by the parent." },
+          userId,
+        );
+        return res.status(200).json({ success: true, data: reopened });
+      } catch (e: any) {
+        return res
+          .status(e?.status || 500)
+          .json({ success: false, message: e?.message || "Failed to reopen" });
+      }
+    }
+
     // Check if ticket is actually closed — handles both hardcoded (5) and
     // project-specific custom status codes that have isClosed = true
     const StatusModel = require("../models/Status").Status;
@@ -3899,6 +3953,10 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       });
     }
 
+    if (isSrRecord(ticket)) {
+      return res.status(409).json({ success: false, message: SR_LIFECYCLE_MESSAGE });
+    }
+
     // Validate status is a valid number
     const statusNum = Number(status);
     console.log(
@@ -3963,6 +4021,25 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       });
     }
 
+    // The project's configured rules for this move (Query Config → Ticket
+    // Statuses): allowed next statuses, permission, max uses, assignment.
+    let enterPlan: Awaited<ReturnType<typeof planOnEnter>> = {};
+    try {
+      const check = await checkStatusChange({
+        ticket,
+        toCode: statusNum,
+        remark: statusRemark,
+        committedDate,
+        user: { roleCode: user?.role?.code, permissions: user?.role?.permissions },
+      });
+      enterPlan = await planOnEnter(ticket, check, userId);
+    } catch (e: any) {
+      if (e instanceof StatusRuleError) {
+        return res.status(e.status).json({ success: false, message: e.message });
+      }
+      throw e;
+    }
+
     const oldStatus = ticket.status;
     const now = new Date();
 
@@ -4013,7 +4090,8 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       ? {
           _id: new mongoose.Types.ObjectId(),
           field: remarkField,
-          oldValue: "",
+          // oldValue is required; "None" matches trackChange.
+          oldValue: "None",
           newValue: statusRemark.trim(),
           changedBy: userId,
           changedAt: now,
@@ -4037,13 +4115,19 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
           field: "wip.committedDate",
           oldValue: (ticket as any).wip?.committedDate
             ? new Date((ticket as any).wip.committedDate).toISOString()
-            : "",
+            : "None",
           newValue: committedDate.toISOString(),
           changedBy: userId,
           changedAt: now,
           changeType: "update",
         }
       : null;
+
+    // Side effects the configuration asks for: a re-open is counted and
+    // clears the closure; the status may hand the ticket to someone.
+    if (enterPlan.reopen) updateFields.reopen = enterPlan.reopen;
+    if (enterPlan.clearClosedAt) updateFields.closedAt = null;
+    if (enterPlan.assignedTo) updateFields.assignedTo = enterPlan.assignedTo;
 
     // Use findByIdAndUpdate to avoid full document validation (bypasses subdocument validation issues)
     const historyEntries = [
@@ -4065,12 +4149,14 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       const datePart = committedDate
         ? ` (by ${committedDate.toISOString().slice(0, 10)})`
         : "";
+      // Written with the schema's field name — `note`. This push skips
+      // validation, so a wrong key lands silently and then fails every later
+      // save of the ticket (tags, notes, anything).
       pushPayload.internalNotes = {
         _id: new mongoose.Types.ObjectId(),
-        content: `[${label}]${datePart} ${statusRemark.trim()}`,
+        note: `[${label}]${datePart} ${statusRemark.trim()}`,
         createdBy: userId,
         createdAt: now,
-        isInternal: true,
       };
     }
     if (committedDate) {
@@ -5330,12 +5416,31 @@ export const bulkChangeStatus = async (req: Request, res: Response) => {
         });
         continue;
       }
+      if (isSrRecord(ticket)) {
+        skipped.push({
+          ticketNumber: (ticket as any).ticketNumber,
+          reason: "service request — use the Service Request actions",
+        });
+        continue;
+      }
       const from = ticket.status;
       if (from === statusNum) {
         skipped.push({
           ticketNumber: (ticket as any).ticketNumber,
           reason: "already in that status",
         });
+        continue;
+      }
+      try {
+        await checkStatusChange({
+          ticket,
+          toCode: statusNum,
+          remark,
+          user: { roleCode: user?.role?.code, permissions: user?.role?.permissions },
+        });
+      } catch (e: any) {
+        if (!(e instanceof StatusRuleError)) throw e;
+        skipped.push({ ticketNumber: (ticket as any).ticketNumber, reason: e.message });
         continue;
       }
 
@@ -5354,7 +5459,8 @@ export const bulkChangeStatus = async (req: Request, res: Response) => {
         entries.push({
           _id: new mongoose.Types.ObjectId(),
           field: "statusRemark",
-          oldValue: "",
+          // oldValue is required; "None" matches trackChange.
+          oldValue: "None",
           newValue: remark.trim(),
           changedBy: userId,
           changedAt: now,

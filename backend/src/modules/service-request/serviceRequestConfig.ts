@@ -241,6 +241,11 @@ export const SR_CONFIG_DEFAULTS: SrConfig = {
     escalateOnExpiry: true,
   },
   reopen: {},
+  reassign: {
+    requireDepartment: false,
+    restrictToProject: true,
+    excludeRoleIds: [],
+  },
   messages: {
     duplicate:
       "A similar request already exists for this student and sub-category. Please review before creating a new one.",
@@ -583,6 +588,17 @@ export function resolveSrConfig(raw: any): SrConfig {
     reopen: {
       assignToUserId: sr.reopen?.assignToUserId,
       assignToRoleId: sr.reopen?.assignToRoleId,
+    },
+    reassign: {
+      requireDepartment:
+        sr.reassign?.requireDepartment ??
+        SR_CONFIG_DEFAULTS.reassign.requireDepartment,
+      restrictToProject:
+        sr.reassign?.restrictToProject ??
+        SR_CONFIG_DEFAULTS.reassign.restrictToProject,
+      excludeRoleIds: Array.isArray(sr.reassign?.excludeRoleIds)
+        ? sr.reassign.excludeRoleIds.map(String)
+        : [],
     },
     messages: {
       duplicate:

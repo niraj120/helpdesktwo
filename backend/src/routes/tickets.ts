@@ -35,7 +35,10 @@ import {
 } from "../controllers/ticketController";
 import { authMiddleware } from "../middleware/auth";
 import { checkPermission } from "../middleware/permissions";
-import { requireTicketAction } from "../middleware/ticketActionPermission";
+import {
+  requireTicketAction,
+  requireTicketActionAnyOf,
+} from "../middleware/ticketActionPermission";
 import { attachProjectContext } from "../middleware/projectScope";
 import { requireResourceProject } from "../middleware/requireProjectAccess";
 import { Ticket } from "../models/Ticket";
@@ -169,7 +172,14 @@ router.get(
 router.get(
   "/tags",
   authMiddleware,
-  checkPermission(["TICKET_VIEW_ALL", "View Own Tickets"]),
+  // Anyone who works tickets or service requests picks from the tag list.
+  checkPermission([
+    "TICKET_VIEW_ALL",
+    "View Own Tickets",
+    "TICKET_VIEW_OWN",
+    "SR_VIEW_ALL",
+    "SR_VIEW_OWN",
+  ]),
   getAllTags,
 );
 
@@ -179,7 +189,9 @@ router.get(
 router.get(
   "/assignable-agents",
   authMiddleware,
-  checkPermission(["TICKET_ASSIGN", "TICKET_REASSIGN"]),
+  // SR_ASSIGN / SR_REASSIGN when ?ticketId= is a PSR/ISR, TICKET_* otherwise —
+  // the service-request desk must be able to reassign its own requests.
+  requireTicketActionAnyOf(["ASSIGN", "REASSIGN"]),
   getAssignableAgents,
 );
 

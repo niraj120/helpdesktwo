@@ -11,10 +11,17 @@
 import { Router } from "express";
 import { authMiddleware } from "../../../middleware/auth";
 import { checkPermission } from "../../../middleware/permissions";
+import { requireProjectAccess } from "../../../middleware/requireProjectAccess";
 import * as c from "../controllers/serviceRequestController";
 
 const router = Router();
 router.use(authMiddleware);
+
+// Per-project config endpoints all carry an explicit projectId (query or body).
+// SR_CONFIG_MANAGE says the role may configure SR at all; this says "…for THIS
+// project", so a project-scoped admin cannot configure a neighbouring tenant by
+// swapping the id. Super Admins bypass and keep global reach.
+const scoped = requireProjectAccess("projectId");
 
 // Module access. SR_ACCESS says the caller works in the Service Requests area at
 // all; the per-route SR_* gates below say what they may do once inside.
@@ -33,12 +40,19 @@ const VIEW_PERMS = [
 router.get(
   "/config",
   checkPermission(["SR_CONFIG_MANAGE", ...VIEW_PERMS]),
+  scoped,
   c.getConfig,
 );
-router.put("/config", checkPermission("SR_CONFIG_MANAGE"), c.updateConfig);
+router.put(
+  "/config",
+  checkPermission("SR_CONFIG_MANAGE"),
+  scoped,
+  c.updateConfig,
+);
 router.post(
   "/config/test-crm",
   checkPermission("SR_CONFIG_MANAGE"),
+  scoped,
   c.testLeadCrmConfig,
 );
 
@@ -46,6 +60,7 @@ router.post(
 router.post(
   "/config/test-psr-routing",
   checkPermission("SR_CONFIG_MANAGE"),
+  scoped,
   c.testPsrRouting,
 );
 
@@ -53,6 +68,7 @@ router.post(
 router.post(
   "/recompute-tat",
   checkPermission("SR_CONFIG_MANAGE"),
+  scoped,
   c.recomputeTat,
 );
 
@@ -60,11 +76,13 @@ router.post(
 router.get(
   "/notification-templates",
   checkPermission("SR_CONFIG_MANAGE"),
+  scoped,
   c.listNotificationTemplates,
 );
 router.put(
   "/notification-templates",
   checkPermission("SR_CONFIG_MANAGE"),
+  scoped,
   c.upsertNotificationTemplate,
 );
 
@@ -102,12 +120,21 @@ router.get(
 router.post(
   "/form-schemas",
   checkPermission("SR_CONFIG_MANAGE"),
+  scoped,
   c.saveForm,
 );
 router.delete(
   "/form-schemas/:schemaId",
   checkPermission("SR_CONFIG_MANAGE"),
+  scoped,
   c.removeForm,
+);
+
+// Who a service request may be handed to. Static path, so before /:id.
+router.get(
+  "/assignees",
+  checkPermission(["SR_REASSIGN", "SR_DELEGATE", "SR_ASSIGN"]),
+  c.assignees,
 );
 
 // Tags in use, for the list filter. Static path, so before /:id.

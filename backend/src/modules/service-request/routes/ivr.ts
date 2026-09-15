@@ -91,6 +91,19 @@ router.patch(
   checkPermission(["IVR_CALLBACK_SET", "IVR_TRIAGE_CONVERT"]),
   c.updateFollowUp,
 );
+// How a call to the caller went — answered / not connected / asked to call
+// back. The only way the ladder moves past its auto-applied first step.
+router.post(
+  "/calls/:id/attempts",
+  checkPermission(["IVR_CALLBACK_SET", "IVR_TRIAGE_CONVERT"]),
+  c.logAttempt,
+);
+// Agent notes on a call — anyone who works the call can leave one.
+router.post(
+  "/calls/:id/comments",
+  checkPermission(["IVR_CALLBACK_SET", "IVR_TRIAGE_CONVERT"]),
+  c.addComment,
+);
 // Outbound Click-to-Call (call the caller back via TATA SmartFlo).
 router.post(
   "/calls/:id/click-to-call",

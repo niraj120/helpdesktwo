@@ -317,7 +317,13 @@ const ServiceRequestCreate: React.FC<{
 
   // Priority & schedule block
   const [overridePriority, setOverridePriority] = useState(false);
-  const [priority, setPriority] = useState("MEDIUM");
+  const [priority, setPriority] = useState("");
+  // Priorities come from the project's priority master (SLA & Escalation), so
+  // a project that renamed or added one gets its own list here — never a
+  // built-in Low/Medium/High/Critical.
+  const [priorityOptions, setPriorityOptions] = useState<
+    { value: string; label: string; isDefault?: boolean }[]
+  >([]);
   const [scheduleDate, setScheduleDate] = useState("");
 
   // Offline / RE-entry block
@@ -490,6 +496,20 @@ const ServiceRequestCreate: React.FC<{
         setConfig(null);
       } finally {
         setConfigLoading(false);
+      }
+      try {
+        const list = await serviceRequestApi.projectPriorities(projectId);
+        setPriorityOptions(list);
+        // Start on the project's default so an untouched override still saves
+        // a priority this project actually uses.
+        setPriority((cur) =>
+          cur && list.some((p: any) => p.value === cur)
+            ? cur
+            : (list.find((p: any) => p.isDefault) || list[0])?.value || "",
+        );
+      } catch (e) {
+        console.error(e);
+        setPriorityOptions([]);
       }
       try {
         const r = await serviceRequestApi.listForms(projectId);
@@ -1372,7 +1392,9 @@ const ServiceRequestCreate: React.FC<{
         blocks?.prioritySchedule?.enabled &&
         overridePriority
       ) {
-        payload.priority = priority;
+        // Nothing chosen (project has no priority master) → let the server
+        // apply its own default rather than sending an empty value.
+        if (priority) payload.priority = priority;
         if (scheduleDate) payload.scheduleDispatchDate = scheduleDate;
       }
 
@@ -2137,12 +2159,18 @@ const ServiceRequestCreate: React.FC<{
               <select
                 style={ctrl}
                 value={priority}
+                disabled={!priorityOptions.length}
                 onChange={(e) => setPriority(e.target.value)}
               >
-                <option value="LOW">Low</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="HIGH">High</option>
-                <option value="CRITICAL">Critical</option>
+                {priorityOptions.length === 0 ? (
+                  <option value="">No priorities configured for this project</option>
+                ) : (
+                  priorityOptions.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
             <div>

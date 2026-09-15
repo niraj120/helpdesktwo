@@ -5,6 +5,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import PsrDetailLayout from "../components/sr/PsrDetailLayout";
 import LinkedIsrPanel from "../components/sr/LinkedIsrPanel";
 import PslCallTab from "../components/sr/PslCallTab";
+import SrLifecyclePanel from "../components/sr/SrLifecyclePanel";
 import { serviceRequestApi } from "../services/serviceRequests";
 
 // Known boilerplate patterns injected by mail servers / Outlook (mirrors backend stripEmailBoilerplate)
@@ -747,6 +748,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     srConfig?.psrDetail?.tabs?.find((tab: any) => tab.key === key);
   const srTabVisible = (key: string) => {
     if (!isSrDetailTicket) return true;
+    // A PSL call is a call to the PARENT — it has no meaning on an ISR, which
+    // is raised internally and has no parent to satisfy.
+    if (key === "pslcall" && (ticket as any)?.interactionType !== "PSR") return false;
     const tab = srTab(key);
     if (!tab) return true;
     if (!tab.enabled) return false;
@@ -1443,8 +1447,13 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
         },
       );
       setReassignAgents(res.data.data || []);
-    } catch {
+    } catch (e: any) {
       setReassignAgents([]);
+      // An empty list reads as "nobody to assign to"; say what really happened.
+      alert(
+        e?.response?.data?.message ||
+          "Could not load the users for this department.",
+      );
     } finally {
       setReassignLoadingAgents(false);
     }
@@ -2025,6 +2034,35 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   // set — holding the run of the query desk grants nothing over service
   // requests. (The backend enforces the same split.)
   const recordType = (ticket as any)?.interactionType;
+  // A PSR/ISR changes status only through the SR lifecycle panel, which
+  // applies the WIP commitment, remark and re-open rules. The generic status
+  // controls below know none of those, so they are not offered for one.
+  const isSr = recordType === "PSR" || recordType === "ISR";
+
+  // Query rules configured on the statuses (Query Config → Ticket Statuses):
+  // which statuses may follow the current one, and who may apply each. The
+  // server enforces the same; this only keeps unusable choices out of view.
+  const isSuperAdminUser = (() => {
+    try {
+      const u = JSON.parse(localStorage.getItem("user") || "{}");
+      return (u?.role?.code || u?.roleCode) === "SUPER_ADMIN";
+    } catch {
+      return false;
+    }
+  })();
+  const queryStatusAllowed = (code: number) => {
+    const cur = Number(ticket?.status);
+    if (code === cur) return true; // the select still shows where it is now
+    const curRule = statusOptions.find((s: any) => Number(s.code) === cur)?.rules?.query;
+    if (curRule?.restrictNext && !(curRule.allowedNext || []).map(Number).includes(code))
+      return false;
+    const target = statusOptions.find((s: any) => Number(s.code) === code)?.rules?.query;
+    // The target may also state which statuses it can follow.
+    if (target?.restrictPrev && !(target.allowedPrev || []).map(Number).includes(cur))
+      return false;
+    const perm = target?.permission;
+    return !perm || isSuperAdminUser || permissions.includes(perm);
+  };
   // A linked ISR sits under a parent ticket. The relation used to be visible
   // only from the parent's Linked ISRs tab, so a child read as a standalone
   // ticket; surface it here too.
@@ -3645,7 +3683,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             Change History
                           </h3>
 
-                          {ticket.changeHistory.map((change) => {
+                          {/* Newest first — a history is read from the latest
+                              change backwards, and the stored order is the
+                              order things happened. */}
+                          {[...ticket.changeHistory]
+                            .sort(
+                              (a, b) =>
+                                new Date(b.changedAt).getTime() -
+                                new Date(a.changedAt).getTime(),
+                            )
+                            .map((change) => {
                             const changedAt = new Date(change.changedAt);
 
                             // Format field name for display
@@ -3729,8 +3776,17 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                       </span>
                                     </div>
                                     <p className="text-xs text-gray-600 mt-1">
-                                      By {change.changedBy.firstName}{" "}
-                                      {change.changedBy.lastName}
+                                      {/* Older entries and system moves carry
+                                          no user — say so rather than "By". */}
+                                      {change.changedBy?.firstName ||
+                                      change.changedBy?.lastName
+                                        ? `By ${[
+                                            change.changedBy.firstName,
+                                            change.changedBy.lastName,
+                                          ]
+                                            .filter(Boolean)
+                                            .join(" ")}`
+                                        : "By the system"}
                                     </p>
                                     <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
                                       <div>
@@ -4481,6 +4537,26 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Status
                     </label>
+                    {isSr ? (
+                      <div>
+                        <span
+                          className={`inline-block px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(ticket.status)}`}
+                        >
+                          {getStatusDisplayName(Number(ticket.status))}
+                        </span>
+                        {/* The SR lifecycle actions live here, next to the
+                            status they change — WIP (with committed date),
+                            Resolve, Close, Re-open, Cancel, each with the
+                            rules the generic dropdown skipped. */}
+                        <div className="mt-3">
+                          <SrLifecyclePanel
+                            ticket={ticket}
+                            onChanged={fetchTicketDetails}
+                            hideHeader
+                          />
+                        </div>
+                      </div>
+                    ) : (
                     <select
                       value={ticket.status || ""}
                       disabled={!canModify}
@@ -4519,12 +4595,15 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
-                      {statusOptions.map((status: any) => (
-                        <option key={status.code} value={status.code}>
-                          {status.name}
-                        </option>
-                      ))}
+                      {statusOptions
+                        .filter((status: any) => queryStatusAllowed(Number(status.code)))
+                        .map((status: any) => (
+                          <option key={status.code} value={status.code}>
+                            {status.name}
+                          </option>
+                        ))}
                     </select>
+                    )}
                   </div>
 
                   {/* Priority */}
@@ -5142,7 +5221,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             : "Unassigned"}
                         </span>
                       </div>
-                      {canDo(permissions, "REASSIGN", recordType) && (
+                      {/* A service request is reassigned from the SR panel,
+                          which applies the project's reassign settings (roles
+                          excluded, department first). */}
+                      {!isSr && canDo(permissions, "REASSIGN", recordType) && (
                         <button
                           onClick={openReassignModal}
                           className="text-xs px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 transition-colors font-medium"
@@ -5474,8 +5556,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   />
                 )}
 
-              {/* Quick Actions */}
+              {/* Quick Actions — not for a PSR/ISR: resolve/close go through
+                  the SR panel so its remark and closure rules apply. */}
               {(() => {
+                if (isSr) return null;
                 const currentStatusOption = statusOptions.find(
                   (s: any) => s.code === Number(ticket.status),
                 );
@@ -5509,10 +5593,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                 const showCloseButton =
                   !isAlreadyClosed &&
                   closedStatusOption != null &&
-                  closedCode !== resolvedCode;
+                  closedCode !== resolvedCode &&
+                  queryStatusAllowed(closedCode);
 
                 if (isAlreadyResolved && isAlreadyClosed) return null;
-                if (!resolvedStatusOption && !showCloseButton) return null;
+                const showResolveButton =
+                  !isAlreadyResolved &&
+                  !!resolvedStatusOption &&
+                  queryStatusAllowed(resolvedCode);
+                // Nothing the rules allow from here → no empty card.
+                if (!showResolveButton && !showCloseButton) return null;
 
                 return (
                   <div className="bg-white rounded-xl shadow-sm p-6">
@@ -5520,7 +5610,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       Quick Actions
                     </h3>
                     <div className="space-y-2">
-                      {!isAlreadyResolved && resolvedStatusOption && (
+                      {!isAlreadyResolved &&
+                        resolvedStatusOption &&
+                        queryStatusAllowed(resolvedCode) && (
                         <button
                           onClick={() => {
                             setConfirmModal({
@@ -5688,7 +5780,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                 </svg>
               </div>
               <h3 className="text-lg font-semibold text-gray-900 text-center mb-1">
-                Closing Remark Required
+                {remarkModal.needsRemark && remarkModal.needsDate
+                  ? "Remark and date required"
+                  : remarkModal.needsDate
+                    ? `${remarkModal.dateLabel || "Committed date"} required`
+                    : "Remark required"}
               </h3>
               <p className="text-sm text-gray-500 text-center mb-5">
                 Changing status from{" "}
@@ -5731,11 +5827,20 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
               {/* Remark textarea */}
               <div className="mb-5">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Remark <span className="text-red-500">*</span>
+                  Remark{" "}
+                  {remarkModal.needsRemark !== false ? (
+                    <span className="text-red-500">*</span>
+                  ) : (
+                    <span className="text-gray-400 font-normal">(optional)</span>
+                  )}
                 </label>
                 <textarea
                   rows={3}
-                  placeholder="Enter your closing remark..."
+                  placeholder={
+                    remarkModal.needsRemark !== false
+                      ? "Why is the status changing?"
+                      : "Add a remark (optional)"
+                  }
                   value={remarkModal.remark}
                   onChange={(e) =>
                     setRemarkModal((m) => ({ ...m, remark: e.target.value }))

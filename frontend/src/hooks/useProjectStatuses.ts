@@ -18,6 +18,31 @@ export interface ProjectStatus {
   isClosed: boolean;
   isDefault: boolean;
   displayOrder: number;
+  /** The status asks for a remark when it is applied (status master flag). */
+  requireRemark: boolean;
+  /** The status asks for a committed date when it is applied. */
+  requireDate: boolean;
+  /** Ask for confirmation before applying. */
+  requireConfirmation: boolean;
+  /** Part of the re-open cycle (second leg of the progress bar). */
+  isReopen: boolean;
+  /** Drawn as a progress-bar step. */
+  showInProgress: boolean;
+  /** Per-record-type rules (Query Config → Ticket Statuses). */
+  rules?: {
+    query?: StatusRuleConfig;
+    sr?: StatusRuleConfig;
+  };
+}
+
+export interface StatusRuleConfig {
+  restrictNext?: boolean;
+  allowedNext?: number[];
+  restrictPrev?: boolean;
+  allowedPrev?: number[];
+  maxPerTicket?: number;
+  permission?: string;
+  assignOnApply?: { mode?: string; roleId?: string; userId?: string };
 }
 
 /** Tint a status colour for use as a chip background. */
@@ -50,6 +75,12 @@ const fetchStatuses = (projectId: string): Promise<ProjectStatus[]> => {
           isClosed: !!s.isClosed,
           isDefault: !!s.isDefault,
           displayOrder: Number(s.displayOrder ?? 0),
+          requireRemark: !!s.requireClosingRemark,
+          requireDate: !!s.requireCommittedDate,
+          requireConfirmation: !!s.requireConfirmation,
+          isReopen: !!s.isReopen,
+          showInProgress: s.showInProgress !== false,
+          rules: s.rules || undefined,
         }))
         .filter((s) => Number.isFinite(s.code));
       cache.set(projectId, list);
@@ -119,6 +150,12 @@ export const useProjectStatuses = (projectId?: string) => {
         isClosed: false,
         isDefault: false,
         displayOrder: 0,
+        requireRemark: false,
+        requireDate: false,
+        requireConfirmation: false,
+        isReopen: false,
+        showInProgress: true,
+        rules: undefined,
       }
     );
   };

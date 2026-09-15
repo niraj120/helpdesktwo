@@ -1,22 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import { serviceRequestApi } from "../../services/serviceRequests";
+import { api } from "../../utils/api";
 import { useProjectStatuses } from "../../hooks/useProjectStatuses";
 import { SR, srButton } from "../../utils/srTheme";
 import { usePermissions } from "../../hooks/usePermissions";
 import { PERMISSIONS } from "../../constants/permissions";
 import MessageBanner, { SrMessage } from "./MessageBanner";
-
-/** Live statuses an SR may be cancelled from (mirrors backend SR_CANCELABLE_FROM). */
-const CANCELABLE_FROM = [1, 2, 4, 6, 7];
-
-const NEXT_STATUSES: Record<number, number[]> = {
-  1: [2, 4],
-  2: [2, 4],
-  6: [7],
-  7: [],
-  4: [],
-  5: [],
-};
+import {
+  SR_STATUS,
+  SR_NEXT_STATUSES as NEXT_STATUSES,
+  SR_CANCELABLE_FROM as CANCELABLE_FROM,
+  SR_CLOSABLE_FROM,
+  SR_NEEDS_COMMITTED_DATE,
+} from "../../constants/srWorkflow";
 
 const userName = (u: any) =>
   !u
@@ -42,7 +38,7 @@ const SrLifecyclePanel: React.FC<Props> = ({
   const { hasPermission } = usePermissions();
   // Status labels/colours come from the project's status master, never a
   // built-in list (SLA & Escalation owns that data).
-  const { metaFor } = useProjectStatuses(
+  const { metaFor, statuses } = useProjectStatuses(
     ticket?.project?._id || ticket?.project,
   );
 
@@ -71,16 +67,50 @@ const SrLifecyclePanel: React.FC<Props> = ({
       cancelled = true;
     };
   }, [projectId]);
+  // Whether a status asks for a remark is the project's call (status master:
+  // "Require closing remark"); the server enforces the same flag.
+  const needsRemark = (code: number | "") =>
+    code !== "" && !!statuses.find((s) => s.code === code)?.requireRemark;
   const reopensUsed = (ticket as any)?.reopen?.count ?? 0;
-  const reopensLeft = Math.max(0, reopenLimit - reopensUsed);
+
+  // Configured SR rules on the current status (Query Config → Ticket
+  // Statuses) decide what may follow it and who may apply each option.
+  // Without them the built-in lifecycle below applies, unchanged.
+  const statusDoc = (code: number | "") =>
+    code === "" ? undefined : statuses.find((s) => s.code === code);
+  const srRule = statusDoc(status)?.rules?.sr;
+  const configured = !!srRule;
+  const canApply = (code: number) => {
+    const perm = statusDoc(code)?.rules?.sr?.permission;
+    return !perm || hasPermission(perm);
+  };
+  // A move must satisfy both ends: what may follow the current status, and
+  // what the target says it may follow.
+  const allowedByConfig = (code: number) => {
+    const out = srRule?.restrictNext
+      ? (srRule.allowedNext || []).includes(code)
+      : code !== status;
+    const prev = statusDoc(code)?.rules?.sr;
+    const inbound = prev?.restrictPrev ? (prev.allowedPrev || []).includes(status) : true;
+    return out && inbound;
+  };
+  const needsDate = (code: number | "") =>
+    code !== "" &&
+    (configured ? !!statusDoc(code)?.requireDate : SR_NEEDS_COMMITTED_DATE.includes(code));
+  const [confirming, setConfirming] = useState(false);
 
   const [committedDate, setCommittedDate] = useState("");
   const [comment, setComment] = useState("");
   const [displayToParent, setDisplayToParent] = useState(false);
 
   const [action, setAction] = useState<
-    "" | "reassign" | "delegate" | "reopen" | "pslCall" | "cancel"
+    "" | "reassign" | "delegate" | "pslCall"
   >("");
+  // Who a request may be handed to comes from SR settings: a department may
+  // have to be chosen first, and roles such as Student/Parent are excluded.
+  const [departments, setDepartments] = useState<{ _id: string; name: string }[]>([]);
+  const [departmentId, setDepartmentId] = useState("");
+  const [needsDepartment, setNeedsDepartment] = useState(false);
   const [userQuery, setUserQuery] = useState("");
   const [userResults, setUserResults] = useState<any[]>([]);
   const [targetUser, setTargetUser] = useState<any>(null);
@@ -93,6 +123,7 @@ const SrLifecyclePanel: React.FC<Props> = ({
   const repDebounce = useRef<any>(null);
 
   const reset = () => {
+    setConfirming(false);
     setToStatus("");
     setCommittedDate("");
     setComment("");
@@ -100,11 +131,29 @@ const SrLifecyclePanel: React.FC<Props> = ({
     setAction("");
     setTargetUser(null);
     setUserQuery("");
+    setUserResults([]);
+    setDepartmentId("");
     setRemark("");
     setReplacementQuery("");
     setReplacementResults([]);
     setReplacementSr(null);
   };
+
+  // The department master for this project — the same list User Management
+  // maps people to.
+  useEffect(() => {
+    if (!projectId || (action !== "reassign" && action !== "delegate")) return;
+    let cancelled = false;
+    api
+      .get(`/departments/project/${projectId}`)
+      .then((r: any) => {
+        if (!cancelled) setDepartments(r?.data?.data || []);
+      })
+      .catch(() => setDepartments([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, action]);
 
   const onReplacementQuery = (q: string) => {
     setReplacementQuery(q);
@@ -148,8 +197,47 @@ const SrLifecyclePanel: React.FC<Props> = ({
 
   const updateStatus = () => {
     if (toStatus === "") return;
-    if ((toStatus === 2 || toStatus === 7) && !committedDate) {
-      setMsg({ type: "err", text: "A committed closure date is required for WIP." });
+    if (needsDate(toStatus) && !committedDate) {
+      setMsg({
+        type: "err",
+        text: `${metaFor(toStatus).label} needs a committed date.`,
+      });
+      return;
+    }
+    if ((needsRemark(toStatus) || cancelling || reopening) && !comment.trim()) {
+      setMsg({
+        type: "err",
+        text: cancelling
+          ? "A cancellation reason is required."
+          : reopening
+            ? "Give a reason for re-opening."
+            : `A remark is required for "${metaFor(toStatus).label}".`,
+      });
+      return;
+    }
+    // The status asks to be confirmed: first click arms, second applies.
+    if (statusDoc(toStatus)?.requireConfirmation && !confirming) {
+      setConfirming(true);
+      return;
+    }
+    if (cancelling) {
+      wrap(
+        () =>
+          serviceRequestApi.cancel(id, {
+            reason: comment,
+            replacementSrId: replacementSr?._id,
+          }),
+        "Cancelled.",
+      );
+      return;
+    }
+    // Without configured rules, close and re-open keep their own endpoints.
+    if (!configured && toStatus === SR_STATUS.CLOSED) {
+      wrap(() => serviceRequestApi.close(id, { comments: comment }), "Closed.");
+      return;
+    }
+    if (!configured && reopening) {
+      wrap(() => serviceRequestApi.reopen(id, { reason: comment }), "Re-opened.");
       return;
     }
     wrap(
@@ -164,22 +252,28 @@ const SrLifecyclePanel: React.FC<Props> = ({
     );
   };
 
+  const searchAssignees = (q: string, dept = departmentId) => {
+    if (debounce.current) clearTimeout(debounce.current);
+    debounce.current = setTimeout(async () => {
+      try {
+        const r: any = await serviceRequestApi.assignees({
+          projectId: String(projectId || ""),
+          departmentId: dept || undefined,
+          search: q.trim() || undefined,
+        });
+        setNeedsDepartment(!!r?.needsDepartment);
+        setUserResults(r?.users || []);
+      } catch (e) {
+        console.error(e);
+        setUserResults([]);
+      }
+    }, 300);
+  };
+
   const onUserQuery = (q: string) => {
     setUserQuery(q);
     setTargetUser(null);
-    if (debounce.current) clearTimeout(debounce.current);
-    if (q.trim().length < 2) {
-      setUserResults([]);
-      return;
-    }
-    debounce.current = setTimeout(async () => {
-      try {
-        const r = await serviceRequestApi.studentLookup(q.trim());
-        setUserResults(r.data || []);
-      } catch (e) {
-        console.error(e);
-      }
-    }, 350);
+    searchAssignees(q);
   };
 
   const ctrl: React.CSSProperties = {
@@ -221,7 +315,30 @@ const SrLifecyclePanel: React.FC<Props> = ({
   };
 
   const meta = metaFor(status);
-  const nexts = NEXT_STATUSES[status] || [];
+  // Every status move is offered in one place — the list below. Buttons are
+  // kept for things that are not a status change (reassign, delegate, PSL
+  // call), so a status never appears as both a button and an option.
+  const nexts: number[] = configured
+    ? statuses
+        .map((s) => s.code)
+        .filter((c) => allowedByConfig(c) && canApply(c))
+    : [
+        ...(NEXT_STATUSES[status] || []),
+        ...(SR_CLOSABLE_FROM.includes(status) && hasPermission(PERMISSIONS.SR_CLOSE)
+          ? [SR_STATUS.CLOSED]
+          : []),
+        ...(status === SR_STATUS.CLOSED && hasPermission(PERMISSIONS.SR_REOPEN)
+          ? [SR_STATUS.REOPEN]
+          : []),
+        ...(CANCELABLE_FROM.includes(status) && hasPermission(PERMISSIONS.SR_CANCEL)
+          ? [SR_STATUS.CANCEL]
+          : []),
+      ].filter((c, i, all) => all.indexOf(c) === i && statuses.some((s) => s.code === c));
+
+  // Cancelling asks for a reason and may point at the request that replaces
+  // this one; re-opening always asks why.
+  const cancelling = toStatus === SR_STATUS.CANCEL;
+  const reopening = toStatus === SR_STATUS.REOPEN;
 
   return (
     <div
@@ -309,19 +426,23 @@ const SrLifecyclePanel: React.FC<Props> = ({
               <select
                 style={{ ...ctrl, width: "100%" }}
                 value={toStatus}
-                onChange={(e) =>
-                  setToStatus(e.target.value ? Number(e.target.value) : "")
-                }
+                onChange={(e) => {
+                  setConfirming(false);
+                  setToStatus(e.target.value ? Number(e.target.value) : "");
+                }}
               >
                 <option value="">Select...</option>
                 {nexts.map((s) => (
                   <option key={s} value={s}>
-                    {metaFor(s).label}
+                    {/* Same status again = revise the WIP commitment. */}
+                    {s === status
+                      ? `Revise ${metaFor(s).label} (new committed date)`
+                      : metaFor(s).label}
                   </option>
                 ))}
               </select>
             </div>
-            {(toStatus === 2 || toStatus === 7) && (
+            {needsDate(toStatus) && (
               <div style={{ minWidth: 0 }}>
                 <label style={label}>Committed closure date</label>
                 <input
@@ -333,12 +454,76 @@ const SrLifecyclePanel: React.FC<Props> = ({
               </div>
             )}
           </div>
-          <label style={label}>Comment</label>
+          {reopening && (
+            <div style={{ fontSize: 12, color: SR.muted, marginTop: 10 }}>
+              {reopensUsed > 0
+                ? `Re-opened ${reopensUsed} of ${reopenLimit} time${reopenLimit === 1 ? "" : "s"} allowed for this project.`
+                : `This project allows ${reopenLimit} re-open${reopenLimit === 1 ? "" : "s"} per request.`}
+            </div>
+          )}
+          <label style={label}>
+            {cancelling
+              ? "Cancellation reason *"
+              : reopening
+                ? "Re-open reason *"
+                : needsRemark(toStatus)
+                  ? "Remark *"
+                  : "Comment"}
+          </label>
           <textarea
             style={{ ...ctrl, width: "100%", minHeight: 74, resize: "vertical" }}
             value={comment}
+            placeholder={
+              cancelling
+                ? "Why is this request being cancelled?"
+                : needsRemark(toStatus) || reopening
+                  ? "Required"
+                  : "Optional"
+            }
             onChange={(e) => setComment(e.target.value)}
           />
+          {cancelling && (
+            <>
+              <label style={label}>Replacement SR (optional)</label>
+              <input
+                style={{ ...ctrl, width: "100%" }}
+                placeholder="Search by SR number or subject..."
+                value={replacementSr ? replacementSr.ticketNumber : replacementQuery}
+                onChange={(e) => onReplacementQuery(e.target.value)}
+              />
+              {!replacementSr && replacementResults.length > 0 && (
+                <div
+                  style={{
+                    border: `1px solid ${SR.border}`,
+                    borderRadius: 10,
+                    marginTop: 6,
+                    maxHeight: 180,
+                    overflowY: "auto",
+                    background: "#fff",
+                  }}
+                >
+                  {replacementResults.map((t) => (
+                    <div
+                      key={t._id}
+                      onClick={() => {
+                        setReplacementSr(t);
+                        setReplacementResults([]);
+                      }}
+                      style={{
+                        padding: "9px 12px",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        borderBottom: `1px solid ${SR.rowBorder}`,
+                      }}
+                    >
+                      <strong>{t.ticketNumber}</strong>{" "}
+                      <span style={{ color: SR.sub }}>{t.subject || ""}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
           <label
             style={{
               display: "flex",
@@ -356,10 +541,20 @@ const SrLifecyclePanel: React.FC<Props> = ({
             />
             Display this remark to the parent
           </label>
-          <div style={{ marginTop: 12 }}>
+          <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {confirming && toStatus !== "" && (
+              <span style={{ fontSize: 13, color: SR.text, fontWeight: 600 }}>
+                Change status to "{metaFor(toStatus).label}"?
+              </span>
+            )}
             <button onClick={updateStatus} disabled={busy} style={srButton("primary")}>
-              Update
+              {confirming ? "Confirm" : "Update"}
             </button>
+            {confirming && (
+              <button style={secondaryButton} disabled={busy} onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
+            )}
           </div>
         </>
       ) : (
@@ -369,174 +564,37 @@ const SrLifecyclePanel: React.FC<Props> = ({
       )}
 
       <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-        {status === 4 && (
+        {/* Each of these is its own permission on the server; showing a
+            button the role cannot use only produces a failed request. */}
+        {hasPermission(PERMISSIONS.SR_REASSIGN) && (
           <button
             disabled={busy}
-            style={srButton("success")}
-            onClick={() =>
-              wrap(() => serviceRequestApi.close(id, { comments: comment }), "Closed.")
-            }
+            style={secondaryButton}
+            onClick={() => setAction(action === "reassign" ? "" : "reassign")}
           >
-            Close
+            Reassign
           </button>
         )}
-        {/* Re-opening is a permission, and a project caps how often it may be
-            done. Showing the button to someone who holds neither only produces
-            a failed request they cannot act on. */}
-        {status === 5 && hasPermission(PERMISSIONS.SR_REOPEN) && (
-          <button
-            disabled={busy || !reopensLeft}
-            style={{
-              ...srButton("danger"),
-              opacity: reopensLeft ? 1 : 0.5,
-              cursor: reopensLeft ? "pointer" : "not-allowed",
-            }}
-            title={
-              reopensLeft
-                ? `${reopensLeft} re-open${reopensLeft === 1 ? "" : "s"} left for this request`
-                : "This request has reached its re-open limit"
-            }
-            onClick={() => setAction(action === "reopen" ? "" : "reopen")}
-          >
-            Re-open
-          </button>
-        )}
-        <button
-          disabled={busy}
-          style={secondaryButton}
-          onClick={() => setAction(action === "reassign" ? "" : "reassign")}
-        >
-          Reassign
-        </button>
-        <button
-          disabled={busy}
-          style={secondaryButton}
-          onClick={() => setAction(action === "delegate" ? "" : "delegate")}
-        >
-          Delegate
-        </button>
-        <button
-          disabled={busy}
-          style={secondaryButton}
-          onClick={() => setAction(action === "pslCall" ? "" : "pslCall")}
-        >
-          PSL Call
-        </button>
-        {CANCELABLE_FROM.includes(status) && hasPermission(PERMISSIONS.SR_CANCEL) && (
+        {hasPermission(PERMISSIONS.SR_DELEGATE) && (
           <button
             disabled={busy}
-            style={srButton("danger")}
-            onClick={() => setAction(action === "cancel" ? "" : "cancel")}
+            style={secondaryButton}
+            onClick={() => setAction(action === "delegate" ? "" : "delegate")}
           >
-            Cancel SR
+            Delegate
+          </button>
+        )}
+        {/* Parent satisfaction call — PSR only; an ISR has no parent. */}
+        {ticket?.interactionType === "PSR" && hasPermission(PERMISSIONS.SR_CLOSE) && (
+          <button
+            disabled={busy}
+            style={secondaryButton}
+            onClick={() => setAction(action === "pslCall" ? "" : "pslCall")}
+          >
+            PSL Call
           </button>
         )}
       </div>
-
-      {action === "reopen" && (
-        <div style={actionPanel}>
-          <div style={{ fontSize: 12, color: SR.muted, marginBottom: 6 }}>
-            {reopensUsed > 0
-              ? `Re-opened ${reopensUsed} of ${reopenLimit} time${reopenLimit === 1 ? "" : "s"} allowed for this project.`
-              : `This project allows ${reopenLimit} re-open${reopenLimit === 1 ? "" : "s"} per request.`}
-          </div>
-          <label style={label}>Re-open reason</label>
-          <textarea
-            style={{ ...ctrl, width: "100%", minHeight: 74, resize: "vertical" }}
-            value={remark}
-            onChange={(e) => setRemark(e.target.value)}
-          />
-          <button
-            style={{ ...srButton("danger"), marginTop: 8 }}
-            disabled={busy}
-            onClick={() =>
-              wrap(() => serviceRequestApi.reopen(id, { reason: remark }), "Re-opened.")
-            }
-          >
-            Confirm re-open
-          </button>
-        </div>
-      )}
-
-      {action === "cancel" && (
-        <div style={actionPanel}>
-          <label style={label}>Cancellation reason *</label>
-          <textarea
-            style={{ ...ctrl, width: "100%", minHeight: 74, resize: "vertical" }}
-            value={remark}
-            onChange={(e) => setRemark(e.target.value)}
-            placeholder="Why is this request being cancelled?"
-          />
-          <label style={label}>Replacement SR (optional)</label>
-          <input
-            style={{ ...ctrl, width: "100%" }}
-            placeholder="Search by SR number or subject..."
-            value={replacementSr ? replacementSr.ticketNumber : replacementQuery}
-            onChange={(e) => onReplacementQuery(e.target.value)}
-          />
-          {!replacementSr && replacementResults.length > 0 && (
-            <div
-              style={{
-                border: `1px solid ${SR.border}`,
-                borderRadius: 10,
-                marginTop: 6,
-                maxHeight: 180,
-                overflowY: "auto",
-                background: "#fff",
-              }}
-            >
-              {replacementResults.map((t) => (
-                <div
-                  key={t._id}
-                  onClick={() => {
-                    setReplacementSr(t);
-                    setReplacementResults([]);
-                  }}
-                  style={{
-                    padding: "9px 12px",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    borderBottom: `1px solid ${SR.rowBorder}`,
-                  }}
-                >
-                  <strong>{t.ticketNumber}</strong>{" "}
-                  <span style={{ color: SR.sub }}>{t.subject || ""}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {replacementSr && (
-            <button
-              type="button"
-              onClick={() => {
-                setReplacementSr(null);
-                setReplacementQuery("");
-              }}
-              style={{ ...secondaryButton, marginTop: 8, padding: "6px 10px" }}
-            >
-              Clear replacement
-            </button>
-          )}
-          <div>
-            <button
-              style={{ ...srButton("danger"), marginTop: 12 }}
-              disabled={busy || !remark.trim()}
-              onClick={() =>
-                wrap(
-                  () =>
-                    serviceRequestApi.cancel(id, {
-                      reason: remark,
-                      replacementSrId: replacementSr?._id || undefined,
-                    }),
-                  "Service request cancelled.",
-                )
-              }
-            >
-              Confirm cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       {action === "pslCall" && (
         <div style={actionPanel}>
@@ -577,15 +635,50 @@ const SrLifecyclePanel: React.FC<Props> = ({
 
       {(action === "reassign" || action === "delegate") && (
         <div style={actionPanel}>
+          {departments.length > 0 && (
+            <>
+              <label style={label}>Department</label>
+              <select
+                style={{ ...ctrl, width: "100%" }}
+                value={departmentId}
+                onChange={(e) => {
+                  const dept = e.target.value;
+                  setDepartmentId(dept);
+                  setTargetUser(null);
+                  setUserQuery("");
+                  setUserResults([]);
+                  if (dept) searchAssignees("", dept);
+                }}
+              >
+                <option value="">All departments</option>
+                {departments.map((d) => (
+                  <option key={d._id} value={d._id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           <label style={label}>
             {action === "reassign" ? "Reassign to" : "Delegate to"} (employee)
           </label>
           <input
             style={{ ...ctrl, width: "100%" }}
-            placeholder="Search employee..."
+            placeholder={
+              needsDepartment ? "Pick a department first" : "Search by name, email or employee code..."
+            }
+            disabled={needsDepartment && !departmentId}
             value={targetUser ? userName(targetUser) : userQuery}
+            onFocus={() => {
+              if (!targetUser && !userResults.length) searchAssignees(userQuery);
+            }}
             onChange={(e) => onUserQuery(e.target.value)}
           />
+          {needsDepartment && !departmentId && (
+            <span style={{ fontSize: 12, color: SR.muted }}>
+              This project asks for the department before the people are listed.
+            </span>
+          )}
           {!targetUser && userResults.length > 0 && (
             <div
               style={{
@@ -611,7 +704,12 @@ const SrLifecyclePanel: React.FC<Props> = ({
                     borderBottom: `1px solid ${SR.rowBorder}`,
                   }}
                 >
-                  {userName(u)} <span style={{ color: SR.sub }}>{u.email || ""}</span>
+                  {userName(u)}{" "}
+                  <span style={{ color: SR.sub }}>
+                    {[u.email, u.employeeCode, u.department, u.role?.name]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
                 </div>
               ))}
             </div>
