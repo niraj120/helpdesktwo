@@ -122,14 +122,38 @@ const SrSlaBanner: React.FC<{ ticket: any }> = ({ ticket }) => {
   const due = ticket?.roleLevelSLA?.dueAt || ticket?.ticketLevelSLA?.dueAt;
   const breached = ticket?.roleLevelSLA?.breachedAt || ticket?.ticketLevelSLA?.breachedAt;
   const closed = ticket?.closedAt || ticket?.resolvedAt;
-  const tone = breached ? "bad" : closed ? "good" : "normal";
-  const color = tone === "bad" ? "#b91c1c" : tone === "good" ? "#047857" : SR.primary;
-  const bg = tone === "bad" ? "#fef2f2" : tone === "good" ? "#ecfdf5" : "#eff6ff";
+  // Held clock (a status configured to pause the SLA, e.g. WIP waiting out its
+  // committed date): the time left is frozen at the moment it was held.
+  const heldAt = ticket?.roleLevelSLA?.pausedAt || ticket?.ticketLevelSLA?.pausedAt;
+  const resumeAt = ticket?.roleLevelSLA?.resumeAt || ticket?.ticketLevelSLA?.resumeAt;
+  const held = !!heldAt && !closed;
+  // Frozen remaining, shown through the same formatter: what was left when the
+  // clock stopped, as if it were counting from now.
+  const frozenDue =
+    held && due
+      ? new Date(
+          Date.now() +
+            Math.max(0, new Date(due).getTime() - new Date(heldAt).getTime()),
+        ).toISOString()
+      : null;
+  const tone = breached ? "bad" : closed ? "good" : held ? "held" : "normal";
+  const color =
+    tone === "bad" ? "#b91c1c" : tone === "good" ? "#047857" : tone === "held" ? "#b45309" : SR.primary;
+  const bg =
+    tone === "bad" ? "#fef2f2" : tone === "good" ? "#ecfdf5" : tone === "held" ? "#fffbeb" : "#eff6ff";
 
   return (
     <div
       style={{
-        border: `1px solid ${tone === "bad" ? "#fecaca" : tone === "good" ? "#bbf7d0" : "#bfdbfe"}`,
+        border: `1px solid ${
+          tone === "bad"
+            ? "#fecaca"
+            : tone === "good"
+              ? "#bbf7d0"
+              : tone === "held"
+                ? "#fde68a"
+                : "#bfdbfe"
+        }`,
         background: bg,
         borderRadius: 16,
         padding: 16,
@@ -158,15 +182,31 @@ const SrSlaBanner: React.FC<{ ticket: any }> = ({ ticket }) => {
         </span>
         <div style={{ minWidth: 0 }}>
           <div style={{ color, fontSize: 12, fontWeight: 800 }}>
-            {breached ? "SLA breached" : closed ? "SLA met / closed" : "SLA running"}
+            {breached
+              ? "SLA breached"
+              : closed
+                ? "SLA met / closed"
+                : held
+                  ? "SLA on hold"
+                  : "SLA running"}
           </div>
           <div style={{ color: SR.text, fontSize: 16, fontWeight: 800, lineHeight: 1.25 }}>
-            {due ? timeUntil(due) : "No SLA deadline"}
+            {held && frozenDue
+              ? `${timeUntil(frozenDue)} left, held`
+              : due
+                ? timeUntil(due)
+                : "No SLA deadline"}
           </div>
         </div>
       </div>
       <div style={{ color: SR.sub, fontSize: 12, textAlign: "right", flexShrink: 0 }}>
-        {due ? `Due ${formatDateTime(due)}` : "Deadline not available"}
+        {held
+          ? resumeAt
+            ? `Starts again ${formatDateTime(resumeAt)}`
+            : "Starts again when the status changes"
+          : due
+            ? `Due ${formatDateTime(due)}`
+            : "Deadline not available"}
       </div>
     </div>
   );

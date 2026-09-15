@@ -35,6 +35,7 @@ import {
   planOnEnter,
   StatusRuleError,
 } from "../../services/statusRules";
+import { releaseSlaPause, syncSlaPause } from "../../services/slaPause";
 import { renderTemplate } from "./srConditionEngine";
 import { SrNotificationTemplate } from "../../models/SrNotificationTemplate";
 
@@ -378,6 +379,13 @@ async function moveByConfig(
 
   if (check.to.requireCommittedDate) await applyWipCommitment(ticket, opts, actorId);
 
+  // Hold or release the SLA clock as this status is configured to (e.g. WIP
+  // waits out its committed date, and the time waited is added back).
+  await syncSlaPause(ticket, check.to, {
+    committedDate: ticket.wip?.committedDate,
+    scope: "sr",
+  });
+
   const plan = await planOnEnter(ticket, check, actorId, reopenRoutingFor(ticket));
   if (plan.reopen) ticket.reopen = plan.reopen;
   if (plan.clearClosedAt) ticket.closedAt = undefined;
@@ -443,6 +451,14 @@ export async function changeSrStatus(
 
   if (transition.committedDateRequired) await applyWipCommitment(ticket, opts, actorId);
 
+  const toDoc = statuses.find((s: any) => Number(s.code) === Number(toStatus));
+  if (toDoc) {
+    await syncSlaPause(ticket, toDoc, {
+      committedDate: ticket.wip?.committedDate,
+      scope: "sr",
+    });
+  }
+
   if (toStatus === SR_STATUS.RESOLVED && !ticket.resolvedAt) {
     ticket.resolvedAt = new Date();
   }
@@ -478,6 +494,9 @@ export async function closeSr(
     throw new SrError("Only a resolved SR can be closed.", 400);
   }
   await assertStatusRemark(ticket, SR_STATUS.CLOSED, comments);
+  // Leaving a holding status (e.g. WIP) starts the clock again — the time
+  // spent waiting is added back, so the close is judged on working time.
+  await releaseSlaPause(ticket);
   recordChange(ticket, "status", ticket.status, SR_STATUS.CLOSED, actorId);
   ticket.status = SR_STATUS.CLOSED;
   ticket.closedAt = new Date();
@@ -672,6 +691,7 @@ export async function parentCloseSr(
     comments: opts.comments,
   };
   if (opts.satisfied) {
+    await releaseSlaPause(ticket);
     recordChange(ticket, "status", ticket.status, SR_STATUS.CLOSED, actorId);
     ticket.status = SR_STATUS.CLOSED;
     ticket.closedAt = new Date();
@@ -783,6 +803,7 @@ export async function reopenSr(
     );
   }
   await assertStatusRemark(ticket, SR_STATUS.REOPEN, opts.reason);
+  await releaseSlaPause(ticket);
   recordChange(ticket, "status", ticket.status, SR_STATUS.REOPEN, actorId);
   ticket.status = SR_STATUS.REOPEN;
   // No longer closed — screens that read closedAt must not keep treating it
@@ -862,6 +883,7 @@ export async function pslSatisfactionCall(
     }
   }
   if (reopenPlan) {
+    await releaseSlaPause(ticket);
     // Recorded as a status change too, so it counts toward the limit.
     recordChange(ticket, "status", ticket.status, SR_STATUS.REOPEN, actorId);
     ticket.status = SR_STATUS.REOPEN;
@@ -869,6 +891,7 @@ export async function pslSatisfactionCall(
     ticket.closedAt = undefined;
     if (reopenPlan.assignedTo) ticket.assignedTo = reopenPlan.assignedTo;
   } else if (opts.spoken && opts.parentSatisfied === true) {
+    await releaseSlaPause(ticket);
     recordChange(ticket, "status", ticket.status, SR_STATUS.CLOSED, actorId);
     ticket.status = SR_STATUS.CLOSED;
     ticket.closedAt = ticket.closedAt || new Date();
@@ -953,6 +976,9 @@ export async function cancelSr(
       );
     }
   }
+
+  // A cancelled request is not waiting on anything — let its clock go.
+  await releaseSlaPause(ticket);
 
   recordChange(ticket, "status", ticket.status, SR_STATUS.CANCEL, actorId);
   ticket.status = SR_STATUS.CANCEL;

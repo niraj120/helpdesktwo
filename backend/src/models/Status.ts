@@ -28,6 +28,19 @@ export interface IStatusRule {
    * which is how it has always behaved.
    */
   allowedActors?: ("assignee" | "raiser")[];
+  /**
+   * Hold the SLA clock while the ticket sits in this status. What the ticket
+   * has left when it enters is what it has left when it resumes — the time
+   * spent waiting is added back to every deadline.
+   */
+  pauseSla?: boolean;
+  /**
+   * When the clock starts again:
+   *   "committedDate"  — on the date the agent committed to (WIP);
+   *   "statusChange"   — only when the ticket leaves this status.
+   * With "committedDate" and no date set, it falls back to "statusChange".
+   */
+  pauseUntil?: "committedDate" | "statusChange";
   /** Who the ticket goes to when this status is applied. */
   assignOnApply?: {
     mode: "keep" | "role" | "user" | "reopenRouting";
@@ -93,6 +106,12 @@ const StatusRuleSchema = new Schema(
     maxPerTicket: { type: Number, min: 0 },
     permission: { type: String, trim: true },
     allowedActors: [{ type: String, enum: ["assignee", "raiser"] }],
+    pauseSla: { type: Boolean, default: false },
+    pauseUntil: {
+      type: String,
+      enum: ["committedDate", "statusChange"],
+      default: "committedDate",
+    },
     assignOnApply: {
       type: new Schema(
         {

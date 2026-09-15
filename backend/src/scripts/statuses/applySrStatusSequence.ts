@@ -31,6 +31,14 @@ import { SR_STATUS } from "../../modules/service-request/srWorkflow";
 const APPLY = process.argv.includes("--apply");
 const WITH_CANCEL = !process.argv.includes("--no-cancel");
 const WIP_REVISE = !process.argv.includes("--no-wip-revise");
+/**
+ * Hold the SLA clock while a request waits out its WIP committed date. On by
+ * default for WIP only; --no-hold-sla leaves the clock running.
+ *
+ * Re-Opened WIP deliberately does NOT hold it: a re-opened request is live
+ * work again, and its clock must keep running.
+ */
+const HOLD_SLA = !process.argv.includes("--no-hold-sla");
 const ONLY = process.argv
   .filter((a) => a.startsWith("--project="))
   .map((a) => a.slice("--project=".length).trim().toLowerCase())
@@ -105,6 +113,12 @@ async function main() {
             (code === REOPEN ? { mode: "reopenRouting" } : { mode: "keep" }),
           ...(code === REOPEN && st.rules?.sr?.maxPerTicket === undefined
             ? { maxPerTicket: 1 }
+            : {}),
+          // A request waiting on a date it committed to is not burning its
+          // SLA: hold the clock, and start it again on that date. Re-Opened
+          // WIP is excluded — a re-opened request is live work, not waiting.
+          ...(HOLD_SLA && code === WIP
+            ? { pauseSla: true, pauseUntil: "committedDate" }
             : {}),
         },
       };

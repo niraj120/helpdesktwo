@@ -18,6 +18,8 @@ export interface StatusRule {
   maxPerTicket?: number;
   permission?: string;
   allowedActors?: ("assignee" | "raiser")[];
+  pauseSla?: boolean;
+  pauseUntil?: "committedDate" | "statusChange";
   assignOnApply?: {
     mode: "keep" | "role" | "user" | "reopenRouting";
     roleId?: string;
@@ -380,6 +382,48 @@ const StatusRulesEditor: React.FC<{
                   style={{ ...ctl, minWidth: 220 }}
                 />
               )}
+            </div>
+
+            {/* Hold the SLA clock */}
+            <div style={{ ...row, marginTop: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, minWidth: 190, marginTop: 6 }}>
+                SLA clock
+              </span>
+              <div>
+                <label style={{ ...row, marginTop: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!rule?.pauseSla}
+                    onChange={(e) => patchRule({ pauseSla: e.target.checked })}
+                  />
+                  Hold the SLA while the ticket sits in this status
+                </label>
+                {rule?.pauseSla && (
+                  <div style={{ ...row, marginTop: 6 }}>
+                    <span style={{ fontSize: 13 }}>Start it again</span>
+                    <select
+                      value={rule?.pauseUntil || "committedDate"}
+                      onChange={(e) =>
+                        patchRule({ pauseUntil: e.target.value as any })
+                      }
+                      style={{ ...ctl, minWidth: 260 }}
+                    >
+                      <option value="committedDate">
+                        On the committed date
+                      </option>
+                      <option value="statusChange">
+                        When the ticket leaves this status
+                      </option>
+                    </select>
+                  </div>
+                )}
+                <span style={hint}>
+                  What the ticket has left when it enters is what it has left when
+                  the clock starts again — a 24h SLA held at hour 13 still has 11h.
+                  On the committed date the clock restarts on its own, even though
+                  the ticket is still in this status.
+                </span>
+              </div>
             </div>
 
             {/* Assign on apply */}

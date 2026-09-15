@@ -21,6 +21,7 @@ import path from "path";
 import fs from "fs";
 import { GCSService } from "../services/gcsService";
 import { canActOnTicket, canModifyTicket } from "../utils/ticketAuth";
+import { syncSlaPause } from "../services/slaPause";
 import {
   checkStatusChange,
   planOnEnter,
@@ -4055,6 +4056,17 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       status: statusNum,
       updatedAt: now,
     };
+    const unsetFields: any = {};
+
+    // Hold or release the SLA clock as this status is configured to: a status
+    // marked "pause SLA" stops the clock until its committed date, and the
+    // time waited is added back to every deadline on resume.
+    const slaHold = await syncSlaPause(ticket, statusDoc, {
+      committedDate,
+      now,
+    });
+    Object.assign(updateFields, slaHold.set);
+    Object.assign(unsetFields, slaHold.unset);
 
     const isClosingStatus = statusDoc?.isClosed === true;
 
@@ -4179,6 +4191,7 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       {
         $set: updateFields,
         $push: pushPayload,
+        ...(Object.keys(unsetFields).length ? { $unset: unsetFields } : {}),
       },
       { new: true, runValidators: false }, // runValidators: false to skip validation on existing subdocuments
     );

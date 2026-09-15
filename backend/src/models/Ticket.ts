@@ -153,6 +153,7 @@ export interface ITicket extends Document {
     dueAt: Date; // When ticket-level SLA expires (calculated from created time + priority resolution time)
     breachedAt?: Date; // When ticket-level SLA was breached (if applicable)
     pausedAt?: Date; // When SLA was paused (e.g., status changed to on-hold)
+    resumeAt?: Date; // When the hold is due to end (e.g. the WIP committed date)
     pausedDuration?: number; // Total time paused in minutes
   };
   roleLevelSLA?: {
@@ -160,6 +161,7 @@ export interface ITicket extends Document {
     dueAt: Date; // When current role-level SLA expires
     breachedAt?: Date; // When current role-level SLA was breached (if applicable)
     pausedAt?: Date; // When SLA was paused
+    resumeAt?: Date; // When the hold is due to end (e.g. the WIP committed date)
     pausedDuration?: number; // Total time paused in minutes
     warningsSent?: number[]; // US-ESC-008: Threshold percentages for which warnings have already been sent
   };
@@ -548,6 +550,7 @@ const TicketSchema: Schema = new Schema(
       dueAt: { type: Date },
       breachedAt: { type: Date },
       pausedAt: { type: Date },
+      resumeAt: { type: Date },
       pausedDuration: { type: Number, default: 0 },
     },
     roleLevelSLA: {
@@ -555,6 +558,7 @@ const TicketSchema: Schema = new Schema(
       dueAt: { type: Date },
       breachedAt: { type: Date },
       pausedAt: { type: Date },
+      resumeAt: { type: Date },
       pausedDuration: { type: Number, default: 0 },
       warningsSent: { type: [Number], default: [] }, // US-ESC-008
     },

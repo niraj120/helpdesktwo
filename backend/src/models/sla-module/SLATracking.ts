@@ -40,6 +40,8 @@ export interface ISLATracking extends Document {
   // Pause/Resume Tracking (for on-hold tickets)
   isPaused: boolean;
   pausedAt?: Date;
+  /** When the hold is due to end (e.g. the WIP committed date). */
+  resumeAt?: Date;
   pausedDuration: number; // total paused time in minutes
 
   createdAt: Date;
@@ -141,6 +143,9 @@ const SLATrackingSchema = new Schema<ISLATracking>(
     isPaused: {
       type: Boolean,
       default: false,
+    },
+    resumeAt: {
+      type: Date,
     },
     pausedAt: {
       type: Date,

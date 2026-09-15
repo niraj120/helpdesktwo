@@ -33,6 +33,8 @@ const cleanRule = (r: any) => {
     allowedActors: Array.isArray(r.allowedActors)
       ? [...new Set(r.allowedActors.filter((a: any) => ["assignee", "raiser"].includes(a)))]
       : [],
+    pauseSla: !!r.pauseSla,
+    pauseUntil: r.pauseUntil === "statusChange" ? "statusChange" : "committedDate",
     assignOnApply: {
       mode,
       roleId: mode === "role" ? oidOrUndef(r.assignOnApply?.roleId) : undefined,

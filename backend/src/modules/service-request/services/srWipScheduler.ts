@@ -15,6 +15,7 @@ import { Project } from "../../../models/Project";
 import { EmailIntake } from "../../../models/EmailIntake";
 import { SR_STATUS } from "../srWorkflow";
 import { resolveSrConfig } from "../serviceRequestConfig";
+import { resumeDueSlaPauses } from "../../../services/slaPause";
 
 const WIP_STATUSES = [SR_STATUS.WIP, SR_STATUS.REOPEN_WIP];
 const DEFAULT_REMINDER_HOURS = 48; // per-project override applied in a later pass
@@ -46,6 +47,15 @@ class SrWipScheduler {
     const windowEnd = new Date(
       now.getTime() + DEFAULT_REMINDER_HOURS * 60 * 60 * 1000,
     );
+
+    // 0) Restart SLA clocks whose hold has run out (the committed date has
+    //    arrived). The request stays in WIP; only its clock starts again.
+    let slaResumed = 0;
+    try {
+      slaResumed = await resumeDueSlaPauses();
+    } catch (e: any) {
+      console.error("[srWipScheduler] SLA resume error:", e?.message || e);
+    }
 
     // 1) Reminder pass — committed date approaching, no reminder sent yet.
     const due = await Ticket.find({
@@ -116,9 +126,10 @@ class SrWipScheduler {
       { $set: { escalationLevel: 1, escalatedAt: now } },
     );
 
-    if (due.length || escalatedCount || overdueEmails.modifiedCount) {
+    if (due.length || escalatedCount || overdueEmails.modifiedCount || slaResumed) {
       console.log(
-        `[srWipScheduler] ${due.length} reminder(s), ${escalatedCount} expiry escalation(s), ${overdueEmails.modifiedCount} email TAT escalation(s)`,
+        `[srWipScheduler] ${due.length} reminder(s), ${escalatedCount} expiry escalation(s), ` +
+          `${overdueEmails.modifiedCount} email TAT escalation(s), ${slaResumed} SLA clock(s) resumed`,
       );
     }
   }

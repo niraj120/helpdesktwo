@@ -223,12 +223,14 @@ interface Ticket {
     dueAt?: string;
     breachedAt?: string;
     pausedAt?: string;
+    resumeAt?: string;
     pausedDuration?: number;
   };
   ticketLevelSLA?: {
     dueAt?: string;
     breachedAt?: string;
     pausedAt?: string;
+    resumeAt?: string;
     pausedDuration?: number;
   };
   mergedTickets?: Array<{
@@ -467,13 +469,22 @@ const computeDetailSlaPill = (
     };
   }
 
-  if (ticket.roleLevelSLA?.pausedAt ?? ticket.ticketLevelSLA?.pausedAt)
+  // Clock held (e.g. WIP waiting out its committed date): show what is left
+  // frozen, and when it starts again — a held ticket is not an idle one.
+  const pausedAt = ticket.roleLevelSLA?.pausedAt ?? ticket.ticketLevelSLA?.pausedAt;
+  if (pausedAt) {
+    const resumeAt =
+      ticket.roleLevelSLA?.resumeAt ?? ticket.ticketLevelSLA?.resumeAt;
+    const left = Math.max(0, new Date(dueAt).getTime() - new Date(pausedAt).getTime());
     return {
-      label: "PAUSED",
+      label: `ON HOLD · ${_formatSlaMsDetail(left)}`,
       color: "#374151",
       bg: "#f3f4f6",
-      tooltip: "SLA is paused",
+      tooltip:
+        `SLA held since ${new Date(pausedAt).toLocaleString()} with ${_formatSlaMsDetail(left)} left` +
+        (resumeAt ? `. Starts again ${new Date(resumeAt).toLocaleString()}.` : "."),
     };
+  }
   const isBreached = !!(
     ticket.roleLevelSLA?.breachedAt ?? ticket.ticketLevelSLA?.breachedAt
   );
