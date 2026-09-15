@@ -534,6 +534,14 @@ export interface SrRequesterConfig {
   canComment: boolean;
   /** Attach a file. */
   canAttach: boolean;
+  /**
+   * Hand the request to someone else. Off by default: raising a request is not
+   * the same as running it — moving it around is the assignee's job. Holding
+   * SR_REASSIGN still lets them reassign requests assigned TO them.
+   */
+  canReassign: boolean;
+  /** Delegate the request (cover for leave). Off by default, as above. */
+  canDelegate: boolean;
 }
 
 export interface SrConfig {

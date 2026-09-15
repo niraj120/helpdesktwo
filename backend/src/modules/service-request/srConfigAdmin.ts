@@ -24,6 +24,8 @@ export interface SrConfigPatch {
     canReply?: boolean;
     canComment?: boolean;
     canAttach?: boolean;
+    canReassign?: boolean;
+    canDelegate?: boolean;
   };
   /** Who the reassign / delegate pickers offer (see SrReassignConfig). */
   reassign?: {

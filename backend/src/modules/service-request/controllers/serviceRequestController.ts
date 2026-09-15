@@ -206,6 +206,7 @@ export const reassign = async (req: AuthRequest, res: Response) => {
         userId: req.body.userId,
         subCategoryId: req.body.subCategoryId,
         remark: req.body.remark,
+        user: actorUser(req),
       },
       actorId(req),
     );
@@ -219,7 +220,7 @@ export const delegate = async (req: AuthRequest, res: Response) => {
   try {
     const ticket = await srSvc.delegateSr(
       req.params.id,
-      { toUserId: req.body.toUserId, reason: req.body.reason },
+      { toUserId: req.body.toUserId, reason: req.body.reason, user: actorUser(req) },
       actorId(req),
     );
     res.json({ success: true, data: ticket });

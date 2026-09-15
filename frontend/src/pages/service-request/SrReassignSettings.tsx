@@ -217,6 +217,8 @@ const SrReassignSettings: React.FC<{ projectId: string; embedded?: boolean }> = 
   const [reqCanReply, setReqCanReply] = useState(true);
   const [reqCanComment, setReqCanComment] = useState(true);
   const [reqCanAttach, setReqCanAttach] = useState(true);
+  const [reqCanReassign, setReqCanReassign] = useState(false);
+  const [reqCanDelegate, setReqCanDelegate] = useState(false);
   const [requireDepartment, setRequireDepartment] = useState(false);
   const [restrictToProject, setRestrictToProject] = useState(true);
   const [excludeRoleIds, setExcludeRoleIds] = useState<string[]>([]);
@@ -240,6 +242,8 @@ const SrReassignSettings: React.FC<{ projectId: string; embedded?: boolean }> = 
         setReqCanReply(rq.canReply !== false);
         setReqCanComment(rq.canComment !== false);
         setReqCanAttach(rq.canAttach !== false);
+        setReqCanReassign(rq.canReassign === true);
+        setReqCanDelegate(rq.canDelegate === true);
         const r = cfgRes?.data?.reassign || {};
         setRequireDepartment(!!r.requireDepartment);
         setRestrictToProject(r.restrictToProject !== false);
@@ -278,6 +282,8 @@ const SrReassignSettings: React.FC<{ projectId: string; embedded?: boolean }> = 
           canReply: reqCanReply,
           canComment: reqCanComment,
           canAttach: reqCanAttach,
+          canReassign: reqCanReassign,
+          canDelegate: reqCanDelegate,
         },
       });
       setMsg({ type: "ok", text: "Saved." });
@@ -341,12 +347,17 @@ const SrReassignSettings: React.FC<{ projectId: string; embedded?: boolean }> = 
           A request is worked by its assignee, but whoever raised it answers
           questions and confirms the outcome. Which statuses they may set is
           decided per status ("Who may apply it"); these are the everyday actions.
+          Reassign and delegate are off by default — moving a request around belongs
+          to whoever is working it, and they still keep both on requests assigned to
+          them.
         </div>
         {(
           [
             ["Reply on their own request", reqCanReply, setReqCanReply],
             ["Add comments", reqCanComment, setReqCanComment],
             ["Attach files", reqCanAttach, setReqCanAttach],
+            ["Reassign it to someone else", reqCanReassign, setReqCanReassign],
+            ["Delegate it", reqCanDelegate, setReqCanDelegate],
           ] as [string, boolean, (v: boolean) => void][]
         ).map(([text, value, set]) => (
           <label key={text} style={check}>

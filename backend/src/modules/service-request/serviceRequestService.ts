@@ -559,6 +559,45 @@ export async function listSrAssignees(params: {
   return { requireDepartment, needsDepartment: false, users };
 }
 
+/**
+ * Raising a request does not make it yours to hand around: moving it belongs
+ * to whoever is working it. So someone who is only the raiser may reassign or
+ * delegate their own request only if the project says so (SR settings →
+ * Requester). The same person keeps both actions on requests assigned to them,
+ * and a supervisor (SR_MODIFY_ANY) is never blocked.
+ */
+async function assertMayHandOver(
+  ticket: any,
+  actorId: string,
+  user: { roleCode?: string; permissions?: any[] } | null | undefined,
+  action: "reassign" | "delegate",
+) {
+  const assignee = String(ticket?.assignedTo?._id || ticket?.assignedTo || "");
+  const raiser = String(ticket?.createdBy?._id || ticket?.createdBy || "");
+  const me = String(actorId || "");
+  if (!me || assignee === me) return; // the assignee always may
+  if (raiser !== me) return; // not the raiser — the route permission decides
+
+  const codes = (user?.permissions || []).map((p: any) =>
+    typeof p === "string" ? p : p?.code,
+  );
+  if (user?.roleCode === "SUPER_ADMIN" || codes.includes("SR_MODIFY_ANY")) return;
+
+  const cfg = await getProjectSrConfig(ticket.project);
+  const allowed =
+    action === "reassign"
+      ? cfg?.requester?.canReassign === true
+      : cfg?.requester?.canDelegate === true;
+  if (!allowed) {
+    throw new SrError(
+      `You raised this request, so it is ${
+        assignee ? "with its assignee" : "not yours"
+      } to ${action}. Ask the assignee or a supervisor.`,
+      403,
+    );
+  }
+}
+
 export interface ReassignOpts {
   userId?: string;
   subCategoryId?: string;
@@ -568,10 +607,11 @@ export interface ReassignOpts {
 /** Reassign (TAT is intentionally NOT recomputed — Vector rule). */
 export async function reassignSr(
   ticketId: string,
-  opts: ReassignOpts,
+  opts: ReassignOpts & { user?: { roleCode?: string; permissions?: any[] } | null },
   actorId: string,
 ) {
   const ticket = await loadSr(ticketId);
+  await assertMayHandOver(ticket, actorId, opts.user, "reassign");
   const oldAssignee = ticket.assignedTo;
   if (opts.userId) ticket.assignedTo = oid(opts.userId);
   if (opts.subCategoryId) ticket.category = opts.subCategoryId as any;
@@ -594,10 +634,15 @@ export async function reassignSr(
 /** Delegate to another employee (assignee on leave/left); keeps original. */
 export async function delegateSr(
   ticketId: string,
-  opts: { toUserId: string; reason?: string },
+  opts: {
+    toUserId: string;
+    reason?: string;
+    user?: { roleCode?: string; permissions?: any[] } | null;
+  },
   actorId: string,
 ) {
   const ticket = await loadSr(ticketId);
+  await assertMayHandOver(ticket, actorId, opts.user, "delegate");
   const original = ticket.delegation?.originalAssignee || ticket.assignedTo;
   ticket.delegation = {
     delegatedTo: oid(opts.toUserId),

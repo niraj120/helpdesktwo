@@ -46,6 +46,7 @@ export interface StatusRuleConfig {
   allowedPrev?: number[];
   maxPerTicket?: number;
   permission?: string;
+  allowedActors?: ("assignee" | "raiser")[];
   assignOnApply?: { mode?: string; roleId?: string; userId?: string };
 }
 

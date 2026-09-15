@@ -250,6 +250,8 @@ export const SR_CONFIG_DEFAULTS: SrConfig = {
     canReply: true,
     canComment: true,
     canAttach: true,
+    canReassign: false,
+    canDelegate: false,
   },
   messages: {
     duplicate:
@@ -600,6 +602,10 @@ export function resolveSrConfig(raw: any): SrConfig {
         sr.requester?.canComment ?? SR_CONFIG_DEFAULTS.requester.canComment,
       canAttach:
         sr.requester?.canAttach ?? SR_CONFIG_DEFAULTS.requester.canAttach,
+      canReassign:
+        sr.requester?.canReassign ?? SR_CONFIG_DEFAULTS.requester.canReassign,
+      canDelegate:
+        sr.requester?.canDelegate ?? SR_CONFIG_DEFAULTS.requester.canDelegate,
     },
     reassign: {
       requireDepartment:

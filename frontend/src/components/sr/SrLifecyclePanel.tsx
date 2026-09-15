@@ -50,6 +50,8 @@ const SrLifecyclePanel: React.FC<Props> = ({
   // config has not loaded (or the project never set one).
   const projectId = ticket?.project?._id || ticket?.project;
   const [reopenLimit, setReopenLimit] = useState(1);
+  // What the person who raised a request may do on it (SR settings).
+  const [requesterRights, setRequesterRights] = useState<any>({});
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
@@ -59,6 +61,7 @@ const SrLifecyclePanel: React.FC<Props> = ({
         if (cancelled) return;
         const limit = r?.data?.psr?.workflow?.lifecycle?.reopenLimit;
         if (Number.isFinite(limit)) setReopenLimit(Number(limit));
+        setRequesterRights(r?.data?.requester || {});
       })
       .catch(() => {
         /* keep the safe default */
@@ -80,9 +83,55 @@ const SrLifecyclePanel: React.FC<Props> = ({
     code === "" ? undefined : statuses.find((s) => s.code === code);
   const srRule = statusDoc(status)?.rules?.sr;
   const configured = !!srRule;
+  // Who I am on THIS request decides which statuses I am offered, alongside
+  // the permission — the same pair the server checks.
+  const me = (() => {
+    // Same order the detail page uses: a plain userId is written on login and
+    // the user object is not always present.
+    try {
+      const plain = localStorage.getItem("userId");
+      const u = JSON.parse(localStorage.getItem("user") || "{}");
+      const role =
+        u?.role?.code || u?.roleCode || localStorage.getItem("userRole") || "";
+      return {
+        id: String(plain || u?._id || u?.id || ""),
+        isSuperAdmin: role === "SUPER_ADMIN",
+      };
+    } catch {
+      return {
+        id: String(localStorage.getItem("userId") || ""),
+        isSuperAdmin: localStorage.getItem("userRole") === "SUPER_ADMIN",
+      };
+    }
+  })();
+  const partyId = (v: any) => String(v?._id || v || "");
+  const isAssignee = !!me.id && partyId(ticket?.assignedTo) === me.id;
+  const isRaiser = !!me.id && partyId(ticket?.createdBy) === me.id;
+
+  /**
+   * Handing the request to someone else belongs to whoever is working it. A
+   * raiser who is not the assignee only gets these when the project allows it
+   * — they keep both on requests assigned to them.
+   */
+  const mayHandOver = (action: "reassign" | "delegate") => {
+    if (me.isSuperAdmin || hasPermission(PERMISSIONS.SR_MODIFY_ANY)) return true;
+    if (isAssignee) return true;
+    if (!isRaiser) return true; // not a party to it — the permission decides
+    return action === "reassign"
+      ? requesterRights.canReassign === true
+      : requesterRights.canDelegate === true;
+  };
+
   const canApply = (code: number) => {
-    const perm = statusDoc(code)?.rules?.sr?.permission;
-    return !perm || hasPermission(perm);
+    const rule = statusDoc(code)?.rules?.sr;
+    const perm = rule?.permission;
+    if (perm && !hasPermission(perm)) return false;
+    const actors = rule?.allowedActors || [];
+    if (!actors.length || me.isSuperAdmin) return true;
+    return (
+      (actors.includes("assignee") && isAssignee) ||
+      (actors.includes("raiser") && isRaiser)
+    );
   };
   // A move must satisfy both ends: what may follow the current status, and
   // what the target says it may follow.
@@ -656,7 +705,7 @@ const SrLifecyclePanel: React.FC<Props> = ({
       <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
         {/* Each of these is its own permission on the server; showing a
             button the role cannot use only produces a failed request. */}
-        {hasPermission(PERMISSIONS.SR_REASSIGN) && (
+        {hasPermission(PERMISSIONS.SR_REASSIGN) && mayHandOver("reassign") && (
           <button
             disabled={busy}
             style={secondaryButton}
@@ -665,7 +714,7 @@ const SrLifecyclePanel: React.FC<Props> = ({
             Reassign
           </button>
         )}
-        {hasPermission(PERMISSIONS.SR_DELEGATE) && (
+        {hasPermission(PERMISSIONS.SR_DELEGATE) && mayHandOver("delegate") && (
           <button
             disabled={busy}
             style={secondaryButton}
