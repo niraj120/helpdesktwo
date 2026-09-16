@@ -22,6 +22,7 @@ export type WidgetModule =
   | "capacity"
   | "feedback"
   | "satisfaction"
+  | "service_request"
   | "system";
 
 export interface IWidgetDefinition extends Document {
@@ -60,6 +61,7 @@ const WidgetDefinitionSchema = new Schema<IWidgetDefinition>(
         "capacity",
         "feedback",
         "satisfaction",
+        "service_request",
         "system",
       ],
       index: true,
@@ -71,8 +73,10 @@ const WidgetDefinitionSchema = new Schema<IWidgetDefinition>(
       required: true,
       enum: [
         "kpi_tile",
+        "sparkline",
         "line_chart",
         "bar_chart",
+        "pie_chart",
         "donut_chart",
         "grouped_bar",
         "area_chart",
@@ -86,8 +90,10 @@ const WidgetDefinitionSchema = new Schema<IWidgetDefinition>(
       required: true,
       enum: [
         "kpi_tile",
+        "sparkline",
         "line_chart",
         "bar_chart",
+        "pie_chart",
         "donut_chart",
         "grouped_bar",
         "area_chart",

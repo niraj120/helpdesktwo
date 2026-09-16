@@ -25,6 +25,7 @@ import ReactGridLayout, { Layout, LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import DashboardLayout from "../components/DashboardLayout";
+import { widgetModuleLabel } from "../constants/widgetModules";
 import { useAdminProjects } from "../hooks/useAdminProjects";
 import {
   fetchAllWidgetDefinitions,
@@ -45,6 +46,7 @@ import {
 
 type DataModule =
   | "helpdesk"
+  | "service_request"
   | "attendance"
   | "workforce"
   | "offline_helpdesk"
@@ -71,6 +73,329 @@ interface DataPoint {
 }
 
 const DATA_POINTS: DataPoint[] = [
+  // -- Service Requests (PSR/ISR, the call inbox and email triage) --
+  // Each key is a widget the backend serves; see srDashboardHandlers.ts.
+  {
+    key: "sr_open_count",
+    label: "Open Service Requests",
+    desc: "PSR/ISR not in a closing status",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_created_count",
+    label: "Requests Raised",
+    desc: "Service requests raised in the period",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_closed_count",
+    label: "Requests Closed",
+    desc: "Service requests closed in the period",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_unassigned_count",
+    label: "Unassigned Requests",
+    desc: "Open requests with nobody working them",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_volume_by_type",
+    label: "Requests by Type",
+    desc: "PSR (parent) vs ISR (internal)",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "donut_chart",
+  },
+  {
+    key: "sr_by_status",
+    label: "Requests by Status",
+    desc: "Status names as the project configured them",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "donut_chart",
+  },
+  {
+    key: "sr_trend_over_time",
+    label: "Raised vs Closed",
+    desc: "Daily raised against closed",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "line_chart",
+  },
+  {
+    key: "sr_aging_buckets",
+    label: "Open Request Age",
+    desc: "How long open requests have waited",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "donut_chart",
+  },
+  {
+    key: "sr_wip_due_soon_count",
+    label: "Committed Dates Due Soon",
+    desc: "Committed date falls in the next window",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_wip_expired_count",
+    label: "Committed Dates Missed",
+    desc: "Past the date promised to the requester",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_committed_date_met_rate",
+    label: "Committed Date Met",
+    desc: "Closed on or before the committed date",
+    module: "service_request",
+    unit: "percent",
+    defaultVis: "gauge",
+  },
+  {
+    key: "sr_sla_compliance",
+    label: "SLA Compliance",
+    desc: "Closed within SLA",
+    module: "service_request",
+    unit: "percent",
+    defaultVis: "gauge",
+  },
+  {
+    key: "sr_overdue_count",
+    label: "Past SLA",
+    desc: "Open past SLA, clock running",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_on_hold_count",
+    label: "SLA On Hold",
+    desc: "Clock held, waiting out a committed date",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_reopen_rate",
+    label: "Re-open Rate",
+    desc: "Re-opened at least once",
+    module: "service_request",
+    unit: "percent",
+    defaultVis: "gauge",
+  },
+  {
+    key: "sr_cancel_rate",
+    label: "Cancellation Rate",
+    desc: "Cancelled after being raised",
+    module: "service_request",
+    unit: "percent",
+    defaultVis: "gauge",
+  },
+  {
+    key: "sr_parent_satisfaction_rate",
+    label: "Parent Satisfaction",
+    desc: "Parent closures marked satisfied",
+    module: "service_request",
+    unit: "percent",
+    defaultVis: "gauge",
+  },
+  {
+    key: "sr_avg_resolution_hrs",
+    label: "Average Time to Close",
+    desc: "Hours from raised to closed",
+    module: "service_request",
+    unit: "hours",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_avg_first_response_hrs",
+    label: "Average First Response",
+    desc: "Hours before the requester hears back",
+    module: "service_request",
+    unit: "hours",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_escalation_rate",
+    label: "Escalation Rate",
+    desc: "Requests that had to be escalated",
+    module: "service_request",
+    unit: "percent",
+    defaultVis: "gauge",
+  },
+  {
+    key: "sr_by_priority",
+    label: "Requests by Priority",
+    desc: "Volume against each project priority",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "donut_chart",
+  },
+  {
+    key: "sr_by_request_type",
+    label: "PSR Request Type",
+    desc: "On-call resolution vs full workflow",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "donut_chart",
+  },
+  {
+    key: "sr_by_mode_of_contact",
+    label: "Requests by Mode of Contact",
+    desc: "How requesters got in touch",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "donut_chart",
+  },
+  {
+    key: "sr_by_channel",
+    label: "Requests by Channel",
+    desc: "Which channel each request arrived on",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "donut_chart",
+  },
+  {
+    key: "sr_by_category",
+    label: "Requests by Category",
+    desc: "Top categories by volume",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "bar_chart",
+  },
+  {
+    key: "sr_by_center",
+    label: "Requests by Centre",
+    desc: "Which centres the requests come from",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "bar_chart",
+  },
+  {
+    key: "sr_by_assignee",
+    label: "Open Requests by Assignee",
+    desc: "Who is carrying the open work",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "bar_chart",
+  },
+  {
+    key: "sr_by_escalation_level",
+    label: "Open Requests by Escalation Level",
+    desc: "How far open requests have climbed",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "donut_chart",
+  },
+  {
+    key: "sr_call_volume",
+    label: "Call Volume",
+    desc: "Calls into the request inbox",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_call_answer_rate",
+    label: "Call Answer Rate",
+    desc: "Answered rather than missed",
+    module: "service_request",
+    unit: "percent",
+    defaultVis: "gauge",
+  },
+  {
+    key: "sr_call_conversion_rate",
+    label: "Calls Converted",
+    desc: "Calls that became a service request",
+    module: "service_request",
+    unit: "percent",
+    defaultVis: "gauge",
+  },
+  {
+    key: "sr_call_by_status",
+    label: "Calls by Status",
+    desc: "New, assigned, converted or junk",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "donut_chart",
+  },
+  {
+    key: "sr_call_pending_callbacks",
+    label: "Call-backs Pending",
+    desc: "Open calls with a call-back due",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_call_agent_load",
+    label: "Open Calls by Agent",
+    desc: "Who is carrying the open call-backs",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "bar_chart",
+  },
+  {
+    key: "sr_call_by_ladder_step",
+    label: "Calls by Call-back Step",
+    desc: "Where open calls sit on the ladder",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "donut_chart",
+  },
+  {
+    key: "sr_outbound_call_stats",
+    label: "Call-backs Made",
+    desc: "Outbound attempts, answered and talk time",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_email_volume",
+    label: "Email Intake Volume",
+    desc: "Emails arriving in the triage queue",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_email_overdue_count",
+    label: "Emails Past TAT",
+    desc: "Still open after their triage TAT",
+    module: "service_request",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "sr_email_by_status",
+    label: "Email Intake by Status",
+    desc: "Where the triage queue stands",
+    module: "service_request",
+    unit: "list",
+    defaultVis: "donut_chart",
+  },
+  {
+    key: "sr_email_avg_close_hrs",
+    label: "Average Email Clear Time",
+    desc: "Hours to clear an email",
+    module: "service_request",
+    unit: "hours",
+    defaultVis: "kpi_tile",
+  },
+
   // -- Helpdesk Ticketing --
 
   {
@@ -1695,6 +2020,7 @@ const MODULE_META: Record<
   { label: string; icon: string; color: string }
 > = {
   helpdesk: { label: "Helpdesk", icon: "#", color: "#3b82f6" },
+  service_request: { label: "Service Requests", icon: "sr", color: "#4f46e5" },
   attendance: { label: "Attendance", icon: "cal", color: "#10b981" },
   workforce: { label: "Workforce", icon: "wrk", color: "#f59e0b" },
   offline_helpdesk: { label: "Offline / Field", icon: "ofd", color: "#ef4444" },
@@ -3207,6 +3533,7 @@ export default function DashboardBuilderPage() {
   const [search, setSearch] = useState("");
   const [expandedDP, setExpandedDP] = useState<Record<string, boolean>>({
     helpdesk: true,
+    service_request: true,
     attendance: false,
     workforce: false,
     offline_helpdesk: false,
@@ -4123,7 +4450,7 @@ export default function DashboardBuilderPage() {
                       }}
                     >
                       <span>
-                        {module}
+                        {widgetModuleLabel(module)}
                         <span
                           style={{
                             fontSize: 10,

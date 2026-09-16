@@ -183,11 +183,15 @@ const CATEGORY_COLORS: Record<string, string> = {
   feedback: "#ef4444",
   agent: "#6366f1",
   service_request: "#4f46e5",
+  call: "#0ea5e9",
+  email_intake: "#0d9488",
 };
 
 // Friendlier labels for category badges whose raw key is snake_case.
 const CATEGORY_LABELS: Record<string, string> = {
   service_request: "Service Request",
+  call: "Call",
+  email_intake: "Email Intake",
 };
 
 function categoryBadge(cat: string) {
@@ -1452,6 +1456,7 @@ function ReportBuilderSection({
               { key: "feedback", label: "Feedback" },
               { key: "service_request", label: "Service Requests" },
               { key: "call", label: "Calls" },
+              { key: "email_intake", label: "Email Intake" },
               { key: "inquiry", label: "Inquiries" },
             ].map((s: any) => {
               const active = s.group

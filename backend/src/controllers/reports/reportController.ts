@@ -300,6 +300,21 @@ export const getDataPoints = async (req: Request, res: Response) => {
         for (const lvl of levels) {
           const n = lvl?.levelNumber;
           if (!n || n < 1 || n > 10 || lvl?.isActive === false) continue;
+          // The same level, once for ordinary tickets and once for service
+          // requests — the Reports screen shows one source at a time.
+          categoryLevelDataPoints.push({
+            _id: `virtual_sr_cat_level_${n}`,
+            key: `sr_category_level_${n}`,
+            label: lvl.displayName || `Category Level ${n}`,
+            description: `Category hierarchy — ${lvl.displayName || `Level ${n}`}`,
+            category: "service_request",
+            source: "service_request",
+            fieldPath: `categoryLevel${n}Name`,
+            fieldType: "string",
+            isActive: true,
+            isSystem: false,
+            order: 5 + n / 10,
+          });
           categoryLevelDataPoints.push({
             _id: `virtual_cat_level_${n}`,
             key: `ticket_category_level_${n}`,
@@ -338,6 +353,7 @@ export const getDataPoints = async (req: Request, res: Response) => {
             label: d.label || d.key,
             description: `PSR routing — ${d.label || d.key}`,
             category: "service_request",
+            source: "service_request",
             fieldPath: `srRoutingScope_${d.key}`,
             fieldType: "string",
             isActive: true,
@@ -350,12 +366,57 @@ export const getDataPoints = async (req: Request, res: Response) => {
       }
     }
 
+    // Per-project service request form fields → one data point per field,
+    // read from ticket.metadata.formData.<fieldName>. The SR form is configured
+    // per project and per channel, so what a request captured is only
+    // reportable if the columns follow the form.
+    const srFormDataPoints: any[] = [];
+    if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
+      try {
+        const { listFormSchemas } = await import(
+          "../../modules/service-request/srForms"
+        );
+        const schemas: any[] = await listFormSchemas(projectId);
+        const seen = new Set<string>();
+        let order = 900;
+        for (const schema of schemas) {
+          if (schema?.isActive === false) continue;
+          for (const field of schema.fields || []) {
+            const name = field?.fieldName || field?.name || field?.id;
+            if (!name || seen.has(name)) continue;
+            seen.add(name);
+            let fieldType: "string" | "number" | "date" | "boolean" = "string";
+            if (field.fieldType === "number") fieldType = "number";
+            else if (field.fieldType === "date") fieldType = "date";
+            else if (field.fieldType === "checkbox") fieldType = "boolean";
+            const label = field.fieldLabel || field.label || name;
+            srFormDataPoints.push({
+              _id: `virtual_sr_form_${name}`,
+              key: `sr_form_field_${name}`,
+              label,
+              description: `${schema.interactionType || "SR"} form field: ${label}`,
+              category: "service_request",
+              source: "service_request",
+              fieldPath: `srFormField_${name}`,
+              fieldType,
+              isActive: true,
+              isSystem: false,
+              order: order++,
+            });
+          }
+        }
+      } catch (e) {
+        // SR forms unavailable — skip silently.
+      }
+    }
+
     return res.status(200).json({
       success: true,
       data: [
         ...dataPoints,
         ...categoryLevelDataPoints,
         ...routingScopeDataPoints,
+        ...srFormDataPoints,
         ...customFormDataPoints,
       ],
     });

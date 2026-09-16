@@ -6,6 +6,8 @@
  * if the collection is empty.
  */
 
+import { SR_WIDGET_DEFINITIONS } from "../../utils/srWidgetDefinitions";
+
 export const WIDGET_CATALOG = [
   // ─── Ticketing ────────────────────────────────────────────────────────────
 
@@ -387,47 +389,7 @@ export const WIDGET_CATALOG = [
   },
 
   // ─── Service Request (PSR/ISR) ─────────────────────────────────────────────
-  {
-    widgetKey: "sr_open_count",
-    module: "service_request",
-    displayName: "Open Service Requests",
-    description: "Current count of open PSR/ISR requests with trend.",
-    supportedVisualisations: ["kpi_tile", "sparkline"],
-    defaultVisualisation: "kpi_tile",
-    scopeLevels: ["tenant", "project", "centre", "user"],
-    cacheTtlSeconds: 120,
-    dataQueryKey: "sr_open_count",
-    defaultConfig: { dateRangeDays: 30 },
-    isActive: true,
-    version: 1,
-  },
-  {
-    widgetKey: "sr_volume_by_type",
-    module: "service_request",
-    displayName: "SR Volume by Type",
-    description: "Breakdown of service requests across PSR vs ISR.",
-    supportedVisualisations: ["donut_chart", "bar_chart", "table"],
-    defaultVisualisation: "donut_chart",
-    scopeLevels: ["tenant", "project", "centre"],
-    cacheTtlSeconds: 120,
-    dataQueryKey: "sr_volume_by_type",
-    defaultConfig: { dateRangeDays: 30 },
-    isActive: true,
-    version: 1,
-  },
-  {
-    widgetKey: "sr_by_status",
-    module: "service_request",
-    displayName: "SR by Status",
-    description:
-      "Breakdown of service requests by status (incl. Re-open / Cancelled).",
-    supportedVisualisations: ["donut_chart", "bar_chart", "table"],
-    defaultVisualisation: "donut_chart",
-    scopeLevels: ["tenant", "project", "centre"],
-    cacheTtlSeconds: 120,
-    dataQueryKey: "sr_by_status",
-    defaultConfig: { dateRangeDays: 30 },
-    isActive: true,
-    version: 1,
-  },
+  // Declared in utils/srWidgetDefinitions.ts so the catalog and the startup
+  // seeder cannot drift apart.
+  ...SR_WIDGET_DEFINITIONS,
 ];

@@ -203,6 +203,16 @@ function filterToMongo(
 }
 
 /**
+ * Anything declared in the data-point registry that is not spelled out above
+ * maps key -> fieldPath directly. New data points therefore need declaring in
+ * one place only, and the map above stays as the record of the older columns
+ * whose computed name differs from their key.
+ */
+for (const dp of SYSTEM_DATA_POINTS as any[]) {
+  if (!DATA_POINT_FIELD_MAP[dp.key]) DATA_POINT_FIELD_MAP[dp.key] = dp.fieldPath;
+}
+
+/**
  * Builds and executes a MongoDB aggregation pipeline for a saved report.
  *
  * @param dataPoints  - RBAC-filtered list of data point keys to return
@@ -223,10 +233,15 @@ export async function runReportQuery(
   page: number = 1,
   pageSize: number = 100,
 ): Promise<{ rows: any[]; total: number }> {
-  // Non-ticket sources (User / Asset / Asset-Audit / Feedback) use a dedicated
-  // pipeline against a different base collection.
+  // Non-ticket sources (User / Asset / Asset-Audit / Feedback / Call) use a
+  // dedicated pipeline against a different base collection.
+  //
+  // Service requests are the exception: they live on the ticket spine, so they
+  // run the ticket pipeline — but the report is narrowed to PSR/ISR, which is
+  // what someone picking the Service Requests source is asking for.
   const source = inferSource(dataPoints);
-  if (source !== "ticket") {
+  const isSrReport = source === "service_request";
+  if (source !== "ticket" && !isSrReport) {
     return runNonTicketQuery(
       source,
       dataPoints,
@@ -242,7 +257,13 @@ export async function runReportQuery(
   const Ticket = mongoose.model("Ticket");
 
   // ── 1. Base match ─────────────────────────────────────────────────────────
-  const baseMatch: any = { isMerged: { $ne: true } };
+  // Merged-away requests are left out by default so totals are not counted
+  // twice; a report that asks about merging obviously wants them included.
+  const wantsMerged = dataPoints.some((k) =>
+    ["sr_merged", "sr_merged_into"].includes(k),
+  );
+  const baseMatch: any = wantsMerged ? {} : { isMerged: { $ne: true } };
+  if (isSrReport) baseMatch.interactionType = { $in: ["PSR", "ISR"] };
   if (projectId) {
     // metadata.projectId may be stored as ObjectId or string — match both
     const oid = new mongoose.Types.ObjectId(projectId);
@@ -398,6 +419,86 @@ export async function runReportQuery(
     { $lookup: { from: "categories", localField: "categoryHierarchy.level9", foreignField: "_id", as: "_catL9", pipeline: [{ $project: { name: 1 } }] } },
     { $lookup: { from: "categories", localField: "categoryHierarchy.level10", foreignField: "_id", as: "_catL10", pipeline: [{ $project: { name: 1 } }] } },
   ];
+
+  // ── Service request joins ────────────────────────────────────────────────
+  // Only added when the report actually asks for a service-request column, so
+  // ordinary ticket reports carry none of this weight.
+  const wantsSr = dataPoints.some((k) => k.startsWith("sr_"));
+  if (wantsSr) {
+    const personName = ["firstName", "lastName", "fullName"];
+    const person = (path: string, as: string) => ({
+      $lookup: {
+        from: "users",
+        localField: path,
+        foreignField: "_id",
+        as,
+        pipeline: [{ $project: Object.fromEntries(personName.map((f) => [f, 1])) }],
+      },
+    });
+    lookups.push(
+      // The status name as the project configured it, rather than a hardcoded
+      // list — projects do not agree on what a code means.
+      {
+        $lookup: {
+          from: "statuses",
+          let: {
+            code: "$status",
+            proj: { $ifNull: ["$metadata.projectId", "$project"] },
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$code", "$$code"] },
+                    {
+                      $eq: [
+                        "$projectId",
+                        { $convert: { input: "$$proj", to: "objectId", onError: null, onNull: null } },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            { $project: { name: 1 } },
+          ],
+          as: "_srStatus",
+        },
+      },
+      { $lookup: { from: "tickets", localField: "linkedPsrId", foreignField: "_id", as: "_linkedPsr", pipeline: [{ $project: { ticketNumber: 1 } }] } },
+      { $lookup: { from: "tickets", let: { id: "$_id" }, pipeline: [{ $match: { $expr: { $eq: ["$linkedPsrId", "$$id"] } } }, { $count: "n" }], as: "_isrChildren" } },
+      { $lookup: { from: "tickets", localField: "mergedInto", foreignField: "_id", as: "_mergedInto", pipeline: [{ $project: { ticketNumber: 1 } }] } },
+      { $lookup: { from: "tickets", localField: "cancel.replacementSrId", foreignField: "_id", as: "_replacementSr", pipeline: [{ $project: { ticketNumber: 1 } }] } },
+      // Who set the latest committed date (the last WIP history entry).
+      {
+        $lookup: {
+          from: "users",
+          let: { uid: { $arrayElemAt: [{ $ifNull: ["$wip.history.setBy", []] }, -1] } },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$uid"] } } },
+            { $project: { firstName: 1, lastName: 1, fullName: 1 } },
+          ],
+          as: "_wipSetBy",
+        },
+      },
+      person("reopen.reopenedBy", "_reopenedBy"),
+      person("cancel.by", "_cancelledBy"),
+      person("pslCall.calledBy", "_pslCalledBy"),
+      person("delegation.delegatedTo", "_delegatedTo"),
+      person("delegation.delegatedBy", "_delegatedBy"),
+      person("delegation.originalAssignee", "_originalAssignee"),
+      {
+        $lookup: {
+          from: "users",
+          localField: "cc",
+          foreignField: "_id",
+          as: "_watchers",
+          pipeline: [{ $project: { firstName: 1, lastName: 1, fullName: 1 } }],
+        },
+      },
+    );
+  }
 
   // ── 3. $addFields — compute derived columns ───────────────────────────────
   const addFields = {
@@ -632,6 +733,354 @@ export async function runReportQuery(
     },
   };
 
+  if (wantsSr) {
+    // Name of a user pulled in by one of the joins above.
+    const nameOf = (arr: string) => ({
+      $trim: {
+        input: {
+          $ifNull: [
+            { $arrayElemAt: [`${arr}.fullName`, 0] },
+            {
+              $concat: [
+                { $ifNull: [{ $arrayElemAt: [`${arr}.firstName`, 0] }, ""] },
+                " ",
+                { $ifNull: [{ $arrayElemAt: [`${arr}.lastName`, 0] }, ""] },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const yesNo = (cond: any) => ({ $cond: [cond, "Yes", "No"] });
+    const hours = (a: any, b: any) => ({
+      $round: [{ $divide: [{ $subtract: [a, b] }, 3600000] }, 2],
+    });
+    const days = (a: any, b: any) => ({
+      $round: [{ $divide: [{ $subtract: [a, b] }, 86400000] }, 2],
+    });
+    const committed = { $ifNull: ["$wip.committedDate", null] };
+    const endedAt = { $ifNull: ["$closedAt", "$$NOW"] };
+    // The two SLA clocks are held together; either one answers the question.
+    // Both clocks are held together, so either answers the question. The inner
+    // null matters: with both fields absent $ifNull yields missing, and missing
+    // is not null to $ne — every request would read as held.
+    const pausedAt = {
+      $ifNull: ["$roleLevelSLA.pausedAt", { $ifNull: ["$ticketLevelSLA.pausedAt", null] }],
+    };
+    const statusChanges = {
+      $filter: {
+        input: { $ifNull: ["$changeHistory", []] },
+        as: "h",
+        cond: { $eq: ["$$h.field", "status"] },
+      },
+    };
+    const assigneeChanges = {
+      $filter: {
+        input: { $ifNull: ["$changeHistory", []] },
+        as: "h",
+        cond: {
+          $or: [
+            { $eq: ["$$h.field", "assignedTo"] },
+            { $eq: ["$$h.changeType", "reassigned"] },
+          ],
+        },
+      },
+    };
+
+    Object.assign(addFields.$addFields as any, {
+      // Identity & classification
+      srRequestType: { $ifNull: ["$requestType", ""] },
+      srModeOfContact: { $ifNull: ["$modeOfContact", ""] },
+      srSourceLabel: {
+        $ifNull: ["$metadata.sourceLabel", { $ifNull: ["$submissionSource", ""] }],
+      },
+      srLinkedPsrNumber: { $ifNull: [{ $arrayElemAt: ["$_linkedPsr.ticketNumber", 0] }, ""] },
+      srLinkedIsrCount: { $ifNull: [{ $arrayElemAt: ["$_isrChildren.n", 0] }, 0] },
+      srMergedLabel: yesNo({ $eq: ["$isMerged", true] }),
+      srMergedIntoNumber: { $ifNull: [{ $arrayElemAt: ["$_mergedInto.ticketNumber", 0] }, ""] },
+      srMergedCount: { $size: { $ifNull: ["$mergedTickets", []] } },
+      srWatcherCount: { $size: { $ifNull: ["$cc", []] } },
+
+      // Requester / beneficiary
+      srRequestedByName: { $ifNull: ["$metadata.requestedByName", ""] },
+      srRequestedByMobile: { $ifNull: ["$metadata.requestedByMobile", ""] },
+      srRequestedByEmail: { $ifNull: ["$metadata.requestedByEmail", ""] },
+      srRequestedByType: { $ifNull: ["$metadata.requestedByType", ""] },
+      srStudentCount: {
+        $cond: [
+          { $isArray: "$metadata.children" },
+          { $size: "$metadata.children" },
+          0,
+        ],
+      },
+      srStudentNames: {
+        $reduce: {
+          input: {
+            $cond: [{ $isArray: "$metadata.children" }, "$metadata.children", []],
+          },
+          initialValue: "",
+          in: {
+            $let: {
+              vars: {
+                nm: {
+                  $ifNull: [
+                    "$$this.name",
+                    { $ifNull: ["$$this.studentName", { $ifNull: ["$$this.fullName", ""] }] },
+                  ],
+                },
+              },
+              in: {
+                $cond: [
+                  { $eq: ["$$nm", ""] },
+                  "$$value",
+                  {
+                    $cond: [
+                      { $eq: ["$$value", ""] },
+                      "$$nm",
+                      { $concat: ["$$value", ", ", "$$nm"] },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+
+      // WIP commitment
+      srWipFirstCommittedDate: {
+        $ifNull: [{ $arrayElemAt: [{ $ifNull: ["$wip.history.committedDate", []] }, 0] }, null],
+      },
+      srWipLastSetByName: nameOf("$_wipSetBy"),
+      srWipLastSetAt: {
+        $ifNull: [{ $arrayElemAt: [{ $ifNull: ["$wip.history.setAt", []] }, -1] }, null],
+      },
+      srWipLastReason: {
+        $ifNull: [{ $arrayElemAt: [{ $ifNull: ["$wip.history.reason", []] }, -1] }, ""],
+      },
+      srWipReminderSentAt: { $ifNull: ["$wip.reminderSentAt", null] },
+      srWipEscalatedAt: { $ifNull: ["$wip.escalatedAt", null] },
+      srWipExpiredLabel: {
+        $cond: [
+          { $eq: [committed, null] },
+          "",
+          yesNo({
+            $and: [{ $lt: [committed, "$$NOW"] }, { $eq: [{ $ifNull: ["$closedAt", null] }, null] }],
+          }),
+        ],
+      },
+      srWipCommitDays: {
+        $cond: [{ $eq: [committed, null] }, null, days(committed, "$createdAt")],
+      },
+      srWipMetLabel: {
+        $cond: [
+          { $or: [{ $eq: [committed, null] }, { $eq: [{ $ifNull: ["$closedAt", null] }, null] }] },
+          "",
+          yesNo({ $lte: ["$closedAt", committed] }),
+        ],
+      },
+      srWipOverdueHrs: {
+        $cond: [
+          { $or: [{ $eq: [committed, null] }, { $lte: [endedAt, committed] }] },
+          0,
+          hours(endedAt, committed),
+        ],
+      },
+
+      // SLA hold
+      srSlaOnHoldLabel: yesNo({ $ne: [pausedAt, null] }),
+      srSlaPausedAt: pausedAt,
+      srSlaResumeAt: {
+        $ifNull: ["$roleLevelSLA.resumeAt", { $ifNull: ["$ticketLevelSLA.resumeAt", null] }],
+      },
+      srSlaHoldHrs: {
+        $round: [
+          {
+            $divide: [
+              {
+                $ifNull: [
+                  "$roleLevelSLA.pausedDuration",
+                  { $ifNull: ["$ticketLevelSLA.pausedDuration", 0] },
+                ],
+              },
+              60,
+            ],
+          },
+          2,
+        ],
+      },
+
+      // Lifecycle timings
+      srAgeDays: days(endedAt, "$createdAt"),
+      srTimeToResolveHrs: {
+        $cond: [
+          { $eq: [{ $ifNull: ["$resolvedAt", null] }, null] },
+          null,
+          hours("$resolvedAt", "$createdAt"),
+        ],
+      },
+      srTimeToCloseHrs: {
+        $cond: [
+          { $eq: [{ $ifNull: ["$closedAt", null] }, null] },
+          null,
+          hours("$closedAt", "$createdAt"),
+        ],
+      },
+      srStatusChangeCount: { $size: statusChanges },
+      srLastStatusChangeAt: { $max: { $map: { input: statusChanges, as: "h", in: "$$h.changedAt" } } },
+      srAttachmentCount: { $size: { $ifNull: ["$attachments", []] } },
+      srFollowUpCount: { $size: { $ifNull: ["$comments", []] } },
+
+      // Re-open / cancellation
+      srReopenedByName: nameOf("$_reopenedBy"),
+      srReopenedAt: { $ifNull: ["$reopen.reopenedAt", null] },
+      srCancelledByName: nameOf("$_cancelledBy"),
+      srCancelledAt: { $ifNull: ["$cancel.at", null] },
+      srReplacementNumber: { $ifNull: [{ $arrayElemAt: ["$_replacementSr.ticketNumber", 0] }, ""] },
+
+      // Parent closure & PSL call
+      srParentClosedAt: { $ifNull: ["$parentClosure.closedAt", null] },
+      srParentComments: { $ifNull: ["$parentClosure.comments", ""] },
+      srPslSpokenLabel: {
+        $cond: [
+          { $eq: [{ $ifNull: ["$pslCall.spoken", null] }, null] },
+          "",
+          yesNo({ $eq: ["$pslCall.spoken", true] }),
+        ],
+      },
+      srPslSatisfiedLabel: {
+        $switch: {
+          branches: [
+            { case: { $eq: ["$pslCall.parentSatisfied", true] }, then: "Satisfied" },
+            { case: { $eq: ["$pslCall.parentSatisfied", false] }, then: "Not satisfied" },
+          ],
+          default: "",
+        },
+      },
+      srPslCalledByName: nameOf("$_pslCalledBy"),
+      srPslCalledAt: { $ifNull: ["$pslCall.calledAt", null] },
+      srPslComments: { $ifNull: ["$pslCall.comments", ""] },
+
+      // Hand-over
+      srDelegatedLabel: yesNo({ $ne: [{ $ifNull: ["$delegation.delegatedTo", null] }, null] }),
+      srDelegatedToName: nameOf("$_delegatedTo"),
+      srDelegatedByName: nameOf("$_delegatedBy"),
+      srDelegatedAt: { $ifNull: ["$delegation.delegatedAt", null] },
+      srDelegationReason: { $ifNull: ["$delegation.reason", ""] },
+      srOriginalAssigneeName: nameOf("$_originalAssignee"),
+      srReassignCount: { $size: assigneeChanges },
+
+      // Everyday columns, so a service request report does not have to reach
+      // into the ticket source for them.
+      srRegisteredLabel: yesNo({ $eq: ["$isRegistered", true] }),
+      srSubmissionType: { $ifNull: ["$metadata.submissionType", ""] },
+      srStudentName: { $ifNull: ["$metadata.studentName", ""] },
+      srUnreadLabel: yesNo({ $eq: ["$hasNewReply", true] }),
+      srWatcherNames: {
+        $reduce: {
+          input: { $ifNull: ["$_watchers", []] },
+          initialValue: "",
+          in: {
+            $let: {
+              vars: {
+                nm: {
+                  $trim: {
+                    input: {
+                      $ifNull: [
+                        "$$this.fullName",
+                        {
+                          $concat: [
+                            { $ifNull: ["$$this.firstName", ""] },
+                            " ",
+                            { $ifNull: ["$$this.lastName", ""] },
+                          ],
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+              in: {
+                $cond: [
+                  { $eq: ["$$nm", ""] },
+                  "$$value",
+                  {
+                    $cond: [
+                      { $eq: ["$$value", ""] },
+                      "$$nm",
+                      { $concat: ["$$value", ", ", "$$nm"] },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      srInternalNoteCount: { $size: { $ifNull: ["$internalNotes", []] } },
+      srThreadCount: { $size: { $ifNull: ["$threads", []] } },
+
+      // SLA and escalation
+      srSlaBreachedLabel: yesNo({
+        $ne: [
+          { $ifNull: ["$ticketLevelSLA.breachedAt", { $ifNull: ["$roleLevelSLA.breachedAt", null] }] },
+          null,
+        ],
+      }),
+      srFirstResponseHrs: {
+        $cond: [
+          { $eq: [{ $ifNull: ["$firstRespondedAt", null] }, null] },
+          null,
+          hours("$firstRespondedAt", "$createdAt"),
+        ],
+      },
+      srLastEscalatedAt: {
+        $max: {
+          $map: {
+            input: { $ifNull: ["$escalationHistory", []] },
+            as: "e",
+            in: { $ifNull: ["$$e.escalatedAt", "$$e.createdAt"] },
+          },
+        },
+      },
+      srWipAllCommittedDates: {
+        $reduce: {
+          input: { $ifNull: ["$wip.history", []] },
+          initialValue: "",
+          in: {
+            $let: {
+              vars: {
+                d: {
+                  $dateToString: {
+                    format: "%Y-%m-%d %H:%M",
+                    date: "$$this.committedDate",
+                    onNull: "",
+                  },
+                },
+              },
+              in: {
+                $cond: [
+                  { $eq: ["$$d", ""] },
+                  "$$value",
+                  {
+                    $cond: [
+                      { $eq: ["$$value", ""] },
+                      "$$d",
+                      { $concat: ["$$value", " -> ", "$$d"] },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      srScheduleDispatchDate: { $ifNull: ["$metadata.scheduleDispatchDate", null] },
+      srCreatedByReLabel: yesNo({ $eq: ["$metadata.createdByRE", true] }),
+      srAssignmentRule: { $ifNull: ["$metadata.assignmentRule", ""] },
+    });
+  }
+
   // ── Dynamic custom form field additions ───────────────────────────────────
   // For any dataPoint key starting with "custom_field_", we derive the value
   // from ticket.metadata.customFields.{fieldName} and add it as a computed
@@ -645,6 +1094,19 @@ export async function runReportQuery(
       (addFields.$addFields as any)[computedName] = {
         $ifNull: [`$metadata.customFields.${rawName}`, ""],
       };
+    } else if (key.startsWith("sr_form_field_")) {
+      // A field from the project's service request form, stored under
+      // metadata.formData rather than the ordinary custom-field bag.
+      const name = key.replace(/^sr_form_field_/, "");
+      const computedName = `srFormField_${name}`;
+      fieldMap[key] = computedName;
+      (addFields.$addFields as any)[computedName] = {
+        $ifNull: [`$metadata.formData.${name}`, ""],
+      };
+    } else if (key.startsWith("sr_category_level_")) {
+      // Same column as the ticket level, offered on the SR source.
+      const n = key.replace(/^sr_category_level_/, "");
+      fieldMap[key] = `categoryLevel${n}Name`;
     } else if (key.startsWith("sr_routing_scope_")) {
       // PSR entity-routing scope dimension (e.g. sr_routing_scope_school →
       // ticket.routing.scope.school). Dimensions are configurable per project.
@@ -686,10 +1148,25 @@ export async function runReportQuery(
   const sortDir = sortOrder === "asc" ? 1 : -1;
 
   // ── Assemble pipeline ─────────────────────────────────────────────────────
+  // The configured status name, with the computed label as the fallback. A
+  // second stage because it reads a field the stage above adds.
+  const srSecondPass = wantsSr
+    ? [
+        {
+          $addFields: {
+            srStatusName: {
+              $ifNull: [{ $arrayElemAt: ["$_srStatus.name", 0] }, "$statusLabel"],
+            },
+          },
+        },
+      ]
+    : [];
+
   const pipeline: any[] = [
     { $match: baseMatch },
     ...lookups,
     addFields,
+    ...srSecondPass,
     ...(filterConditions.length
       ? [{ $match: { $and: filterConditions } }]
       : []),
@@ -857,6 +1334,191 @@ async function runNonTicketQuery(
           ],
         },
       },
+    };
+  } else if (source === "call") {
+    // ── IVR call inbox (CallIntake) ────────────────────────────────────────
+    // The call record is what the SR desk works from before a request exists,
+    // so it reports on its own rather than only through the requests it made.
+    Model = mongoose.model("CallIntake");
+    if (oid) baseMatch.projectId = oid;
+    lookups = [
+      { $lookup: { from: "users", localField: "assignedTo", foreignField: "_id", as: "_agent", pipeline: [{ $project: { firstName: 1, lastName: 1, fullName: 1 } }] } },
+      { $lookup: { from: "projects", localField: "projectId", foreignField: "_id", as: "_proj", pipeline: [{ $project: { name: 1 } }] } },
+    ];
+    computed.assignedToName = {
+      $trim: {
+        input: {
+          $ifNull: [
+            { $arrayElemAt: ["$_agent.fullName", 0] },
+            {
+              $concat: [
+                { $ifNull: [{ $arrayElemAt: ["$_agent.firstName", 0] }, ""] },
+                " ",
+                { $ifNull: [{ $arrayElemAt: ["$_agent.lastName", 0] }, ""] },
+              ],
+            },
+          ],
+        },
+      },
+    };
+    computed.projectName = { $ifNull: [{ $arrayElemAt: ["$_proj.name", 0] }, ""] };
+    computed.callTypeLabel = {
+      $cond: [{ $eq: ["$callType", "answered"] }, "Answered", "Missed"],
+    };
+    computed.directionLabel = { $ifNull: ["$direction", "inbound"] };
+    computed.statusLabel = {
+      $cond: [{ $eq: ["$status", "closed"] }, "Closed", "Open"],
+    };
+    computed.registeredLabel = { $cond: ["$registered", "Yes", "No"] };
+    computed.resolvedOnCallLabel = { $cond: ["$resolvedOnCall", "Yes", "No"] };
+    computed.convertedCount = { $size: { $ifNull: ["$convertedTickets", []] } };
+    computed.followUpCount = { $size: { $ifNull: ["$followUps", []] } };
+    computed.lastFollowUpOutcome = {
+      $ifNull: [{ $arrayElemAt: [{ $ifNull: ["$followUps.outcome", []] }, -1] }, ""],
+    };
+    computed.outboundCount = { $size: { $ifNull: ["$outboundCalls", []] } };
+    computed.commentCount = { $size: { $ifNull: ["$comments", []] } };
+    computed.digitsDialedText = {
+      $reduce: {
+        input: { $ifNull: ["$digitsDialed", []] },
+        initialValue: "",
+        in: {
+          $cond: [
+            { $eq: ["$$value", ""] },
+            { $toString: "$$this" },
+            { $concat: ["$$value", ", ", { $toString: "$$this" }] },
+          ],
+        },
+      },
+    };
+    // The call-back ladder: the step the call is on is the last one logged.
+    const lastFollowUp = { $arrayElemAt: [{ $ifNull: ["$followUps", []] }, -1] };
+    computed.pendingFollowUpCount = {
+      $size: {
+        $filter: {
+          input: { $ifNull: ["$followUps", []] },
+          as: "f",
+          cond: { $eq: ["$$f.status", "pending"] },
+        },
+      },
+    };
+    computed.lastFollowUpAt = { $ifNull: [{ $getField: { field: "createdAt", input: lastFollowUp } }, null] };
+    computed.lastWipLevel = { $ifNull: [{ $getField: { field: "wipLevel", input: lastFollowUp } }, null] };
+    computed.lastWipLabel = { $ifNull: [{ $getField: { field: "wipLabel", input: lastFollowUp } }, ""] };
+    computed.lastTatHours = { $ifNull: [{ $getField: { field: "tatHours", input: lastFollowUp } }, null] };
+    // Notes, including a time the caller asked to be rung back.
+    const lastComment = { $arrayElemAt: [{ $ifNull: ["$comments", []] }, -1] };
+    computed.lastCommentText = { $ifNull: [{ $getField: { field: "text", input: lastComment } }, ""] };
+    computed.lastCommentBy = { $ifNull: [{ $getField: { field: "createdByName", input: lastComment } }, ""] };
+    computed.lastCommentAt = { $ifNull: [{ $getField: { field: "createdAt", input: lastComment } }, null] };
+    computed.lastCallbackRequestedAt = {
+      $max: {
+        $map: {
+          input: { $ifNull: ["$comments", []] },
+          as: "c",
+          in: "$$c.callbackRequestedAt",
+        },
+      },
+    };
+    // Outbound call-back attempts — each is its own call with its own recording.
+    const lastOutbound = { $arrayElemAt: [{ $ifNull: ["$outboundCalls", []] }, -1] };
+    computed.outboundTalkSeconds = {
+      $sum: {
+        $map: {
+          input: { $ifNull: ["$outboundCalls", []] },
+          as: "o",
+          in: { $ifNull: ["$$o.durationSeconds", 0] },
+        },
+      },
+    };
+    computed.lastOutboundAgent = { $ifNull: [{ $getField: { field: "agentName", input: lastOutbound } }, ""] };
+    computed.lastOutboundDuration = { $ifNull: [{ $getField: { field: "durationSeconds", input: lastOutbound } }, null] };
+    computed.lastOutboundRecording = { $ifNull: [{ $getField: { field: "recordingUrl", input: lastOutbound } }, ""] };
+    computed.convertedNumbers = {
+      $reduce: {
+        input: { $ifNull: ["$convertedTickets", []] },
+        initialValue: "",
+        in: {
+          $let: {
+            vars: { n: { $ifNull: ["$$this.ticketNumber", ""] } },
+            in: {
+              $cond: [
+                { $eq: ["$$n", ""] },
+                "$$value",
+                {
+                  $cond: [
+                    { $eq: ["$$value", ""] },
+                    "$$n",
+                    { $concat: ["$$value", ", ", "$$n"] },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+  } else if (source === "email_intake") {
+    // ── Email triage queue (EmailIntake) ───────────────────────────────────
+    // Email is the other way a request arrives; it has its own TAT and
+    // escalation, so it reports in its own right.
+    Model = mongoose.model("EmailIntake");
+    if (oid) baseMatch.projectId = oid;
+    const personName = (arr: string) => ({
+      $trim: {
+        input: {
+          $ifNull: [
+            { $arrayElemAt: [`${arr}.fullName`, 0] },
+            {
+              $concat: [
+                { $ifNull: [{ $arrayElemAt: [`${arr}.firstName`, 0] }, ""] },
+                " ",
+                { $ifNull: [{ $arrayElemAt: [`${arr}.lastName`, 0] }, ""] },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    lookups = [
+      { $lookup: { from: "users", localField: "assignedTo", foreignField: "_id", as: "_agent", pipeline: [{ $project: { firstName: 1, lastName: 1, fullName: 1 } }] } },
+      { $lookup: { from: "users", localField: "closedBy", foreignField: "_id", as: "_closedBy", pipeline: [{ $project: { firstName: 1, lastName: 1, fullName: 1 } }] } },
+      { $lookup: { from: "projects", localField: "projectId", foreignField: "_id", as: "_proj", pipeline: [{ $project: { name: 1 } }] } },
+    ];
+    computed.assignedToName = personName("$_agent");
+    computed.closedByName = personName("$_closedBy");
+    computed.projectName = { $ifNull: [{ $arrayElemAt: ["$_proj.name", 0] }, ""] };
+    computed.actionCount = { $size: { $ifNull: ["$actions", []] } };
+    computed.overdueLabel = {
+      $cond: [
+        {
+          $and: [
+            { $ne: [{ $ifNull: ["$dueAt", null] }, null] },
+            { $lt: ["$dueAt", "$$NOW"] },
+            { $eq: [{ $ifNull: ["$closedAt", null] }, null] },
+          ],
+        },
+        "Yes",
+        "No",
+      ],
+    };
+    computed.ageHrs = {
+      $round: [
+        {
+          $divide: [
+            { $subtract: [{ $ifNull: ["$closedAt", "$$NOW"] }, "$receivedAt"] },
+            3600000,
+          ],
+        },
+        2,
+      ],
+    };
+    computed.timeToCloseHrs = {
+      $cond: [
+        { $eq: [{ $ifNull: ["$closedAt", null] }, null] },
+        null,
+        { $round: [{ $divide: [{ $subtract: ["$closedAt", "$receivedAt"] }, 3600000] }, 2] },
+      ],
     };
   } else {
     // asset_audit

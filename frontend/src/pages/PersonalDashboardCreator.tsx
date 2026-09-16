@@ -31,6 +31,7 @@ import {
   MdDragIndicator,
 } from "react-icons/md";
 import DashboardLayout from "../components/DashboardLayout";
+import { widgetModuleLabel } from "../constants/widgetModules";
 
 interface CanvasWidget {
   id: string;
@@ -56,12 +57,7 @@ const COLOUR_OPTIONS = [
   { label: "Gray", value: "#6b7280" },
 ];
 
-const MODULE_LABELS: Record<string, string> = {
-  tickets: "Tickets",
-  users: "Users",
-  attendance: "Attendance",
-  kb: "Knowledge Base",
-};
+
 
 export default function PersonalDashboardCreator() {
   const { id } = useParams<{ id?: string }>();
@@ -458,7 +454,7 @@ export default function PersonalDashboardCreator() {
                       letterSpacing: "0.06em",
                     }}
                   >
-                    {MODULE_LABELS[module] ?? module}
+                    {widgetModuleLabel(module)}
                   </div>
                   {defs.map((def) => (
                     <div
