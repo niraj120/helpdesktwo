@@ -3851,7 +3851,7 @@ export const reopenTicket = async (req: Request, res: Response) => {
         const { reopenSr } = require("../modules/service-request/serviceRequestService");
         const reopened = await reopenSr(
           String(ticket._id),
-          { reason: req.body?.reason || "Re-opened by the parent." },
+          { reason: req.body?.reason || "Re-opened by the parent.", by: "parent" },
           userId,
         );
         return res.status(200).json({ success: true, data: reopened });

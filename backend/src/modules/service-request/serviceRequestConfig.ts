@@ -43,6 +43,13 @@ export const SR_CONFIG_DEFAULTS: SrConfig = {
           studentIdParam: "student_id",
         },
       },
+      leadLookup: {
+        enabled: false,
+        mdmSourceId: "",
+        dataType: "custom",
+        searchParam: "search",
+        enquiryNoField: "enquiry_no",
+      },
       mobileForm: {
         enabled: false,
         formSource: "ticket_config",
@@ -140,6 +147,8 @@ export const SR_CONFIG_DEFAULTS: SrConfig = {
         fallback: { mode: "category" },
       },
       parentCommunication: {
+        parentVisibility: "student_shared",
+        separatedFamiliesRaiserOnly: true,
         twoWayCommunicationEnabled: true,
         parentCanAddComments: true,
         askAdditionalInfoEnabled: true,
@@ -401,6 +410,10 @@ const mergeByKey = <T extends { key: string }>(defaults: T[], stored?: T[]) => {
 const resolvePsrIntake = (stored?: any) => {
   const defaults = SR_CONFIG_DEFAULTS.psr.intake;
   return {
+    leadLookup: {
+      ...(defaults as any).leadLookup,
+      ...(stored?.leadLookup || {}),
+    },
     lookup: {
       ...defaults.lookup,
       ...(stored?.lookup || {}),

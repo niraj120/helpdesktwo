@@ -766,22 +766,26 @@ async function notifyManagerOnNegativeFeedback(
 /** Re-open (parent/PSL, once) → auto-assign Principal (resolver pending). */
 export async function reopenSr(
   ticketId: string,
-  opts: { reason?: string },
+  opts: { reason?: string; by?: "parent" | "agent" },
   actorId: string,
   user?: ChangeStatusOpts["user"],
 ) {
   const ticket = await loadSr(ticketId);
+  // The parent re-opens from the parent portal; anything else is staff.
+  const by = opts.by || "agent";
 
   // Configured: the Re-open status's own rules decide the limit, permission
   // and who it goes to.
   const { statuses, configured } = await srStatusConfig(ticket);
   if (configured) {
-    return moveByConfig(ticket, SR_STATUS.REOPEN, actorId, {
+    const moved = await moveByConfig(ticket, SR_STATUS.REOPEN, actorId, {
       comments: opts.reason,
       followUpText: `Re-opened: ${opts.reason || ""}`,
       user,
       statuses,
     });
+    await Ticket.updateOne({ _id: ticket._id }, { $set: { "reopen.by": by } });
+    return moved;
   }
 
   // How many times a request may be re-opened is a project decision
@@ -813,6 +817,7 @@ export async function reopenSr(
     count: (ticket.reopen?.count ?? 0) + 1,
     reopenedBy: oid(actorId),
     reopenedAt: new Date(),
+    by,
   };
   const principal = await resolveReopenAssignee(
     ticket.project,
@@ -888,6 +893,8 @@ export async function pslSatisfactionCall(
     recordChange(ticket, "status", ticket.status, SR_STATUS.REOPEN, actorId);
     ticket.status = SR_STATUS.REOPEN;
     if (reopenPlan.reopen) ticket.reopen = reopenPlan.reopen;
+    // The PSL re-opens on the parent's behalf: an agent re-open.
+    ticket.set("reopen.by", "agent");
     ticket.closedAt = undefined;
     if (reopenPlan.assignedTo) ticket.assignedTo = reopenPlan.assignedTo;
   } else if (opts.spoken && opts.parentSatisfied === true) {
@@ -1026,6 +1033,8 @@ export interface ListSrParams {
   wipFrom?: string;
   wipTo?: string;
   wipState?: string; // "overdue" | "today" | "week" | "none"
+  due?: string; // "overdue" | "today" (SLA bucket) | "pending" (not settled)
+  reopenedBy?: string; // "parent" | "agent" — reopen.by
   source?: string;
   classification?: string;
   categoryId?: string;
@@ -1126,6 +1135,83 @@ const applyCsvFilter = (query: any, field: string, value?: string) => {
 const addAnd = (query: any, condition: any) => {
   query.$and = query.$and || [];
   query.$and.push(condition);
+};
+
+// SLA bucket for the Overdue / Due today quick filters:
+//   overdue — the SLA has been crossed (breached, or its due time has passed)
+//   today   — the SLA runs out later today
+//   later   — still open, not due today (or no SLA at all)
+// Settled requests (resolved, closed, cancelled) are in no bucket; "Pending"
+// on the All view is every request not settled.
+//
+// The SLA is the ticket-level one (category TAT) when the request has it,
+// otherwise the escalation matrix's current-level deadline — a request with
+// only a matrix SLA that ran out is overdue, not pending.
+//
+// A held clock (see services/slaPause) leaves dueAt untouched while it waits,
+// so the real due time is the resume time plus what was left at the hold. A
+// hold with no resume time is frozen: it is overdue only if the SLA was
+// already crossed when the hold began.
+const SR_SETTLED_STATUSES = [
+  SR_STATUS.RESOLVED,
+  SR_STATUS.CLOSED,
+  SR_STATUS.CANCEL,
+];
+
+const has = (path: string) => ({ $ifNull: [path, false] });
+
+const slaBucketExpr = (now: Date, dayEnd: Date) => {
+  const left = { $subtract: ["$$sla.dueAt", "$$sla.pausedAt"] };
+  const bucket = {
+    $let: {
+      vars: {
+        due: {
+          $cond: [
+            has("$$sla.pausedAt"),
+            { $add: ["$$sla.resumeAt", left] },
+            "$$sla.dueAt",
+          ],
+        },
+      },
+      in: {
+        $switch: {
+          branches: [
+            { case: has("$$sla.breachedAt"), then: "overdue" },
+            { case: { $not: [has("$$sla.dueAt")] }, then: "later" },
+            {
+              case: {
+                $and: [has("$$sla.pausedAt"), { $not: [has("$$sla.resumeAt")] }],
+              },
+              then: { $cond: [{ $lt: [left, 0] }, "overdue", "later"] },
+            },
+            { case: { $lt: ["$$due", now] }, then: "overdue" },
+            { case: { $lte: ["$$due", dayEnd] }, then: "today" },
+          ],
+          default: "later",
+        },
+      },
+    },
+  };
+  return {
+    $cond: [
+      { $in: ["$status", SR_SETTLED_STATUSES] },
+      null,
+      {
+        $let: {
+          vars: {
+            sla: {
+              $cond: [
+                has("$ticketLevelSLA.dueAt"),
+                "$ticketLevelSLA",
+                { $ifNull: ["$roleLevelSLA", {}] },
+              ],
+            },
+          },
+          in: bucket,
+        },
+      },
+    ],
+  };
 };
 
 const raisedByViewerConditions = (viewerId: string, viewerEmail?: string) => {
@@ -1324,6 +1410,17 @@ export async function listServiceRequests(params: ListSrParams) {
   const qBase: any = castAggregationObjectIds(q);
   delete qBase.status;
 
+  // Applied after qBase so the counters keep showing every SLA bucket.
+  const dayEnd = endOfDay(now);
+  if (params.due === "overdue" || params.due === "today") {
+    addAnd(q, { $expr: { $eq: [slaBucketExpr(now, dayEnd), params.due] } });
+  } else if (params.due === "pending") {
+    addAnd(q, { status: { $nin: SR_SETTLED_STATUSES } });
+  }
+  if (params.reopenedBy === "parent" || params.reopenedBy === "agent") {
+    q["reopen.by"] = params.reopenedBy;
+  }
+
   const allowedSorts = new Set([
     "createdAt",
     "updatedAt",
@@ -1347,17 +1444,49 @@ export async function listServiceRequests(params: ListSrParams) {
     Ticket.countDocuments(q),
     Ticket.aggregate([
       { $match: qBase },
-      { $group: { _id: "$status", count: { $sum: 1 } } },
+      { $addFields: { _sla: slaBucketExpr(now, dayEnd) } },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+          overdue: { $sum: { $cond: [{ $eq: ["$_sla", "overdue"] }, 1, 0] } },
+          today: { $sum: { $cond: [{ $eq: ["$_sla", "today"] }, 1, 0] } },
+          // Pending = not settled, whatever its SLA state.
+          pending: { $sum: { $cond: [{ $ne: ["$_sla", null] }, 1, 0] } },
+          byParent: {
+            $sum: { $cond: [{ $eq: ["$reopen.by", "parent"] }, 1, 0] },
+          },
+          byAgent: {
+            $sum: { $cond: [{ $eq: ["$reopen.by", "agent"] }, 1, 0] },
+          },
+        },
+      },
     ]),
   ]);
 
+  type SlaBuckets = { overdue: number; today: number; pending: number };
   const statusCounts: Record<string, number> = {};
+  const dueCounts: Record<string, SlaBuckets> = {};
   let allCount = 0;
-  for (const s of statusAgg as Array<{ _id: number; count: number }>) {
+  const allDue: SlaBuckets = { overdue: 0, today: 0, pending: 0 };
+  const reopenCounts: Record<string, { parent: number; agent: number }> = {};
+  for (const s of statusAgg as Array<
+    SlaBuckets & { _id: number; count: number; byParent: number; byAgent: number }
+  >) {
     statusCounts[String(s._id)] = s.count;
+    reopenCounts[String(s._id)] = { parent: s.byParent, agent: s.byAgent };
+    dueCounts[String(s._id)] = {
+      overdue: s.overdue,
+      today: s.today,
+      pending: s.pending,
+    };
     allCount += s.count;
+    allDue.overdue += s.overdue;
+    allDue.today += s.today;
+    allDue.pending += s.pending;
   }
   statusCounts.all = allCount;
+  dueCounts.all = allDue;
 
   // Linked-ISR rollup: one aggregate over child ISRs for the rows on this page.
   // done = status Resolved(4)/Closed(5). Inline list powers the popover.
@@ -1455,7 +1584,18 @@ export async function listServiceRequests(params: ListSrParams) {
     }
   }
 
-  return { items, total, page, limit, statusCounts };
+  return {
+    items,
+    total,
+    page,
+    limit,
+    statusCounts,
+    dueCounts,
+    reopenCounts,
+    // Statuses with no SLA buckets, so the screen can hide the SLA row there
+    // even when a status has no requests yet.
+    settledStatuses: SR_SETTLED_STATUSES,
+  };
 }
 
 /**

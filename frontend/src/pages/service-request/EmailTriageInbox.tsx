@@ -4,7 +4,11 @@ import SrPage from "../../components/sr/SrPage";
 import { srStyles, srButton } from "../../utils/srTheme";
 import { useProjectContext } from "../../contexts/ProjectContext";
 import { api } from "../../utils/api";
-import { serviceRequestApi } from "../../services/serviceRequests";
+import {
+  serviceRequestApi,
+  type SrFamilyParent,
+} from "../../services/serviceRequests";
+import EmailDrawer, { type EmailIntakeRow, stripHtml } from "./email/EmailDrawer";
 import { PERMISSIONS } from "../../constants/permissions";
 import { usePermissions } from "../../hooks/usePermissions";
 
@@ -14,36 +18,24 @@ interface ProjectOpt {
   code?: string;
 }
 
-interface Intake {
-  _id: string;
-  uniqueId: string;
-  fromName?: string;
-  fromEmail: string;
-  subject: string;
-  body?: string;
-  htmlBody?: string;
-  messageId?: string;
-  inReplyTo?: string;
-  references?: string[];
-  projectEmailConfigId?: string;
-  receivedAt: string;
-  dueAt?: string;
-  status: string;
-  actions?: Array<{
-    type: string;
-    refType?: string;
-    refId?: string;
-    refNumber?: string;
-  }>;
-}
+type Intake = EmailIntakeRow;
 
-const stripHtml = (value?: string) =>
-  String(value || "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+// Status tabs, in the order an agent works through them.
+const EMAIL_STATUS_TABS: Array<{
+  key: string;
+  label: string;
+  color: string;
+  bg: string;
+}> = [
+  { key: "all", label: "All", color: "#2563EB", bg: "#eff6ff" },
+  { key: "open", label: "Open", color: "#1d4ed8", bg: "#eef2ff" },
+  { key: "wip", label: "WIP", color: "#b45309", bg: "#fffbeb" },
+  { key: "closed", label: "Closed", color: "#047857", bg: "#ecfdf5" },
+  { key: "junk", label: "Junk", color: "#991b1b", bg: "#fee2e2" },
+];
 
 const LIVE_REFRESH_INTERVAL_MS = 15000;
+const PAGE_SIZE = 25;
 
 const EmailTriageInbox: React.FC<{
   embedded?: boolean;
@@ -63,10 +55,15 @@ const EmailTriageInbox: React.FC<{
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
   const [projectId, setProjectId] = useState(currentProjectId || "");
   const [status, setStatus] = useState("open");
+  const [readFilter, setReadFilter] = useState<"" | "unread" | "read">("");
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [rows, setRows] = useState<Intake[]>([]);
-  const knownRowIdsRef = useRef<Set<string>>(new Set());
-  const hasLoadedRowsRef = useRef(false);
-  const [unreadRowIds, setUnreadRowIds] = useState<Set<string>>(new Set());
+  const rowsRef = useRef<Intake[]>([]);
+  rowsRef.current = rows;
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showIngest, setShowIngest] = useState(false);
@@ -97,54 +94,45 @@ const EmailTriageInbox: React.FC<{
     })();
   }, [hideProjectSelector]);
 
-  const markRowRead = (id: string) => {
-    setUnreadRowIds((prev) => {
-      if (!prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+  // Read state is the email's own (shared by the team, like View Queries):
+  // opening marks it read; new mail stays highlighted until someone opens it.
+  const setRowRead = (id: string, read: boolean) => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r._id === id ? { ...r, readAt: read ? r.readAt || new Date().toISOString() : undefined } : r,
+      ),
+    );
+    setUnreadCount((n) => Math.max(0, n + (read ? -1 : 1)));
+    serviceRequestApi.emailIntake.markRead(id, read).catch(() => load({ silent: true }));
   };
-
-  const highlightUnreadRow = (id: string) =>
-    unreadRowIds.has(id)
-      ? { background: "#fffbeb", boxShadow: "inset 3px 0 0 #f59e0b" }
-      : {};
-
-  const rememberRows = useCallback((items: Intake[], silent?: boolean) => {
-    const ids = new Set(items.map((item) => item._id).filter(Boolean));
-    if (silent && hasLoadedRowsRef.current) {
-      const newIds = items
-        .map((item) => item._id)
-        .filter((id) => id && !knownRowIdsRef.current.has(id));
-      if (newIds.length) {
-        setUnreadRowIds((prev) => {
-          const next = new Set(prev);
-          newIds.forEach((id) => next.add(id));
-          return next;
-        });
-      }
-    } else if (!silent) {
-      setUnreadRowIds(new Set());
-    }
-    knownRowIdsRef.current = ids;
-    hasLoadedRowsRef.current = true;
-  }, []);
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
     try {
+      // Paged: the server returns one page at a time, so without page/limit
+      // only the newest 20 were ever shown and the rest silently hidden.
       const r = await serviceRequestApi.emailIntake.list({
         projectId: projectId || undefined,
         status,
+        read: readFilter || undefined,
+        search: search.trim() || undefined,
+        page,
+        limit: PAGE_SIZE,
       });
       const items = r.items || [];
-      rememberRows(items, options?.silent);
+      if (options?.silent) {
+        const known = new Set(rowsRef.current.map((x) => x._id));
+        const fresh = items.filter((x: Intake) => !known.has(x._id) && !x.readAt);
+        if (fresh.length) setMsg(`${fresh.length} new email${fresh.length === 1 ? "" : "s"} received.`);
+      }
       setRows(items);
+      setTotal(Number(r.total) || 0);
+      setUnreadCount(Number(r.unread) || 0);
+      setStatusCounts(r.statusCounts || {});
     } catch (e) {
       console.error(e);
       setRows([]);
     }
-  }, [projectId, rememberRows, status]);
+  }, [projectId, status, readFilter, search, page]);
 
   useEffect(() => {
     load();
@@ -163,7 +151,11 @@ const EmailTriageInbox: React.FC<{
     };
   }, [load]);
 
-  const startEmailPsr = (email: Intake, override?: Partial<Record<string, any>>) => {
+  const startEmailPsr = (
+    email: Intake,
+    family?: SrFamilyParent[],
+    override?: Partial<Record<string, any>>,
+  ) => {
     navigate(`${serviceBasePath}?tab=new&sourceType=email&sourceId=${email._id}`, {
       state: {
         sourceContext: {
@@ -179,24 +171,15 @@ const EmailTriageInbox: React.FC<{
           inReplyTo: email.inReplyTo,
           references: email.references,
           sourceEmailConfigId: email.projectEmailConfigId,
+          // A registered sender opens straight on the existing-parent form with
+          // the family filled in, as for a registered IVR caller.
+          ...(family?.length
+            ? { preselectChannelFlow: "existing_parent", family }
+            : {}),
           ...override,
         },
       },
     });
-  };
-
-  const markEmailJunk = async (email: Intake) => {
-    try {
-      await serviceRequestApi.emailIntake.action(email._id, {
-        type: "junk",
-        remark: "Marked as junk from email triage",
-      });
-      setMsg("Email marked as junk.");
-      setSelectedId(null);
-      load();
-    } catch (e: any) {
-      setMsg(e?.response?.data?.message || "Failed to mark email as junk.");
-    }
   };
 
   const toggleRowSelection = (id: string) => {
@@ -300,20 +283,105 @@ const EmailTriageInbox: React.FC<{
 
       <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
         {!hideProjectSelector && (
-          <select style={ctrl} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+          <select
+            style={ctrl}
+            value={projectId}
+            onChange={(e) => {
+              setPage(1);
+              setProjectId(e.target.value);
+            }}
+          >
             <option value="">All projects</option>
             {projects.map((p) => (
               <option key={p._id} value={p._id}>{p.name}</option>
             ))}
           </select>
         )}
-        <select style={ctrl} value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="open">Open</option>
-          <option value="wip">WIP</option>
-          <option value="closed">Closed</option>
-          <option value="junk">Junk</option>
-          <option value="all">All</option>
+        <select
+          style={ctrl}
+          value={readFilter}
+          aria-label="Read or unread"
+          onChange={(e) => {
+            setPage(1);
+            setReadFilter(e.target.value as "" | "unread" | "read");
+          }}
+        >
+          <option value="">Read & unread</option>
+          <option value="unread">Unread ({unreadCount})</option>
+          <option value="read">Read</option>
         </select>
+        <input
+          style={{ ...ctrl, flex: "1 1 220px", minWidth: 180 }}
+          placeholder="Search ID, subject or sender…"
+          aria-label="Search emails"
+          value={search}
+          onChange={(e) => {
+            setPage(1);
+            setSearch(e.target.value);
+          }}
+        />
+        <span style={{ alignSelf: "center", fontSize: 12, color: "#64748b" }}>
+          {total.toLocaleString()} email{total === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {/* Status tabs — same shape as the Service Requests list */}
+      <div
+        role="tablist"
+        aria-label="Filter by status"
+        style={{
+          ...card,
+          padding: "0 6px",
+          marginBottom: 12,
+          display: "flex",
+          overflowX: "auto",
+        }}
+      >
+        {EMAIL_STATUS_TABS.map((t) => {
+          const active = status === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => {
+                setPage(1);
+                setStatus(t.key);
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                padding: "11px 12px 9px",
+                border: "none",
+                borderBottom: `2px solid ${active ? t.color : "transparent"}`,
+                background: "transparent",
+                color: active ? t.color : "#475569",
+                fontSize: 13,
+                fontWeight: active ? 700 : 600,
+                whiteSpace: "nowrap",
+                cursor: "pointer",
+              }}
+            >
+              {t.label}
+              <span
+                style={{
+                  minWidth: 22,
+                  padding: "1px 7px",
+                  borderRadius: 999,
+                  background: active ? t.color : t.bg,
+                  color: active ? "#fff" : t.color,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  textAlign: "center",
+                }}
+              >
+                {(statusCounts[t.key] || 0).toLocaleString()}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {showIngest && (
@@ -390,20 +458,21 @@ const EmailTriageInbox: React.FC<{
                 const ticketAction = [...(r.actions || [])]
                   .reverse()
                   .find((a) => a.refType === "ticket" && a.refId);
-                const bodyPreview = r.body || stripHtml(r.htmlBody);
                 return (
                   <React.Fragment key={r._id}>
                     <tr
                       className={expanded ? "sr-triage-row sr-triage-row--selected" : "sr-triage-row"}
                       onClick={() => {
-                        markRowRead(r._id);
-                        setSelectedId(expanded ? null : r._id);
+                        if (!r.readAt) setRowRead(r._id, true);
+                        setSelectedId(r._id);
                       }}
                       style={{
                         cursor: "pointer",
                         background: expanded ? "#eef2ff" : "transparent",
                         transition: "background 0.12s ease",
-                        ...(!expanded ? highlightUnreadRow(r._id) : {}),
+                        ...(!expanded && !r.readAt
+                          ? { background: "#fffbeb", boxShadow: "inset 3px 0 0 #f59e0b" }
+                          : {}),
                       }}
                         >
                           {canConvert && (
@@ -417,8 +486,24 @@ const EmailTriageInbox: React.FC<{
                             </td>
                           )}
                           <td style={td}>{r.uniqueId}</td>
-                      <td style={td}>{r.fromName || r.fromEmail}</td>
-                      <td style={td}>{r.subject}</td>
+                      <td style={{ ...td, fontWeight: r.readAt ? 400 : 700 }}>
+                        {!r.readAt && (
+                          <span
+                            title="Unread"
+                            style={{
+                              display: "inline-block",
+                              width: 7,
+                              height: 7,
+                              borderRadius: "50%",
+                              background: "#F59E0B",
+                              marginRight: 6,
+                              verticalAlign: "middle",
+                            }}
+                          />
+                        )}
+                        {r.fromName || r.fromEmail}
+                      </td>
+                      <td style={{ ...td, fontWeight: r.readAt ? 400 : 700 }}>{r.subject}</td>
                       <td style={td}>{new Date(r.receivedAt).toLocaleString()}</td>
                       <td style={td}>{r.dueAt ? new Date(r.dueAt).toLocaleString() : "-"}</td>
                       <td style={td}>
@@ -446,49 +531,6 @@ const EmailTriageInbox: React.FC<{
                         )}
                       </td>
                     </tr>
-                    {expanded && (
-                      <tr>
-                            <td colSpan={canConvert ? 7 : 6} style={{ ...td, background: "#f8fafc" }}>
-                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, background: "#fff", padding: 14 }}>
-                            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
-                              From {r.fromName || r.fromEmail} - {new Date(r.receivedAt).toLocaleString()}
-                            </div>
-                            <div style={{ fontWeight: 800, marginBottom: 8 }}>{r.subject}</div>
-                            <div
-                              style={{
-                                whiteSpace: "pre-wrap",
-                                color: "#334155",
-                                fontSize: 13,
-                                lineHeight: 1.55,
-                                border: "1px solid #eef2f7",
-                                borderRadius: 10,
-                                padding: 12,
-                                maxHeight: 260,
-                                overflow: "auto",
-                                background: "#fbfdff",
-                              }}
-                            >
-                              {bodyPreview || "No email body captured."}
-                            </div>
-                            <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-                              {canConvert && (
-                                <>
-                                  <button type="button" onClick={() => startEmailPsr(r)} style={srButton("primary")}>
-                                    Create PSR
-                                  </button>
-                                  <button type="button" onClick={() => markEmailJunk(r)} style={srButton("danger")}>
-                                    Mark as Junk
-                                  </button>
-                                </>
-                              )}
-                              <button type="button" onClick={() => setSelectedId(null)} style={cancelBtn}>
-                                Collapse
-                              </button>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
                   </React.Fragment>
                 );
               })
@@ -496,6 +538,59 @@ const EmailTriageInbox: React.FC<{
           </tbody>
         </table>
       </div>
+      {total > PAGE_SIZE && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+            marginTop: 10,
+            fontSize: 12,
+            color: "#64748b",
+          }}
+        >
+          <span>
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of{" "}
+            {total.toLocaleString()}
+          </span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              type="button"
+              style={{ ...ctrl, cursor: page > 1 ? "pointer" : "default" }}
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ‹ Prev
+            </button>
+            <button
+              type="button"
+              style={{ ...ctrl, cursor: page * PAGE_SIZE < total ? "pointer" : "default" }}
+              disabled={page * PAGE_SIZE >= total}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next ›
+            </button>
+          </div>
+        </div>
+      )}
+      {selectedId && rows.find((r) => r._id === selectedId) && (
+        <EmailDrawer
+          email={rows.find((r) => r._id === selectedId)!}
+          canConvert={canConvert}
+          onClose={() => setSelectedId(null)}
+          onStartPsr={(email, family) => startEmailPsr(email, family)}
+          // Same as IVR: open the PSR flow on its Junk / Telemarketing step.
+          onJunk={(email) =>
+            startEmailPsr(email, undefined, { preselectChannelFlow: "junk" })
+          }
+          onOpenTicket={(id) => navigate(detailPath(id))}
+          onMarkUnread={(email) => {
+            setRowRead(email._id, false);
+            setSelectedId(null);
+          }}
+        />
+      )}
     </SrPage>
   );
 };

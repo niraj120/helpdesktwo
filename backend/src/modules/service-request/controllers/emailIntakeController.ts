@@ -5,7 +5,8 @@ import { Response } from "express";
 import { AuthRequest } from "../../../middleware/auth";
 import * as triage from "../emailTriage";
 import { SrError } from "../serviceRequestService";
-import { getProjectScope } from "../../../utils/projectScope";
+import { canAccessProject, getProjectScope } from "../../../utils/projectScope";
+import { lookupFamily } from "../srFamilyLookup";
 
 function actorId(req: AuthRequest): string {
   const id = req.user?.userId;
@@ -53,6 +54,7 @@ export const list = async (req: AuthRequest, res: Response) => {
     const data = await triage.listEmailIntake({
       projectId: str(req.query.projectId),
       status: str(req.query.status),
+      read: str(req.query.read),
       senderType: str(req.query.senderType),
       search: str(req.query.search),
       page: req.query.page ? Number(req.query.page) : undefined,
@@ -71,6 +73,44 @@ export const getOne = async (req: AuthRequest, res: Response) => {
     const viewerId = actorId(req);
     const data = await triage.getEmailIntake(req.params.id);
     triage.assertEmailOwnerAccess(data, viewerId, hasPerm(req, "EMAIL_TRIAGE_ALL"));
+    res.json({ success: true, data });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/**
+ * The sender's family — parents registered on the From address and their
+ * children. Same access as opening the email itself.
+ */
+export const family = async (req: AuthRequest, res: Response) => {
+  try {
+    const viewerId = actorId(req);
+    const email: any = await triage.getEmailIntake(req.params.id);
+    triage.assertEmailOwnerAccess(email, viewerId, hasPerm(req, "EMAIL_TRIAGE_ALL"));
+    const projectId = String(email.projectId || "");
+    if (!projectId || !canAccessProject(getProjectScope(req), projectId)) {
+      res.status(403).json({ success: false, message: "No access to this email's project." });
+      return;
+    }
+    const data = await lookupFamily(projectId, { email: email.fromEmail });
+    res.json({ success: true, data });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/** Mark an email read / unread — anyone who may open it. */
+export const markRead = async (req: AuthRequest, res: Response) => {
+  try {
+    const viewerId = actorId(req);
+    const email = await triage.getEmailIntake(req.params.id);
+    triage.assertEmailOwnerAccess(email, viewerId, hasPerm(req, "EMAIL_TRIAGE_ALL"));
+    const data = await triage.setEmailRead(
+      req.params.id,
+      req.body?.read !== false,
+      viewerId,
+    );
     res.json({ success: true, data });
   } catch (err) {
     fail(res, err);

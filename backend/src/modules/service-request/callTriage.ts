@@ -912,12 +912,23 @@ export async function markCallJunk(
 /** Mark a call as converted by a PSR created through the guided New Request flow. */
 export async function markCallConverted(
   id: string,
-  input: { ticketId: string; ticketNumber?: string; actorUserId?: string },
+  input: {
+    ticketId: string;
+    ticketNumber?: string;
+    actorUserId?: string;
+    /** The PSR was raised and closed on the call (OCR). */
+    resolvedOnCall?: boolean;
+    remark?: string;
+  },
 ) {
   const call = await CallIntake.findById(id);
   if (!call) throw new SrError("Call not found", 404);
   if (!mongoose.Types.ObjectId.isValid(input.ticketId)) {
     throw new SrError("Invalid ticket id.", 400);
+  }
+  if (input.resolvedOnCall) {
+    call.resolvedOnCall = true;
+    if (input.remark) call.remark = input.remark;
   }
   call.callStatus = "converted";
   call.status = "closed";

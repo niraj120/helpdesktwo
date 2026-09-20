@@ -175,6 +175,12 @@ router.post("/:id/psl-call", checkPermission("SR_CLOSE"), c.pslCall);
 
 // Parent final closure + feedback (auth-gated; ownership enforced later)
 router.post("/:id/parent-close", c.parentClose);
+// Hide a request from the student's other guardian (custody-sensitive).
+router.post(
+  "/:id/private-to-raiser",
+  checkPermission(["SR_CONFIG_MANAGE", "SR_CLOSE", "SR_REASSIGN"]),
+  c.setPrivateToRaiser,
+);
 
 // Linked ISRs for a PSR (list children) + link an existing ISR to a PSR
 router.get("/:id/linked-isrs", checkPermission(VIEW_PERMS), c.linkedIsrs);
@@ -186,5 +192,7 @@ router.post(
 
 // Detail (must be LAST — param route after all static GETs)
 router.get("/:id", checkPermission(VIEW_PERMS), c.getOne);
+// Parent + student(s) behind the request, for the detail sidebar.
+router.get("/:id/family", checkPermission(VIEW_PERMS), c.family);
 
 export default router;

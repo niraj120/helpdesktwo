@@ -21,12 +21,19 @@ export interface ParentSessionRequest extends PublicApiRequest {
   /** Set when the caller authenticated with a parent session token. The parent
    *  is locked to this mobile — they cannot query another parent's data. */
   parentSessionMobile?: string;
+  /** Enrolment numbers of the children mapped to that parent, resolved when
+   *  the session was minted; the student-shared list is scoped to these. */
+  parentSessionEnrolments?: string[];
 }
 
 /** Mint a parent session token (called after pub_ key validation). */
-export function signParentSession(projectId: string, parentMobile: string): string {
+export function signParentSession(
+  projectId: string,
+  parentMobile: string,
+  enrolments: string[] = [],
+): string {
   return jwt.sign(
-    { scope: PARENT_SESSION_SCOPE, projectId, parentMobile },
+    { scope: PARENT_SESSION_SCOPE, projectId, parentMobile, enrolments },
     config.jwt.secret,
     { expiresIn: PARENT_SESSION_TTL },
   );
@@ -53,6 +60,9 @@ export const resolveSelfServiceAuth = async (
       }
       req.publicApiProjectId = String(decoded.projectId);
       req.parentSessionMobile = String(decoded.parentMobile || "");
+      req.parentSessionEnrolments = Array.isArray(decoded.enrolments)
+        ? decoded.enrolments.map(String)
+        : [];
       next();
       return;
     } catch {

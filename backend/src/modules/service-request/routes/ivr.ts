@@ -40,6 +40,7 @@ router.post(
   c.bulkReassign,
 );
 router.get("/calls/:id", checkPermission(VIEW), c.getOne);
+router.get("/calls/:id/family", checkPermission(VIEW), c.family);
 router.post(
   "/calls/:id/classify",
   checkPermission(["IVR_TRIAGE_CONVERT", "SR_PSR_CREATE"]),

@@ -4,7 +4,7 @@ import SrPage from "../../components/sr/SrPage";
 import { srStyles, srButton } from "../../utils/srTheme";
 import { useProjectContext } from "../../contexts/ProjectContext";
 import { api } from "../../utils/api";
-import { serviceRequestApi } from "../../services/serviceRequests";
+import { serviceRequestApi, type SrFamilyParent } from "../../services/serviceRequests";
 import { useSocket } from "../../hooks/useSocket";
 import { PERMISSIONS } from "../../constants/permissions";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -382,7 +382,12 @@ const IVRCalls: React.FC<{
    * "How would you classify this?" step when the agent has already told us the
    * classification — "Mark junk" lands straight on Junk / Telemarketing.
    */
-  const startIvrPsr = (call: Call, preselectChannelFlow?: string) => {
+  const startIvrPsr = (
+    call: Call,
+    preselectChannelFlow?: string,
+    family?: SrFamilyParent[],
+    opts?: { resolveOnCall?: boolean },
+  ) => {
     navigate(`${serviceBasePath}?tab=new&sourceType=ivr&sourceId=${call._id}`, {
       state: {
         sourceContext: {
@@ -397,6 +402,10 @@ const IVRCalls: React.FC<{
           subject: `IVR call from ${call.callerName || call.callerMobile}`,
           body: `Converted from IVR call ${call.externalId || call._id}. Caller: ${call.callerName || "Unknown"} (${call.callerMobile}).`,
           ...(preselectChannelFlow ? { preselectChannelFlow } : {}),
+          // A registered caller's family, already looked up by the drawer, so
+          // the PSR form opens with the parent and children filled in.
+          ...(family?.length ? { family } : {}),
+          ...(opts?.resolveOnCall ? { resolveOnCall: true } : {}),
         },
       },
     });

@@ -196,10 +196,30 @@ export interface PsrLookupConfig {
 
 export interface PsrIntakeConfig {
   lookup: PsrLookupConfig;
+  /** Prospect flow: look an enquiry up before filling a new lead form. */
+  leadLookup: PsrLeadLookupConfig;
   mobileForm: PsrFormIntakeConfig;
   walkIn: PsrWalkInIntakeConfig;
   email: PsrEmailIntakeConfig;
   ivr: PsrIvrIntakeConfig;
+}
+
+/**
+ * Existing-enquiry lookup for the prospect-parent flow. The agent searches
+ * this MDM before typing anything: a known enquiry fills the form in and keeps
+ * its Hubble lead number on re-submission, an unknown one falls through to the
+ * blank form.
+ */
+export interface PsrLeadLookupConfig {
+  enabled: boolean;
+  /** MDM source holding enquiries / prospective parents. */
+  mdmSourceId: string;
+  /** Which API on that source to use (its dataType). */
+  dataType: string;
+  /** Query param the source expects for a free-text search. */
+  searchParam: string;
+  /** Field on the returned row that identifies the enquiry. */
+  enquiryNoField: string;
 }
 
 export interface PsrDuplicateDetectionConfig {
@@ -320,6 +340,19 @@ export interface PsrRoutingConfig {
 }
 
 export interface PsrParentCommunicationConfig {
+  /**
+   * Which of a family's requests a parent sees in the portal.
+   *  student_shared — every request about their child, whichever guardian
+   *                   raised it (mother and father see the same list)
+   *  raiser_only    — only the requests they raised themselves
+   * A request ticked "private to the raiser" is never shared either way.
+   */
+  parentVisibility: "student_shared" | "raiser_only";
+  /**
+   * Keep a student's requests with whoever raised them when the MDM marks the
+   * parents as separated — sharing those is a custody risk.
+   */
+  separatedFamiliesRaiserOnly: boolean;
   twoWayCommunicationEnabled: boolean;
   parentCanAddComments: boolean;
   askAdditionalInfoEnabled: boolean;

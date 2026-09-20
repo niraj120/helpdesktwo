@@ -328,7 +328,14 @@ const ParentServiceRequestPortal: React.FC = () => {
               <div key={r.ticket_number} style={{ ...card, cursor: "pointer" }} onClick={() => openDetail(r.ticket_number)}>
                 <div style={{ fontWeight: 700 }}>{r.ticket_number}</div>
                 <div style={{ fontSize: 13, color: "#374151" }}>{r.subject}</div>
-                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{r.status_label}</div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                  {r.status_label}
+                  {r.student_name ? ` · ${r.student_name}` : ""}
+                  {/* A request about the same child raised by the other guardian. */}
+                  {r.raised_by && r.raised_by_me === false
+                    ? ` · Raised by ${r.raised_by}`
+                    : ""}
+                </div>
               </div>
             ))
           )}

@@ -8,8 +8,12 @@
  * note) → raw details.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { serviceRequestApi } from "../../../services/serviceRequests";
+import {
+  serviceRequestApi,
+  type SrFamilyParent,
+} from "../../../services/serviceRequests";
 import { srButton, srStyles } from "../../../utils/srTheme";
+import FamilyCard from "../FamilyCard";
 import {
   Call,
   CallNote,
@@ -52,8 +56,16 @@ interface Props {
   /** Something on the call changed — the list should re-query. */
   onChanged: () => void;
   onToast: (type: "ok" | "err", text: string) => void;
-  /** Guided PSR flow; `flow` preselects a channel flow (e.g. "junk"). */
-  onStartPsr: (call: Call, flow?: string) => void;
+  /**
+   * Guided PSR flow; `flow` preselects a channel flow (e.g. "junk"), `family`
+   * carries a registered caller's parent(s) and children into the form.
+   */
+  onStartPsr: (
+    call: Call,
+    flow?: string,
+    family?: SrFamilyParent[],
+    opts?: { resolveOnCall?: boolean },
+  ) => void;
   onOpenTicket: (ticketId: string) => void;
 }
 
@@ -151,11 +163,28 @@ const IvrCallDrawer: React.FC<Props> = ({
   const [noteText, setNoteText] = useState("");
   const [requestedAt, setRequestedAt] = useState("");
 
-  // Quick convert / OCR panel.
-  const [panel, setPanel] = useState<"" | "convert" | "ocr">("");
+  // The caller's family: parents registered on this number and their children.
+  const [family, setFamily] = useState<SrFamilyParent[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setFamily(null);
+    serviceRequestApi.ivr
+      .family(call._id)
+      .then((r) => {
+        if (!cancelled) setFamily(r?.data?.parents || []);
+      })
+      .catch(() => {
+        if (!cancelled) setFamily([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [call._id]);
+
+  // Quick convert panel.
+  const [panel, setPanel] = useState<"" | "convert">("");
   const [categoryId, setCategoryId] = useState("");
   const [requesterType, setRequesterType] = useState("prospective_parent");
-  const [remark, setRemark] = useState("");
 
   // A different call opened: start clean from the row we were given.
   useEffect(() => {
@@ -351,13 +380,6 @@ const IvrCallDrawer: React.FC<Props> = ({
     ).then((ok) => ok && setPanel(""));
   };
 
-  const resolveOnCall = () =>
-    run(
-      "ocr",
-      () => serviceRequestApi.ivr.resolveOnCall(c._id, { remark }),
-      "Resolved on call (OCR).",
-    ).then((ok) => ok && setPanel(""));
-
   const initials = (c.callerName || "?")
     .split(/\s+/)
     .map((w) => w[0])
@@ -490,6 +512,9 @@ const IvrCallDrawer: React.FC<Props> = ({
             </section>
           )}
 
+          {/* ── Family (registered caller) ─────────────────────────── */}
+          <FamilyCard family={family} keyLabel="number" />
+
           {/* ── Actions ─────────────────────────────────────────── */}
           <section className="ivr-actions">
             {canCall && (
@@ -512,7 +537,13 @@ const IvrCallDrawer: React.FC<Props> = ({
             ) : null}
             {canConvert && actionable && (
               <button
-                onClick={() => onStartPsr(c)}
+                // A registered caller goes straight to the existing-parent
+                // form with the family filled in; anyone else is classified.
+                onClick={() =>
+                  family?.length
+                    ? onStartPsr(c, "existing_parent", family)
+                    : onStartPsr(c)
+                }
                 style={{ ...srButton("success"), padding: "9px 14px" }}
               >
                 Convert to PSR
@@ -531,7 +562,20 @@ const IvrCallDrawer: React.FC<Props> = ({
                     <button onClick={() => setPanel("convert")}>⚡ Quick PSR (pick category)</button>
                   )}
                   {actionable && (
-                    <button onClick={() => setPanel("ocr")}>✔ Resolve on call (OCR)</button>
+                    // OCR still records a PSR — opened on the PSR form and
+                    // closed there as resolved on the call.
+                    <button
+                      onClick={() =>
+                        onStartPsr(
+                          c,
+                          family?.length ? "existing_parent" : undefined,
+                          family || undefined,
+                          { resolveOnCall: true },
+                        )
+                      }
+                    >
+                      ✔ Resolve on call (OCR)
+                    </button>
                   )}
                   {actionable && (
                     <button className="danger" onClick={() => onStartPsr(c, "junk")}>
@@ -583,29 +627,6 @@ const IvrCallDrawer: React.FC<Props> = ({
                   style={{ ...srButton("primary"), padding: "8px 14px" }}
                 >
                   {busy === "convert" ? "Raising…" : "Raise PSR"}
-                </button>
-              </div>
-            </section>
-          )}
-
-          {panel === "ocr" && (
-            <section className="ivr-card">
-              <div className="ivr-card-h">Resolved during the call — no PSR</div>
-              <textarea
-                className="ivr-textarea"
-                placeholder="What was resolved? (optional)"
-                value={remark}
-                onChange={(e) => setRemark(e.target.value)}
-                rows={2}
-              />
-              <div className="ivr-row" style={{ justifyContent: "flex-end" }}>
-                <button className="ivr-ghost" onClick={() => setPanel("")}>Cancel</button>
-                <button
-                  onClick={resolveOnCall}
-                  disabled={busy === "ocr"}
-                  style={{ ...srButton("primary"), padding: "8px 14px" }}
-                >
-                  Mark resolved
                 </button>
               </div>
             </section>

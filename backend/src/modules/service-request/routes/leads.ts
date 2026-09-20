@@ -11,6 +11,7 @@ import { authMiddleware } from "../../../middleware/auth";
 import { checkPermission } from "../../../middleware/permissions";
 import {
   listLeads,
+  lookupLeads,
   createLead,
   updateLead,
   deleteLead,
@@ -29,6 +30,8 @@ const READ_LEADS = [
 // Changing a lead.
 const WRITE_LEADS = ["SR_LEADS_MANAGE", "SR_CONFIG_MANAGE"];
 
+// Existing-enquiry search for the prospect flow (static path, before /:id).
+router.get("/lookup", checkPermission(READ_LEADS), lookupLeads);
 router.get("/", checkPermission(READ_LEADS), listLeads);
 router.post("/", checkPermission(WRITE_LEADS), createLead);
 router.post(

@@ -58,6 +58,9 @@ export interface IEmailIntake extends Document {
   escalatedAt?: Date;
   closedAt?: Date;
   closedBy?: mongoose.Types.ObjectId;
+  /** First opened by someone on the team; unset = unread (shared inbox). */
+  readAt?: Date;
+  readBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -131,6 +134,8 @@ const EmailIntakeSchema = new Schema<IEmailIntake>(
     escalatedAt: { type: Date },
     closedAt: { type: Date },
     closedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    readAt: { type: Date, index: true },
+    readBy: { type: Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true },
 );

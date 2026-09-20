@@ -244,6 +244,8 @@ export interface ITicket extends Document {
     count?: number;
     reopenedBy?: mongoose.Types.ObjectId;
     reopenedAt?: Date;
+    /** Who asked for it: the parent (requester) or an agent (creator / PSL). */
+    by?: "parent" | "agent";
   };
   /** Parent final closure + feedback. */
   parentClosure?: {
@@ -691,6 +693,7 @@ const TicketSchema: Schema = new Schema(
       count: { type: Number, default: 0 },
       reopenedBy: { type: Schema.Types.ObjectId, ref: "User" },
       reopenedAt: { type: Date },
+      by: { type: String, enum: ["parent", "agent"] },
     },
     parentClosure: {
       satisfied: { type: Boolean },
@@ -754,5 +757,7 @@ TicketSchema.index({ project: 1, interactionType: 1, status: 1, createdAt: -1 })
 TicketSchema.index({ interactionType: 1, "wip.committedDate": 1 });
 // Linked-ISR rollup for PSR list (count + done-by-status per parent PSR)
 TicketSchema.index({ linkedPsrId: 1, status: 1 });
+// Parent portal: every request about a student, whichever guardian raised it.
+TicketSchema.index({ "metadata.studentEnrollments": 1, interactionType: 1 });
 
 export const Ticket = mongoose.model<ITicket>("Ticket", TicketSchema);

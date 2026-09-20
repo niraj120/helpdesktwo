@@ -24,8 +24,14 @@ import { createServiceRequest } from "../modules/service-request/createServiceRe
 import { searchParentsFromMDM } from "../services/mdmService";
 import { SR_PSR_STATUSES } from "../modules/service-request/types";
 import { signParentSession } from "../middleware/selfServiceAuth";
+import { enrolmentsForParent } from "../modules/service-request/srFamilyLookup";
+import { getSrConfigForProject } from "../modules/service-request/srConfigAdmin";
 
 const SELF_SERVICE_CHANNEL = "self_service";
+
+// Status codes the parent endpoints move a request to (SR lifecycle).
+const SR_STATUS_CLOSED = 5;
+const SR_STATUS_REOPEN = 6;
 
 // The parent's mobile: from the session token when present (locked to that
 // parent), else from the request (trusted server-to-server pub_ key caller).
@@ -35,6 +41,56 @@ const effectiveMobile = (req: any, provided?: string): string =>
 const SR_STATUS_LABELS: Record<number, string> = Object.fromEntries(
   SR_PSR_STATUSES.map((s) => [s.code, s.name]),
 );
+
+/**
+ * Which requests this parent may see and act on.
+ *
+ * Student-shared (the default): every request about one of their children,
+ * whichever guardian raised it — so a mother sees the father's request for
+ * the same child and can reply to it. Requests ticked "private to the raiser"
+ * stay with whoever raised them. With `raiser_only`, or when the parent's
+ * children cannot be resolved, it falls back to the raiser's own requests.
+ */
+const parentScope = async (
+  req: any,
+  projectId: string,
+  parentMobile: string,
+): Promise<Record<string, any>> => {
+  const mine = { "metadata.parent.mobile": parentMobile };
+  let enrolments: string[] = Array.isArray(req.parentSessionEnrolments)
+    ? req.parentSessionEnrolments
+    : [];
+  let separatedRaiserOnly = true;
+  try {
+    const cfg: any = await getSrConfigForProject(projectId);
+    const comms = cfg?.psr?.workflow?.parentCommunication;
+    if (comms?.parentVisibility === "raiser_only") return mine;
+    separatedRaiserOnly = comms?.separatedFamiliesRaiserOnly !== false;
+    // A pub_ key caller has no session token: resolve the family now.
+    if (!enrolments.length) {
+      enrolments = await enrolmentsForParent(projectId, { mobile: parentMobile });
+    }
+  } catch (e) {
+    console.warn("[psr] parent scope fell back to raiser-only:", (e as any)?.message);
+    return mine;
+  }
+  if (!enrolments.length) return mine;
+  const shared: Record<string, any> = {
+    "metadata.studentEnrollments": { $in: enrolments },
+    "metadata.privateToRaiser": { $ne: true },
+  };
+  if (separatedRaiserOnly) shared["metadata.separatedParents"] = { $ne: true };
+  return { $or: [mine, shared] };
+};
+
+/** The project's PSR config, or null when it cannot be read. */
+const srCfg = async (projectId: string): Promise<any> => {
+  try {
+    return await getSrConfigForProject(projectId);
+  } catch {
+    return null;
+  }
+};
 
 const err = (res: Response, code: string, message: string, status = 400) =>
   res.status(status).json({ status: "error", code, message });
@@ -302,7 +358,10 @@ export const createParentSession = async (
     if (!parentMobile) {
       return void err(res, "MISSING_IDENTITY", "parent_mobile is required.");
     }
-    const token = signParentSession(projectId, parentMobile);
+    // Resolve the parent's children once, so every request in the session is
+    // scoped to their enrolment numbers without a lookup per call.
+    const enrolments = await enrolmentsForParent(projectId, { mobile: parentMobile });
+    const token = signParentSession(projectId, parentMobile, enrolments);
     res.json({
       status: "success",
       token,
@@ -574,9 +633,11 @@ export const getMySrDetail = async (
       project: new mongoose.Types.ObjectId(projectId),
       ticketNumber,
       interactionType: "PSR",
-      "metadata.parent.mobile": parentMobile,
+      ...(await parentScope(req, projectId, parentMobile)),
     })
-      .select("ticketNumber subject description status createdAt resolvedAt closedAt comments")
+      .select(
+        "ticketNumber subject description status createdAt resolvedAt closedAt comments metadata.parent.name metadata.parent.mobile metadata.studentName",
+      )
       .lean();
     if (!ticket) return void err(res, "NOT_FOUND", "Request not found.", 404);
 
@@ -617,18 +678,29 @@ export const replyToMySr = async (
     const message = String(req.body?.message || "").trim();
     if (!parentMobile) return void err(res, "MISSING_IDENTITY", "parent_mobile is required.");
     if (!message) return void err(res, "EMPTY_MESSAGE", "message is required.");
+    const comms = (await srCfg(projectId))?.psr?.workflow?.parentCommunication;
+    if (comms && (comms.twoWayCommunicationEnabled === false || comms.parentCanAddComments === false)) {
+      return void err(res, "REPLIES_DISABLED", "Replying is switched off for this project.", 403);
+    }
 
+    // Either guardian of the student may reply — same scope as the list.
     const ticket = await Ticket.findOne({
       project: new mongoose.Types.ObjectId(projectId),
       ticketNumber,
       interactionType: "PSR",
-      "metadata.parent.mobile": parentMobile,
+      ...(await parentScope(req, projectId, parentMobile)),
     });
     if (!ticket) return void err(res, "NOT_FOUND", "Request not found.", 404);
 
+    // Who replied, when a request is shared between mother and father.
+    const raiserMobile = (ticket as any).metadata?.parent?.mobile;
+    const replierName =
+      raiserMobile && raiserMobile !== parentMobile
+        ? String(req.body?.parent_name || "").trim() || `Parent ${parentMobile}`
+        : undefined;
     ticket.comments = ticket.comments || [];
     ticket.comments.push({
-      text: message,
+      text: replierName ? `${replierName}: ${message}` : message,
       createdAt: new Date(),
       displayToParent: true,
       authorType: "parent",
@@ -659,11 +731,13 @@ export const listMySelfServiceSr = async (
     const query: any = {
       project: new mongoose.Types.ObjectId(projectId),
       interactionType: "PSR",
-      "metadata.parent.mobile": parentMobile,
+      ...(await parentScope(req, projectId, parentMobile)),
     };
     const [rows, total] = await Promise.all([
       Ticket.find(query)
-        .select("ticketNumber subject status createdAt resolvedAt closedAt")
+        .select(
+          "ticketNumber subject status createdAt resolvedAt closedAt metadata.parent.name metadata.parent.mobile metadata.studentName",
+        )
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -684,9 +758,116 @@ export const listMySelfServiceSr = async (
         created_at: t.createdAt,
         resolved_at: t.resolvedAt,
         closed_at: t.closedAt,
+        // A request may have been raised by the other guardian of the student.
+        student_name: t.metadata?.studentName,
+        raised_by: t.metadata?.parent?.name,
+        raised_by_me: t.metadata?.parent?.mobile === parentMobile,
       })),
     });
   } catch (e: any) {
     err(res, "INTERNAL", e?.message || "Failed to list requests.", 500);
+  }
+};
+
+// ── POST /v1/service-requests/:ticketNumber/close ────────────────────────────
+// The parent closes their own request, with satisfaction + a comment. Either
+// guardian of the student may close it (same scope as the list).
+export const closeMySelfServiceSr = async (
+  req: PublicApiRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const projectId = req.publicApiProjectId!;
+    const parentMobile = effectiveMobile(req, req.body?.parent_mobile);
+    const ticketNumber = String(req.params.ticketNumber || "").trim();
+    if (!parentMobile) return void err(res, "MISSING_IDENTITY", "parent_mobile is required.");
+
+    const lifecycle = (await srCfg(projectId))?.psr?.workflow?.lifecycle;
+    if (lifecycle && lifecycle.parentClosureEnabled === false) {
+      return void err(res, "CLOSURE_DISABLED", "Closing is switched off for this project.", 403);
+    }
+
+    const ticket: any = await Ticket.findOne({
+      project: new mongoose.Types.ObjectId(projectId),
+      ticketNumber,
+      interactionType: "PSR",
+      ...(await parentScope(req, projectId, parentMobile)),
+    });
+    if (!ticket) return void err(res, "NOT_FOUND", "Request not found.", 404);
+    if (ticket.status === SR_STATUS_CLOSED) {
+      return void err(res, "ALREADY_CLOSED", "This request is already closed.");
+    }
+
+    const satisfied = req.body?.satisfied !== false;
+    const comments = String(req.body?.comments || "").trim();
+    ticket.parentClosure = { satisfied, closedAt: new Date(), comments };
+    if (satisfied) {
+      ticket.status = SR_STATUS_CLOSED;
+      ticket.closedAt = new Date();
+    }
+    ticket.comments = ticket.comments || [];
+    ticket.comments.push({
+      text: comments || (satisfied ? "Closed by the parent." : "Parent is not satisfied."),
+      createdAt: new Date(),
+      displayToParent: true,
+      authorType: "parent",
+    } as any);
+    await ticket.save();
+    res.json({ status: "success", closed: satisfied });
+  } catch (e: any) {
+    err(res, "INTERNAL", e?.message || "Failed to close the request.", 500);
+  }
+};
+
+// ── POST /v1/service-requests/:ticketNumber/reopen ───────────────────────────
+// Re-open a closed request, within the project's re-open limit. Recorded as a
+// parent re-open, so the staff list can tell it from an agent's.
+export const reopenMySelfServiceSr = async (
+  req: PublicApiRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const projectId = req.publicApiProjectId!;
+    const parentMobile = effectiveMobile(req, req.body?.parent_mobile);
+    const ticketNumber = String(req.params.ticketNumber || "").trim();
+    const reason = String(req.body?.reason || "").trim();
+    if (!parentMobile) return void err(res, "MISSING_IDENTITY", "parent_mobile is required.");
+    if (!reason) return void err(res, "MISSING_REASON", "Say why you are re-opening.");
+
+    const limit = (await srCfg(projectId))?.psr?.workflow?.lifecycle?.reopenLimit ?? 1;
+    const ticket: any = await Ticket.findOne({
+      project: new mongoose.Types.ObjectId(projectId),
+      ticketNumber,
+      interactionType: "PSR",
+      ...(await parentScope(req, projectId, parentMobile)),
+    });
+    if (!ticket) return void err(res, "NOT_FOUND", "Request not found.", 404);
+    if (limit <= 0) {
+      return void err(res, "REOPEN_DISABLED", "Re-opening is switched off for this project.", 403);
+    }
+    const used = ticket.reopen?.count ?? 0;
+    if (used >= limit) {
+      return void err(
+        res,
+        "REOPEN_LIMIT",
+        `This request has already been re-opened ${used} time(s) — the limit is ${limit}.`,
+      );
+    }
+
+    ticket.status = SR_STATUS_REOPEN;
+    ticket.closedAt = undefined;
+    ticket.reopen = { count: used + 1, reopenedAt: new Date(), by: "parent" };
+    ticket.comments = ticket.comments || [];
+    ticket.comments.push({
+      text: `Re-opened: ${reason}`,
+      createdAt: new Date(),
+      displayToParent: true,
+      authorType: "parent",
+    } as any);
+    (ticket as any).hasNewReply = true;
+    await ticket.save();
+    res.json({ status: "success" });
+  } catch (e: any) {
+    err(res, "INTERNAL", e?.message || "Failed to re-open the request.", 500);
   }
 };

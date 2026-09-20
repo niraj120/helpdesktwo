@@ -285,6 +285,14 @@ interface SimpleConfig {
   others: ChannelConfig;
   studentPortal: ChannelConfig;
   isr: ChannelConfig;
+  /** Prospect flow: search an existing enquiry before the new-lead form. */
+  leadLookup: {
+    enabled: boolean;
+    mdmSourceId: string;
+    dataType: string;
+    searchParam: string;
+    enquiryNoField: string;
+  };
   ivrParentLookup: {
     enabled: boolean;
     tableId: string;
@@ -860,6 +868,13 @@ function fromBackend(cfg: any, forms: SrFormSchema[] = []): SimpleConfig {
       mkField("Subject",     "text",     true),
       mkField("Description", "textarea",  false),
     ]) },
+    leadLookup: {
+      enabled: cfg?.psr?.intake?.leadLookup?.enabled === true,
+      mdmSourceId: cfg?.psr?.intake?.leadLookup?.mdmSourceId || "",
+      dataType: cfg?.psr?.intake?.leadLookup?.dataType || "custom",
+      searchParam: cfg?.psr?.intake?.leadLookup?.searchParam || "search",
+      enquiryNoField: cfg?.psr?.intake?.leadLookup?.enquiryNoField || "enquiry_no",
+    },
     ivrParentLookup: {
       enabled: cfg?.ivr?.parentLookup?.enabled === true,
       tableId: cfg?.ivr?.parentLookup?.tableId || "",
@@ -895,7 +910,7 @@ function toBackendPatch(s: SimpleConfig, existing: any): any {
         .map((l) => l.trim().toLowerCase())
         .filter(Boolean),
     },
-    psr: { ...existing?.psr, enabled: s.psrEnabled, intake: { ...(existing?.psr?.intake||{}), lookup: { ...(existing?.psr?.intake?.lookup||{}), source: sf?.psrTableId ? "psr_builder" : "auto", psrBuilderTableId: sf?.psrTableId||undefined } }, workflow: { ...(existing?.psr?.workflow||{}), routing: s.routing } },
+    psr: { ...existing?.psr, enabled: s.psrEnabled, intake: { ...(existing?.psr?.intake||{}), leadLookup: { ...s.leadLookup }, lookup: { ...(existing?.psr?.intake?.lookup||{}), source: sf?.psrTableId ? "psr_builder" : "auto", psrBuilderTableId: sf?.psrTableId||undefined } }, workflow: { ...(existing?.psr?.workflow||{}), routing: s.routing } },
     isr: { ...existing?.isr, enabled: s.isrEnabled },
     ivr: {
       ...(existing?.ivr || {}),
@@ -2514,6 +2529,13 @@ const SRSettingsNew: React.FC<{ projectId: string }> = ({ projectId }) => {
         bodyTemplate: "",
       },
     },
+    leadLookup: {
+      enabled: false,
+      mdmSourceId: "",
+      dataType: "custom",
+      searchParam: "search",
+      enquiryNoField: "enquiry_no",
+    },
     existingParent: { enabled: true,  fields: DEFAULT_EXISTING.map(f=>({...f,id:uid()})) },
     prospectParent: { enabled: true,  fields: [] },
     junk:   { enabled: true,  fields: [], junkMode: true },
@@ -2541,6 +2563,17 @@ const SRSettingsNew: React.FC<{ projectId: string }> = ({ projectId }) => {
   });
   const [tables, setTables] = useState<any[]>([]);
   const [masters, setMasters] = useState<Master[]>([]);
+  // MDM sources, for the prospect (enquiry) lookup picker.
+  const [mdmSources, setMdmSources] = useState<Array<{ _id: string; name: string }>>([]);
+  useEffect(() => {
+    api
+      .get("/mdm")
+      .then((r: any) => {
+        const list = r.data?.data || r.data || [];
+        setMdmSources(Array.isArray(list) ? list : []);
+      })
+      .catch(() => setMdmSources([]));
+  }, []);
   const [forms, setForms] = useState<SrFormSchema[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [managerUsers, setManagerUsers] = useState<any[]>([]);
@@ -2872,6 +2905,108 @@ const SRSettingsNew: React.FC<{ projectId: string }> = ({ projectId }) => {
           />
         </div>
       </Card>
+
+      {/* Prospect lookup — search an enquiry before filling a new lead form */}
+      {cfg.psrEnabled && (
+        <Card>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-gray-800">Prospect lookup (enquiry MDM)</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Before the new-lead form opens, the agent searches this source. A
+                match fills the form in and keeps its existing enquiry number; no
+                match falls through to a blank form.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-sm whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={cfg.leadLookup.enabled}
+                onChange={(e) =>
+                  setCfg((c) => ({
+                    ...c,
+                    leadLookup: { ...c.leadLookup, enabled: e.target.checked },
+                  }))
+                }
+              />
+              Enabled
+            </label>
+          </div>
+
+          {cfg.leadLookup.enabled && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-semibold text-gray-600">
+                MDM source
+                <select
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  value={cfg.leadLookup.mdmSourceId}
+                  onChange={(e) =>
+                    setCfg((c) => ({
+                      ...c,
+                      leadLookup: { ...c.leadLookup, mdmSourceId: e.target.value },
+                    }))
+                  }
+                >
+                  <option value="">Select a source…</option>
+                  {mdmSources.map((m) => (
+                    <option key={m._id} value={m._id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-gray-600">
+                API type on that source
+                <input
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  value={cfg.leadLookup.dataType}
+                  onChange={(e) =>
+                    setCfg((c) => ({
+                      ...c,
+                      leadLookup: { ...c.leadLookup, dataType: e.target.value },
+                    }))
+                  }
+                  placeholder="custom"
+                />
+              </label>
+              <label className="text-xs font-semibold text-gray-600">
+                Search parameter
+                <input
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  value={cfg.leadLookup.searchParam}
+                  onChange={(e) =>
+                    setCfg((c) => ({
+                      ...c,
+                      leadLookup: { ...c.leadLookup, searchParam: e.target.value },
+                    }))
+                  }
+                  placeholder="search"
+                />
+                <span className="mt-1 block font-normal text-gray-400">
+                  The query parameter the API expects, e.g. search or q.
+                </span>
+              </label>
+              <label className="text-xs font-semibold text-gray-600">
+                Enquiry-number field
+                <input
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  value={cfg.leadLookup.enquiryNoField}
+                  onChange={(e) =>
+                    setCfg((c) => ({
+                      ...c,
+                      leadLookup: { ...c.leadLookup, enquiryNoField: e.target.value },
+                    }))
+                  }
+                  placeholder="enquiry_no"
+                />
+                <span className="mt-1 block font-normal text-gray-400">
+                  Field on the returned row that identifies the enquiry.
+                </span>
+              </label>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* PSR channels */}
       {cfg.psrEnabled && (

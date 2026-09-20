@@ -22,6 +22,8 @@ import {
   listParentStudents,
   getMySrDetail,
   replyToMySr,
+  closeMySelfServiceSr,
+  reopenMySelfServiceSr,
   createParentSession,
 } from "../controllers/publicServiceRequestController";
 import { createBbpLoginUrl } from "../controllers/bbpHandoffController";
@@ -157,6 +159,20 @@ router.post(
   makeRateLimit(30),
   resolveSelfServiceAuth,
   replyToMySr,
+);
+// POST /v1/service-requests/:ticketNumber/close — parent closes it (30 req/min)
+router.post(
+  "/service-requests/:ticketNumber/close",
+  makeRateLimit(30),
+  resolveSelfServiceAuth,
+  closeMySelfServiceSr,
+);
+// POST /v1/service-requests/:ticketNumber/reopen — parent re-opens (30 req/min)
+router.post(
+  "/service-requests/:ticketNumber/reopen",
+  makeRateLimit(30),
+  resolveSelfServiceAuth,
+  reopenMySelfServiceSr,
 );
 // GET /v1/service-requests/:ticketNumber — one request + thread (60 req/min)
 // Registered AFTER the literal routes so it doesn't shadow them.

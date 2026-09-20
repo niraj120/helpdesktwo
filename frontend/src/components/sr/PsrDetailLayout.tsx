@@ -6,6 +6,7 @@ import {
   UserGroupIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useProjectStatuses } from "../../hooks/useProjectStatuses";
 import { SR } from "../../utils/srTheme";
 import LinkedIsrPanel from "./LinkedIsrPanel";
 import SrLifecyclePanel from "./SrLifecyclePanel";
@@ -297,12 +298,18 @@ const PsrDetailLayout: React.FC<{
   );
   const isPsr = ticket?.interactionType === "PSR";
   const projectId = getProjectId(ticket);
+  // A commitment belongs to a WIP-type status — the status master says which
+  // ones those are (they ask for a committed date), so no status code here.
+  const { metaFor } = useProjectStatuses(projectId);
+  const inWip =
+    !!metaFor(ticket?.status)?.requireDate || !!ticket?.wip?.committedDate;
 
   const canShow = (item: CardConfig) =>
     item.enabled &&
     !pageHidden.has(item.key) &&
     (!item.requiredPermission || hasPermission(item.requiredPermission)) &&
-    (isPsr || !psrOnly.has(item.key));
+    (isPsr || !psrOnly.has(item.key)) &&
+    (item.key !== "wipCommitment" || inWip);
 
   const renderCard = (card: CardConfig) => {
     if (card.key === "sla") return <SrSlaBanner ticket={ticket} />;

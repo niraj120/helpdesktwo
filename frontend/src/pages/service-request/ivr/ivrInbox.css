@@ -320,3 +320,8 @@
 }
 .ivr-toast.ok { background: #0f172a; color: #fff; }
 .ivr-toast.err { background: #b91c1c; color: #fff; }
+
+/* Registered caller's family in the drawer */
+.ivr-family { display: flex; flex-direction: column; gap: 6px; }
+.ivr-family + .ivr-family { border-top: 1px dashed #e2e8f0; padding-top: 10px; }
+.ivr-child { border: 1px solid #eef2f7; background: #f8fafc; border-radius: 8px; padding: 8px 10px; font-size: 13px; }

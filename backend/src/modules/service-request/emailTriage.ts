@@ -108,6 +108,7 @@ export async function ingestEmail(input: IngestEmailInput) {
 export interface ListIntakeParams {
   projectId?: string;
   status?: string; // open | wip | closed | all
+  read?: string; // "read" | "unread" — readAt set / unset
   senderType?: string;
   search?: string;
   page?: number;
@@ -115,6 +116,21 @@ export interface ListIntakeParams {
   scope?: ProjectScope;
   assignedOnlyToUserId?: string;
 }
+
+/** find() casts ids from strings; aggregate() does not, so do it here. */
+const castIds = (query: any): any => {
+  if (Array.isArray(query)) return query.map(castIds);
+  if (!query || typeof query !== "object") return query;
+  if (query instanceof mongoose.Types.ObjectId || query instanceof Date) return query;
+  const out: any = {};
+  for (const [key, value] of Object.entries(query)) {
+    out[key] =
+      typeof value === "string" && mongoose.Types.ObjectId.isValid(value) && value.length === 24
+        ? new mongoose.Types.ObjectId(value)
+        : castIds(value);
+  }
+  return out;
+};
 
 export async function listEmailIntake(params: ListIntakeParams) {
   const page = Math.max(1, Number(params.page) || 1);
@@ -125,6 +141,9 @@ export async function listEmailIntake(params: ListIntakeParams) {
   } else if (params.projectId) {
     q.projectId = params.projectId;
   }
+  // Counter strip: every filter EXCEPT status, so the tabs keep their numbers
+  // while one of them is selected.
+  const qWithoutStatus: any = { ...q };
   if (params.status && params.status !== "all") q.status = params.status;
   if (params.senderType) q.senderType = params.senderType;
   if (params.assignedOnlyToUserId) {
@@ -146,15 +165,35 @@ export async function listEmailIntake(params: ListIntakeParams) {
     );
     q.$or = [{ uniqueId: rx }, { subject: rx }, { fromEmail: rx }];
   }
-  const [items, total] = await Promise.all([
+  // Unread count ignores the read filter, so the "Unread (n)" choice keeps
+  // its number whichever view is picked.
+  const unreadQ = { ...q, readAt: null };
+  if (params.read === "unread") {
+    q.readAt = null;
+    qWithoutStatus.readAt = null;
+  } else if (params.read === "read") {
+    q.readAt = { $ne: null };
+    qWithoutStatus.readAt = { $ne: null };
+  }
+  const [items, total, unread, statusAgg] = await Promise.all([
     EmailIntake.find(q)
       .sort({ receivedAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),
     EmailIntake.countDocuments(q),
+    EmailIntake.countDocuments(unreadQ),
+    EmailIntake.aggregate([
+      { $match: castIds(qWithoutStatus) },
+      { $group: { _id: "$status", count: { $sum: 1 } } },
+    ]),
   ]);
-  return { items, total, page, limit };
+  const statusCounts: Record<string, number> = { all: 0 };
+  for (const row of statusAgg as Array<{ _id: string; count: number }>) {
+    statusCounts[String(row._id)] = row.count;
+    statusCounts.all += row.count;
+  }
+  return { items, total, page, limit, unread, statusCounts };
 }
 
 export function assertEmailOwnerAccess(
@@ -169,6 +208,20 @@ export function assertEmailOwnerAccess(
   if (assignedId !== String(viewerId)) {
     throw new SrError("Forbidden: this email is assigned to another user", 403);
   }
+}
+
+/**
+ * Mark an email read (first opener recorded) or back to unread. The inbox is
+ * shared, like View Queries: once anyone on the team opens it, it is read.
+ */
+export async function setEmailRead(id: string, read: boolean, userId?: string) {
+  const update = read
+    ? { $set: { readAt: new Date(), ...(userId ? { readBy: oid(userId) } : {}) } }
+    : { $unset: { readAt: 1, readBy: 1 } };
+  // Keep the first reader: only stamp an email that is still unread.
+  const filter = read ? { _id: oid(id), readAt: null } : { _id: oid(id) };
+  await EmailIntake.updateOne(filter, update as any);
+  return EmailIntake.findById(id).select("readAt readBy").lean();
 }
 
 export async function getEmailIntake(id: string) {

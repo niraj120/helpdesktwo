@@ -16,6 +16,7 @@ import { recomputeSrTat } from "../srTatRecompute";
 import { getProjectScope, canAccessProject } from "../../../utils/projectScope";
 import { bulkDeleteTickets } from "../../../controllers/ticketController";
 import { mergeTickets } from "../../../controllers/ticketMergeController";
+import { familyForTicket, groupParentStudentRows } from "../srFamilyLookup";
 import * as srSvc from "../serviceRequestService";
 import { SrError } from "../serviceRequestService";
 import { createServiceRequest } from "../createServiceRequest";
@@ -431,6 +432,8 @@ export const list = async (req: AuthRequest, res: Response) => {
       wipFrom: str(req.query.wipFrom),
       wipTo: str(req.query.wipTo),
       wipState: str(req.query.wipState),
+      due: str(req.query.due),
+      reopenedBy: str(req.query.reopenedBy),
       source: str(req.query.source),
       classification: str(req.query.classification),
       categoryId: str(req.query.categoryId),
@@ -591,6 +594,58 @@ export const studentLookup = async (req: AuthRequest, res: Response) => {
  * (parents + children) first; falls back to internal User records grouped by
  * parentMobile so dev/testing works without an MDM endpoint.
  */
+/**
+ * Keep a request away from the student's other guardian. By default both
+ * guardians of a student see its requests; a custody dispute or a complaint
+ * about the other parent should not be shared.
+ */
+export const setPrivateToRaiser = async (req: AuthRequest, res: Response) => {
+  try {
+    const priv = req.body?.private !== false;
+    const ticket: any = await srSvc.getServiceRequest(
+      req.params.id,
+      getProjectScope(req),
+      {
+        userId: req.user?.userId,
+        email: req.user?.email,
+        access: srAccess(req),
+      },
+    );
+    const { Ticket } = await import("../../../models/Ticket");
+    await Ticket.updateOne(
+      { _id: ticket._id },
+      { $set: { "metadata.privateToRaiser": priv } },
+    );
+    res.json({ success: true, data: { privateToRaiser: priv } });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/** The parent + student(s) behind one service request (detail sidebar). */
+export const family = async (req: AuthRequest, res: Response) => {
+  try {
+    const ticket: any = await srSvc.getServiceRequest(
+      req.params.id,
+      getProjectScope(req),
+      {
+        userId: req.user?.userId,
+        email: req.user?.email,
+        access: srAccess(req),
+      },
+    );
+    const projectId = String(ticket.project?._id || ticket.project || "");
+    if (!projectId || !canAccessProject(getProjectScope(req), projectId)) {
+      res.status(403).json({ success: false, message: "No access to this request's project." });
+      return;
+    }
+    const data = await familyForTicket(ticket);
+    res.json({ success: true, data });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
 export const parentLookup = async (req: AuthRequest, res: Response) => {
   try {
     const q = String(req.query.q || req.query.query || "").trim();
@@ -647,72 +702,7 @@ export const parentLookup = async (req: AuthRequest, res: Response) => {
           .find(mongoQuery, { projection: { _id: 0, _key: 0 } })
           .limit(200)
           .toArray();
-        // Map to ParentOpt format — find name/mobile/email from column names
-        const findCol = (row: any, ...patterns: string[]) => {
-          for (const p of patterns) {
-            const key = Object.keys(row).find(k => k.toLowerCase().includes(p.toLowerCase()));
-            if (key && row[key]) return String(row[key]);
-          }
-          return "";
-        };
-        const parentMap = new Map<string, any>();
-        for (const row of rows as any[]) {
-          const name =
-            (findCol(row, "parent master - first name", "first name", "first_name") +
-              " " +
-              findCol(row, "parent master - last name", "last name", "last_name")).trim() ||
-            findCol(row, "parent master - name", "name") ||
-            "—";
-          const mobile = findCol(row, "parent master - mobile", "mobile", "phone", "contact");
-          const email = findCol(row, "parent master - email", "email");
-          const parentCode = findCol(
-            row,
-            "parent master - id",
-            "guardian mapping master - guardian id",
-            "guardian id",
-            "guardian_id",
-            "parent id",
-            "parent_id",
-          );
-          if (name === "—" && !mobile && !email) continue;
-
-          const studentId = findCol(row, "student master - id", "student id", "student_id");
-          const studentName =
-            (findCol(row, "student master - first name", "student first") +
-              " " +
-              findCol(row, "student master - last name", "student last")).trim();
-          const grade = findCol(row, "grade", "class", "standard");
-
-          const key = parentCode || `${name}|${mobile}`;
-          const entry =
-            parentMap.get(key) ||
-            parentMap
-              .set(key, {
-                name,
-                mobile,
-                email,
-                school: findCol(row, "school", "centre"),
-                parentCode,
-                children: [] as any[],
-                _raw: row, // full row for flexible display
-              })
-              .get(key);
-          if (
-            (studentName || studentId) &&
-            !entry.children.some(
-              (c: any) =>
-                (studentId && c.id === studentId) ||
-                (!studentId && c.name === studentName),
-            )
-          ) {
-            entry.children.push({
-              id: studentId || undefined,
-              name: studentName || undefined,
-              grade: grade || undefined,
-            });
-          }
-        }
-        const data = Array.from(parentMap.values()).slice(0, 25);
+        const data = groupParentStudentRows(rows as any[]).slice(0, 25);
         res.json({ success: true, data, source: { name: (table as any).name || "PSR Builder" }, lookupSource: "psr_builder" });
         return;
       } catch (err: any) {

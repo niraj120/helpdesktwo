@@ -36,6 +36,8 @@ interface ChildOpt {
   name?: string;
   grade?: string;
   enrollmentId?: string;
+  school?: string;
+  division?: string;
 }
 interface ParentOpt {
   name?: string;
@@ -97,6 +99,10 @@ type SourceContext = {
    * "Mark Junk" on an IVR call opens the Junk / Telemarketing channel.
    */
   preselectChannelFlow?: string;
+  /** A registered caller's / sender's parent(s) + children, from the drawer. */
+  family?: ParentOpt[];
+  /** Resolved on the call (OCR): the PSR is created and closed at once. */
+  resolveOnCall?: boolean;
 };
 
 const stripHtml = (value?: string) =>
@@ -282,8 +288,11 @@ const ServiceRequestCreate: React.FC<{
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [formData, setFormData] = useState<Record<string, any>>({});
-  const effectiveSubject = subject || sourceContext?.subject || "";
-  const effectiveDescription = description || sourceContext?.body || "";
+  // Only an email's own subject/body stand in for empty fields (see
+  // applySourceContextFields); an IVR call has no transcript to fall back on.
+  const sourceText = sourceContext?.type === "email" ? sourceContext : undefined;
+  const effectiveSubject = subject || sourceText?.subject || "";
+  const effectiveDescription = description || sourceText?.body || "";
 
   // Existing-parent flow
   const [parentQuery, setParentQuery] = useState("");
@@ -292,6 +301,8 @@ const ServiceRequestCreate: React.FC<{
   const [parentSource, setParentSource] = useState<string>("");
   const [parentLookupError, setParentLookupError] = useState<string>("");
   const [selectedChildren, setSelectedChildren] = useState<number[]>([]);
+  // Resolution remark when the PSR is being closed on the call (OCR).
+  const [ocrRemark, setOcrRemark] = useState("");
   const [searching, setSearching] = useState(false);
   // PSR pipeline search: stale-collection banner (US-4.2)
   const [psrStaleWarning, setPsrStaleWarning] = useState<string | null>(null);
@@ -308,6 +319,14 @@ const ServiceRequestCreate: React.FC<{
     email: "",
     enquiry: "",
   });
+  // Prospect flow: look the enquiry up in the MDM before typing anything.
+  const [leadQuery, setLeadQuery] = useState("");
+  const [leadResults, setLeadResults] = useState<any[] | null>(null);
+  const [leadSearching, setLeadSearching] = useState(false);
+  const [leadLookupOff, setLeadLookupOff] = useState(false);
+  /** The enquiry the form was filled from — keeps its Hubble lead number. */
+  const [pickedLead, setPickedLead] = useState<any>(null);
+  const [leadStep, setLeadStep] = useState<"search" | "form">("search");
   const [prospectFormData, setProspectFormData] = useState<Record<string, any>>(
     {},
   );
@@ -411,8 +430,13 @@ const ServiceRequestCreate: React.FC<{
     if (!sourceContext?.type) return;
     setInteractionType("PSR");
     setStep("classify");
-    setSubject(sourceContext.subject || "");
-    setDescription(sourceContext.body || "");
+    // Only an email carries the request in its own words. A call has no
+    // transcript, so the agent writes the subject and description; the call's
+    // history is attached to the PSR on conversion anyway.
+    if (sourceContext.type === "email") {
+      setSubject(sourceContext.subject || "");
+      setDescription(sourceContext.body || "");
+    }
   };
 
   const prefillFromSourceContext = () => {
@@ -787,6 +811,10 @@ const ServiceRequestCreate: React.FC<{
     setSelectedChildren([]);
     setProspect({ name: "", mobile: "", email: "", enquiry: "" });
     setProspectFormData({});
+    setLeadStep("search");
+    setLeadQuery("");
+    setLeadResults(null);
+    setPickedLead(null);
     setAssigneeEmails("");
     setMsg(null);
     setCustomCatFields({});
@@ -835,6 +863,45 @@ const ServiceRequestCreate: React.FC<{
     sourceContext?.type,
     sourceContext?.id,
   ]); // eslint-disable-line
+
+  // A registered IVR caller or email sender lands on the existing-parent form:
+  // fill in the parent and children from the family lookup instead of
+  // searching again.
+  // One parent → selected; one child → ticked. Several → the agent picks.
+  const familyPrefillRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sourceContext?.type || channel?.flow !== "existing_parent") return;
+    const key = `${sourceContext.id}`;
+    if (familyPrefillRef.current === key) return;
+    familyPrefillRef.current = key;
+    const apply = (list: ParentOpt[]) => {
+      if (!list.length) return;
+      const withSchool = list.map((p) => ({
+        ...p,
+        school: p.school || p.children?.find((c) => c.school)?.school,
+      }));
+      if (withSchool.length === 1) {
+        setParent(withSchool[0]);
+        setParentResults([]);
+        setSelectedChildren((withSchool[0].children || []).length === 1 ? [0] : []);
+      } else {
+        setParent(null);
+        setParentResults(withSchool);
+      }
+      setParentQuery(sourceContext.callerMobile || sourceContext.fromEmail || "");
+    };
+    if (sourceContext.family?.length) {
+      apply(sourceContext.family);
+      return;
+    }
+    const lookup =
+      sourceContext.type === "ivr"
+        ? serviceRequestApi.ivr.family(sourceContext.id)
+        : serviceRequestApi.emailIntake.family(sourceContext.id);
+    lookup
+      .then((r: any) => apply(r?.data?.parents || []))
+      .catch(() => undefined);
+  }, [channel?.flow, sourceContext?.type, sourceContext?.id]); // eslint-disable-line
 
   const finalInteraction = (): "PSR" | "ISR" =>
     (channel?.routing?.interactionType as any) || interactionType || "PSR";
@@ -1058,9 +1125,12 @@ const ServiceRequestCreate: React.FC<{
     return true;
   }, [activeSrFormFields, conditionData, formData, dynamicFieldsBlock]);
 
+  const ocrActive =
+    sourceContext?.type === "ivr" && !!sourceContext?.resolveOnCall && flow !== "junk";
   const canSubmit = useMemo(() => {
     if (submitting || !projectId) return false;
     if (flow === "junk") return true;
+    if (ocrActive && !ocrRemark.trim()) return false;
     if (flow === "prospect_parent") {
       return prospectFormFields.length > 0 && prospectRequiredOk;
     }
@@ -1150,6 +1220,8 @@ const ServiceRequestCreate: React.FC<{
     customCatFields,
     customFieldData,
     effectiveDescription,
+    ocrActive,
+    ocrRemark,
   ]);
 
   const markSourceConverted = async (ticketId?: string, ticketNumber?: string) => {
@@ -1174,6 +1246,7 @@ const ServiceRequestCreate: React.FC<{
       await serviceRequestApi.ivr.markConverted(sourceContext.id, {
         ticketId,
         ticketNumber,
+        ...(ocrActive ? { resolvedOnCall: true, remark: ocrRemark.trim() } : {}),
       });
     }
   };
@@ -1189,6 +1262,12 @@ const ServiceRequestCreate: React.FC<{
         if (sourceContext?.type === "ivr") {
           await serviceRequestApi.ivr.markJunk(sourceContext.id, {
             remark: effectiveDescription || "Marked as junk from the IVR inbox",
+          });
+        } else if (sourceContext?.type === "email") {
+          // Not the description: for an email that holds the email body.
+          await serviceRequestApi.emailIntake.action(sourceContext.id, {
+            type: "junk",
+            remark: "Marked as junk from the email inbox",
           });
         }
         setMsg({ type: "ok", text: "Logged as junk / telemarketing." });
@@ -1223,6 +1302,9 @@ const ServiceRequestCreate: React.FC<{
             .trim();
         await serviceRequestApi.leads.create({
           projectId,
+          // A known enquiry updates its own lead: same Hubble number.
+          ...(pickedLead?.existingLead?.id ? { leadId: pickedLead.existingLead.id } : {}),
+          ...(pickedLead?.enquiryNo ? { enquiryNo: pickedLead.enquiryNo } : {}),
           name: leadName,
           contactNumber:
             leadFormData.contactNumber ||
@@ -1412,10 +1494,17 @@ const ServiceRequestCreate: React.FC<{
         payload.requesterEmail = requesterEmail;
       }
 
+      if (ocrActive) payload.resolvedOnCall = { remark: ocrRemark.trim() };
+
       const r = await serviceRequestApi.create(payload);
       const num = r.data?.ticketNumber;
       await markSourceConverted(r.data?.ticketId, num);
-      setMsg({ type: "ok", text: `Created ${num}. Redirecting…` });
+      setMsg({
+        type: "ok",
+        text: ocrActive
+          ? `Created ${num} and closed as resolved on call. Redirecting…`
+          : `Created ${num}. Redirecting…`,
+      });
       setTimeout(() => navigate(detailPath(r.data?.ticketId)), 900);
     } catch (e: any) {
       setMsg({
@@ -1687,7 +1776,19 @@ const ServiceRequestCreate: React.FC<{
                 {p.name || "—"}
               </div>
               <div style={{ color: SR.sub, fontSize: 12 }}>
-                {[p.mobile, p.email, p.school].filter(Boolean).join("  •  ")}
+                {[
+                  p.mobile,
+                  p.email,
+                  p.school,
+                  p.children?.length
+                    ? `${p.children.length} child${p.children.length === 1 ? "" : "ren"}: ${p.children
+                        .map((c) => c.name)
+                        .filter(Boolean)
+                        .join(", ")}`
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join("  •  ")}
               </div>
             </div>
           ))}
@@ -1741,6 +1842,12 @@ const ServiceRequestCreate: React.FC<{
                   <span style={{ color: SR.danger }}> *</span>
                 )}
               </label>
+              {(parent.children || []).length > 1 && (
+                <p style={{ fontSize: 12, color: SR.sub, margin: "0 0 6px" }}>
+                  Pick the student this request is about. For a sibling, raise
+                  a separate PSR.
+                </p>
+              )}
               {(parent.children || []).length === 0 ? (
                 <p style={{ fontSize: 12, color: SR.sub }}>
                   No children found for this parent.
@@ -1765,21 +1872,33 @@ const ServiceRequestCreate: React.FC<{
                           background: sel ? "#eff6ff" : "#fff",
                         }}
                       >
+                        {/* One PSR is about one student: a sibling gets their own PSR. */}
                         <input
-                          type="checkbox"
+                          type="radio"
+                          name="sr-child"
                           checked={sel}
-                          onChange={() =>
-                            setSelectedChildren((prev) =>
-                              prev.includes(i)
-                                ? prev.filter((x) => x !== i)
-                                : [...prev, i],
-                            )
-                          }
+                          onChange={() => setSelectedChildren([i])}
                         />
                         <span style={{ fontSize: 13, color: SR.text }}>
                           {ch.name || "—"}
-                          {ch.grade ? (
-                            <span style={{ color: SR.sub }}> · {ch.grade}</span>
+                          {[ch.grade, ch.division && `Div ${ch.division}`]
+                            .filter(Boolean)
+                            .length ? (
+                            <span style={{ color: SR.sub }}>
+                              {" "}·{" "}
+                              {[ch.grade, ch.division && `Div ${ch.division}`]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          ) : null}
+                          {ch.school || ch.enrollmentId ? (
+                            <span
+                              style={{ display: "block", fontSize: 11, color: SR.sub }}
+                            >
+                              {[ch.school, ch.enrollmentId && `Enrolment ${ch.enrollmentId}`]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
                           ) : null}
                         </span>
                       </label>
@@ -1794,13 +1913,206 @@ const ServiceRequestCreate: React.FC<{
     </>
   );
 
+  const searchLeads = async () => {
+    const q = leadQuery.trim();
+    if (q.length < 3 || !projectId) return;
+    setLeadSearching(true);
+    try {
+      const r: any = await serviceRequestApi.leads.lookup({ q, projectId });
+      setLeadResults(r?.data || []);
+      setLeadLookupOff(r?.configured === false);
+    } catch {
+      setLeadResults([]);
+    } finally {
+      setLeadSearching(false);
+    }
+  };
+
+  /**
+   * Fill the new-lead form from the enquiry. Field names rarely match the MDM's
+   * column names exactly, so each form field takes the first MDM column whose
+   * name matches once punctuation and case are stripped.
+   */
+  const fillFromLead = (lead: any) => {
+    const flat: Record<string, any> = {
+      ...(lead.raw || {}),
+      name: lead.name,
+      parentName: lead.name,
+      email: lead.email,
+      parentEmail: lead.email,
+      contactNumber: lead.contactNumber,
+      mobile: lead.contactNumber,
+      phone: lead.contactNumber,
+      studentName: lead.studentName,
+      grade: lead.grade,
+      enquiryNo: lead.enquiryNo,
+    };
+    const norm = (v: string) => String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const byKey = new Map(Object.keys(flat).map((k) => [norm(k), flat[k]]));
+    const next: Record<string, any> = {};
+    prospectFormFields.forEach((field: any) => {
+      const fieldName = field.fieldName || field.id || field.name || field.key;
+      if (!fieldName) return;
+      const hit =
+        byKey.get(norm(fieldName)) ?? byKey.get(norm(field.label || "")) ?? "";
+      if (hit !== "" && hit != null) next[fieldName] = hit;
+    });
+    setProspectFormData((prev) => ({ ...prev, ...next }));
+    setPickedLead(lead);
+    setLeadStep("form");
+  };
+
+  const renderLeadSearch = () => (
+    <div>
+      <div style={{ marginBottom: 6, fontWeight: 800, color: SR.text }}>
+        Is this enquiry already with us?
+      </div>
+      <p style={{ fontSize: 12, color: SR.sub, margin: "0 0 10px" }}>
+        Search by name, mobile, email or enquiry number. A match fills the form
+        in and keeps its existing enquiry number.
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input
+          value={leadQuery}
+          onChange={(e) => setLeadQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && searchLeads()}
+          placeholder="Name, mobile, email or enquiry no…"
+          style={{ ...ctrl, flex: "1 1 240px" }}
+        />
+        <button
+          type="button"
+          onClick={searchLeads}
+          disabled={leadQuery.trim().length < 3 || leadSearching}
+          style={srButton("primary")}
+        >
+          {leadSearching ? "Searching…" : "Search"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setPickedLead(null);
+            setLeadStep("form");
+          }}
+          style={srButton("neutral")}
+        >
+          New enquiry
+        </button>
+      </div>
+
+      {leadLookupOff && (
+        <p style={{ fontSize: 12, color: SR.sub, marginTop: 10 }}>
+          No enquiry MDM is configured for this project (SR Settings → Prospect
+          lookup), so continue with a new enquiry.
+        </p>
+      )}
+
+      {leadResults !== null && !leadLookupOff && (
+        leadResults.length === 0 ? (
+          <p style={{ fontSize: 13, color: SR.sub, marginTop: 12 }}>
+            No enquiry found — continue with “New enquiry”.
+          </p>
+        ) : (
+          <div
+            style={{
+              border: `1px solid ${SR.border}`,
+              borderRadius: 8,
+              marginTop: 12,
+              maxHeight: 260,
+              overflowY: "auto",
+            }}
+          >
+            {leadResults.map((l, i) => (
+              <div
+                key={l.enquiryNo || i}
+                onClick={() => fillFromLead(l)}
+                style={{
+                  padding: "10px 12px",
+                  cursor: "pointer",
+                  borderBottom: `1px solid ${SR.rowBorder}`,
+                  fontSize: 13,
+                }}
+              >
+                <div style={{ fontWeight: 600, color: SR.text }}>
+                  {l.name || "—"}
+                  {l.enquiryNo ? (
+                    <span style={{ color: SR.sub, fontWeight: 400 }}>
+                      {" "}· Enquiry {l.enquiryNo}
+                    </span>
+                  ) : null}
+                </div>
+                <div style={{ color: SR.sub, fontSize: 12 }}>
+                  {[l.contactNumber, l.email, l.studentName, l.grade]
+                    .filter(Boolean)
+                    .join("  •  ")}
+                </div>
+                {l.existingLead && (
+                  <div style={{ color: "#047857", fontSize: 12, marginTop: 2 }}>
+                    Already in Hubble
+                    {l.existingLead.enquiryNo ? ` as ${l.existingLead.enquiryNo}` : ""} —
+                    re-submitting keeps that number.
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+
   const renderProspect = () => {
+    // Search first: a known enquiry fills the form in, an unknown one falls
+    // through to the blank form (existing flow).
+    if (leadStep === "search") return renderLeadSearch();
     if (prospectFormFields.length > 0) {
       return (
         <div>
-          <div style={{ marginBottom: 10, fontWeight: 800, color: SR.text }}>
-            {prospectSrForm?.name || "Prospect Parent Details"}
+          <div
+            style={{
+              marginBottom: 10,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ fontWeight: 800, color: SR.text }}>
+              {prospectSrForm?.name || "Prospect Parent Details"}
+            </div>
+            <button
+              type="button"
+              onClick={() => setLeadStep("search")}
+              style={{
+                background: "none",
+                border: "none",
+                color: SR.primary,
+                cursor: "pointer",
+                fontSize: 12,
+              }}
+            >
+              Search a different enquiry
+            </button>
           </div>
+          {pickedLead && (
+            <div
+              style={{
+                margin: "0 0 12px",
+                padding: "8px 10px",
+                borderRadius: 8,
+                border: "1px solid #bbf7d0",
+                background: "#f0fdf4",
+                fontSize: 12,
+                color: "#166534",
+              }}
+            >
+              Filled in from enquiry {pickedLead.enquiryNo || pickedLead.name}
+              {pickedLead.existingLead
+                ? " — it keeps its existing enquiry number."
+                : ""}
+              . Edit anything that has changed before submitting.
+            </div>
+          )}
           <FormRenderer
             fields={prospectFormFields}
             formData={prospectFormData}
@@ -2275,6 +2587,31 @@ const ServiceRequestCreate: React.FC<{
               : `${finalInteraction()} · ${channel?.label || ""}`
           }
         />
+        {ocrActive && (
+          <div
+            style={{
+              margin: "4px 0 14px",
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #bbf7d0",
+              background: "#f0fdf4",
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#166534" }}>
+              ✔ Resolve on call — this PSR is created and closed straight away
+            </div>
+            <label style={{ ...label, marginTop: 8 }}>
+              What was resolved on the call?<span style={{ color: SR.danger }}> *</span>
+            </label>
+            <textarea
+              value={ocrRemark}
+              onChange={(e) => setOcrRemark(e.target.value)}
+              rows={2}
+              placeholder="e.g. Shared the fee due date and payment link with the parent"
+              style={{ ...ctrl, resize: "vertical" }}
+            />
+          </div>
+        )}
         {flow === "existing_parent" && renderExistingParent()}
         {flow === "prospect_parent" && renderProspect()}
         {flow !== "prospect_parent" && flow !== "junk" && renderCustomChannelFields()}

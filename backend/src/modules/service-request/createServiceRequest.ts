@@ -16,6 +16,8 @@ import type { SrAutoClose } from "./srMasterData";
 import { evalConditions, renderTemplate } from "./srConditionEngine";
 import { SR_STATUS } from "./srWorkflow";
 import { resolveSrRouting } from "./srMasterData";
+import { initSrSla } from "./srTatRecompute";
+import { stampStudentIdentity } from "./srFamilyLookup";
 import { findDuplicateServiceRequests } from "./srDuplicateDetection";
 import { generateSrTicketNumber } from "./srTicketNumber";
 import { notifySrActivity } from "./srActivity";
@@ -186,6 +188,42 @@ const normalizeCategoryHierarchy = (
   return Object.keys(cleaned).length ? cleaned : undefined;
 };
 
+/**
+ * Close a just-created SR: status Closed, the remark as a system comment the
+ * parent can see, a status entry in the history, and `flags` on metadata.
+ */
+async function closeAtCreation(
+  ticket: any,
+  remark: string,
+  createdBy: string | undefined,
+  flags: Record<string, boolean>,
+) {
+  const by = createdBy ? new mongoose.Types.ObjectId(createdBy) : ticket.createdBy;
+  const now = new Date();
+  ticket.status = SR_STATUS.CLOSED;
+  ticket.closedAt = now;
+  ticket.resolvedAt = ticket.resolvedAt || now;
+  ticket.metadata = { ...(ticket.metadata || {}), ...flags };
+  ticket.markModified("metadata");
+  ticket.comments = ticket.comments || [];
+  ticket.comments.push({
+    text: remark,
+    createdBy: by,
+    createdAt: now,
+    isSystemComment: true,
+    displayToParent: true,
+  } as any);
+  ticket.changeHistory = ticket.changeHistory || [];
+  ticket.changeHistory.push({
+    field: "status",
+    oldValue: String(SR_STATUS.OPEN),
+    newValue: String(SR_STATUS.CLOSED),
+    changedBy: by,
+    changedAt: now,
+  } as any);
+  await ticket.save();
+}
+
 export interface CreateServiceRequestInput {
   projectId: string;
   interactionType: Exclude<InteractionType, "normal">;
@@ -220,6 +258,11 @@ export interface CreateServiceRequestInput {
   /** Priority & schedule override block. */
   priority?: string;
   scheduleDispatchDate?: string;
+  /**
+   * Resolved on the call (IVR OCR): the PSR is recorded and closed at once,
+   * with this remark as the resolution.
+   */
+  resolvedOnCall?: { remark: string };
   /** Offline / RE-entry block. */
   createdByRE?: boolean;
   requesterEmail?: string;
@@ -583,36 +626,17 @@ export async function createServiceRequest(
           subject: input.subject,
           values,
         }).trim() || closureFallback;
-      ticket.status = SR_STATUS.CLOSED;
-      ticket.closedAt = new Date();
-      (ticket as any).metadata = {
-        ...((ticket as any).metadata || {}),
-        autoClose: true,
-      };
-      ticket.markModified("metadata");
-      ticket.comments = ticket.comments || [];
-      ticket.comments.push({
-        text: remark,
-        createdBy: input.createdBy
-          ? new mongoose.Types.ObjectId(input.createdBy)
-          : (ticket.createdBy as any),
-        createdAt: new Date(),
-        isSystemComment: true,
-        displayToParent: true,
-      } as any);
-      ticket.changeHistory = ticket.changeHistory || [];
-      ticket.changeHistory.push({
-        field: "status",
-        oldValue: String(SR_STATUS.OPEN),
-        newValue: String(SR_STATUS.CLOSED),
-        changedBy: input.createdBy
-          ? new mongoose.Types.ObjectId(input.createdBy)
-          : (ticket.createdBy as any),
-        changedAt: new Date(),
-      } as any);
-      await ticket.save();
+      await closeAtCreation(ticket, remark, input.createdBy, { autoClose: true });
       autoClosed = true;
     }
+  }
+
+  // Resolved on the call (IVR OCR): record the PSR and close it straight away.
+  if (!autoClosed && input.resolvedOnCall) {
+    const remark = String(input.resolvedOnCall.remark || "").trim();
+    if (!remark) throw new SrError("Say what was resolved on the call.", 400);
+    await closeAtCreation(ticket, remark, input.createdBy, { resolvedOnCall: true });
+    autoClosed = true;
   }
 
   // Attach the escalation matrix (level pointer + SLA clock) for every
@@ -629,6 +653,12 @@ export async function createServiceRequest(
     } catch (e) {
       console.warn("[SR] escalation matrix attach failed:", (e as any)?.message);
     }
+    await initSrSla(String(ticket._id), input.projectId);
+  }
+  // Both guardians of a student see its requests, so every PSR carries the
+  // student's enrolment number(s) — see stampStudentIdentity.
+  if (input.interactionType === "PSR") {
+    await stampStudentIdentity(String(ticket._id), input.projectId);
   }
 
   await notifySrWatchers(

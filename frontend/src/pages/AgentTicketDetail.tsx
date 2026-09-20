@@ -6,6 +6,7 @@ import PsrDetailLayout from "../components/sr/PsrDetailLayout";
 import LinkedIsrPanel from "../components/sr/LinkedIsrPanel";
 import PslCallTab from "../components/sr/PslCallTab";
 import SrLifecyclePanel from "../components/sr/SrLifecyclePanel";
+import SrPartyPanel from "../components/sr/SrPartyPanel";
 import { serviceRequestApi } from "../services/serviceRequests";
 
 // Known boilerplate patterns injected by mail servers / Outlook (mirrors backend stripEmailBoilerplate)
@@ -181,6 +182,8 @@ interface Ticket {
     requestedByEmail?: string;
     requestedByMobile?: string;
     requestedByType?: string;
+    /** PSR kept away from the student's other guardian (custody-sensitive). */
+    privateToRaiser?: boolean;
   };
   formSchemaSnapshot?: Array<{
     fieldName: string;
@@ -4588,6 +4591,27 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
             {/* Right Column - Sidebar */}
             <div className="space-y-6">
+              {/* Who it is for, before the fields that act on it */}
+              <SrPartyPanel
+                ticketId={String(ticket._id)}
+                interactionType={recordType}
+                raisedBy={
+                  ticket.metadata?.requestedByName ||
+                  ticket.metadata?.requestedBy?.name ||
+                  personName(ticket.createdBy)
+                }
+                raisedByEmail={
+                  ticket.metadata?.requestedByEmail ||
+                  ticket.metadata?.requestedBy?.email
+                }
+                raisedByMobile={
+                  ticket.metadata?.requestedByMobile ||
+                  ticket.metadata?.requestedBy?.mobile
+                }
+                privateToRaiser={ticket.metadata?.privateToRaiser}
+                canSetPrivate={canModify}
+              />
+
               {/* Ticket Info Card */}
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -5428,7 +5452,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       </div>
                     )}
 
-                  {/* Requester */}
+                  {/* Requester — SR records show it in the panel above */}
+                  {!isSr && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Requester
@@ -5466,6 +5491,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       )}
                     </div>
                   </div>
+                  )}
                 </div>
               </div>
 

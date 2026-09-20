@@ -19,6 +19,8 @@ export interface SrListParams {
   wipFrom?: string;
   wipTo?: string;
   wipState?: string;
+  due?: string; // "overdue" | "today" | "pending" (SLA bucket)
+  reopenedBy?: string; // "parent" | "agent"
   source?: string;
   classification?: string;
   categoryId?: string;
@@ -36,6 +38,29 @@ export interface SrListResponse {
   page: number;
   limit: number;
   statusCounts?: Record<string, number>;
+  dueCounts?: Record<string, { overdue: number; today: number; pending: number }>;
+  reopenCounts?: Record<string, { parent: number; agent: number }>;
+  settledStatuses?: number[];
+}
+
+/** A child mapped to a registered parent, with details from the Student MDM. */
+export interface SrFamilyChild {
+  id?: string;
+  name?: string;
+  enrollmentId?: string;
+  school?: string;
+  grade?: string;
+  division?: string;
+}
+
+/** A parent registered on a caller's mobile, with their children. */
+export interface SrFamilyParent {
+  name?: string;
+  mobile?: string;
+  email?: string;
+  school?: string;
+  parentCode?: string;
+  children: SrFamilyChild[];
 }
 
 const base = "/service-requests";
@@ -44,6 +69,11 @@ export const serviceRequestApi = {
   list: (params: SrListParams) =>
     api.get<SrListResponse>(base, { params }).then((r) => r.data),
   get: (id: string) => api.get(`${base}/${id}`).then((r) => r.data),
+  /** Parent + student(s) behind one request, for the detail sidebar. */
+  family: (id: string) => api.get(`${base}/${id}/family`).then((r) => r.data),
+  /** Keep a request away from the student's other guardian. */
+  setPrivateToRaiser: (id: string, priv: boolean) =>
+    api.post(`${base}/${id}/private-to-raiser`, { private: priv }).then((r) => r.data),
   // Tags currently in use on this project's service requests.
   tags: (projectId?: string) =>
     api.get(`${base}/tags`, { params: { projectId } }).then((r) => r.data),
@@ -174,6 +204,16 @@ export const serviceRequestApi = {
     list: (params: Record<string, any>) =>
       api.get("/email-intake", { params }).then((r) => r.data),
     get: (id: string) => api.get(`/email-intake/${id}`).then((r) => r.data),
+    /** Mark read (default) or back to unread — shared across the team. */
+    markRead: (id: string, read = true) =>
+      api.post(`/email-intake/${id}/read`, { read }).then((r) => r.data),
+    /** Parents registered on the sender's address, with their children. */
+    family: (id: string) =>
+      api
+        .get<{ success: boolean; data: { supported: boolean; parents: SrFamilyParent[] } }>(
+          `/email-intake/${id}/family`,
+        )
+        .then((r) => r.data),
     ingest: (body: any) => api.post("/email-intake", body).then((r) => r.data),
     action: (id: string, body: any) =>
       api.post(`/email-intake/${id}/action`, body).then((r) => r.data),
@@ -188,6 +228,13 @@ export const serviceRequestApi = {
     list: (params: Record<string, any>) =>
       api.get("/ivr/calls", { params }).then((r) => r.data),
     get: (id: string) => api.get(`/ivr/calls/${id}`).then((r) => r.data),
+    /** Parents registered on the call's mobile, with their children. */
+    family: (id: string) =>
+      api
+        .get<{ success: boolean; data: { supported: boolean; parents: SrFamilyParent[] } }>(
+          `/ivr/calls/${id}/family`,
+        )
+        .then((r) => r.data),
     ingest: (body: any) => api.post("/ivr/calls", body).then((r) => r.data),
     classify: (id: string, body: any) =>
       api.post(`/ivr/calls/${id}/classify`, body).then((r) => r.data),
@@ -262,6 +309,9 @@ export const serviceRequestApi = {
     list: (params: Record<string, any>) =>
       api.get("/leads", { params }).then((r) => r.data),
     create: (body: any) => api.post("/leads", body).then((r) => r.data),
+    /** Search the project's enquiry MDM before filling a new lead form. */
+    lookup: (params: { q: string; projectId: string }) =>
+      api.get("/leads/lookup", { params }).then((r) => r.data),
     update: (id: string, body: any) =>
       api.put(`/leads/${id}`, body).then((r) => r.data),
     retryCrmSync: (id: string) =>

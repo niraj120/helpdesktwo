@@ -5,7 +5,8 @@ import { Response } from "express";
 import { AuthRequest } from "../../../middleware/auth";
 import * as ivr from "../callTriage";
 import { SrError } from "../serviceRequestService";
-import { getProjectScope } from "../../../utils/projectScope";
+import { canAccessProject, getProjectScope } from "../../../utils/projectScope";
+import { lookupFamilyByMobile } from "../srFamilyLookup";
 import { initiateClickToCall } from "../services/clickToCall";
 
 function actorId(req: AuthRequest): string {
@@ -73,6 +74,26 @@ export const list = async (req: AuthRequest, res: Response) => {
 export const getOne = async (req: AuthRequest, res: Response) => {
   try {
     res.json({ success: true, data: await ivr.getCall(req.params.id) });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/**
+ * The caller's family — parents on the call's mobile and their children, with
+ * school / grade / division from the Student MDM. Scoped to projects the
+ * viewer can access, since it exposes student records.
+ */
+export const family = async (req: AuthRequest, res: Response) => {
+  try {
+    const call: any = await ivr.getCall(req.params.id);
+    const projectId = String(call.projectId || "");
+    if (!projectId || !canAccessProject(getProjectScope(req), projectId)) {
+      res.status(403).json({ success: false, message: "No access to this call's project." });
+      return;
+    }
+    const data = await lookupFamilyByMobile(projectId, call.callerMobile || "");
+    res.json({ success: true, data });
   } catch (err) {
     fail(res, err);
   }

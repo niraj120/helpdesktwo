@@ -39,6 +39,7 @@ interface SrRow {
     studentName?: string;
     studentEnrollment?: string;
     classification?: string;
+    children?: Array<{ name?: string }>;
   };
   linkedIsr?: { total: number; done: number };
   linkedIsrs?: LinkedIsrRef[];
@@ -118,10 +119,26 @@ const SOURCE_OPTIONS: SelectOption[] = [
   { value: "offline", label: "Offline / Legacy Walk-in" },
   { value: "email", label: "Via Mail" },
   { value: "ivr", label: "Via IVR" },
+  { value: "phone", label: "Phone" },
+  { value: "self_service", label: "Self-service" },
   { value: "whatsapp", label: "WhatsApp" },
   { value: "sms", label: "SMS" },
   { value: "chatbot", label: "Chatbot" },
 ];
+
+// How the request reached us (Ticket.submissionSource), for the list column.
+const SOURCE_META: Record<string, { label: string; icon: string; color: string; bg: string }> = {
+  email: { label: "Email", icon: "✉", color: "#1d4ed8", bg: "#eef2ff" },
+  ivr: { label: "IVR call", icon: "📞", color: "#7c3aed", bg: "#f5f3ff" },
+  phone: { label: "Phone", icon: "📞", color: "#7c3aed", bg: "#f5f3ff" },
+  self_service: { label: "Self-service", icon: "🌐", color: "#047857", bg: "#ecfdf5" },
+  online: { label: "Parent portal", icon: "🌐", color: "#047857", bg: "#ecfdf5" },
+  walk_in: { label: "Walk-in", icon: "🏫", color: "#b45309", bg: "#fffbeb" },
+  offline: { label: "Walk-in (legacy)", icon: "🏫", color: "#b45309", bg: "#fffbeb" },
+  whatsapp: { label: "WhatsApp", icon: "💬", color: "#047857", bg: "#ecfdf5" },
+  sms: { label: "SMS", icon: "✉", color: "#0891b2", bg: "#ecfeff" },
+  chatbot: { label: "Chatbot", icon: "🤖", color: "#0891b2", bg: "#ecfeff" },
+};
 
 const CHANNEL_OPTIONS: SelectOption[] = [
   { value: "", label: "Any channel" },
@@ -152,6 +169,26 @@ const REQUEST_TYPE_OPTIONS: SelectOption[] = [
   { value: "PSR", label: "PSR only" },
   { value: "ISR", label: "ISR only" },
 ];
+// SLA buckets under each open status (Vector's Overdue / Due Today / Pending).
+type SlaBucket = "overdue" | "today" | "pending";
+const SLA_BUCKETS: Array<{
+  key: SlaBucket;
+  label: string;
+  color: string;
+  hint: string;
+}> = [
+  { key: "overdue", label: "Overdue", color: "#dc2626", hint: "SLA already crossed" },
+  { key: "today", label: "Due today", color: "#d97706", hint: "SLA runs out later today" },
+  { key: "pending", label: "Pending", color: "#2563eb", hint: "Every request not yet resolved, closed or cancelled" },
+];
+
+// Who re-opened a request: the parent (requester) or an agent (creator / PSL).
+type ReopenBy = "parent" | "agent";
+const REOPEN_BY: Array<{ key: ReopenBy; label: string; color: string; hint: string }> = [
+  { key: "parent", label: "Parent", color: "#7c3aed", hint: "Re-opened by the requester (parent)" },
+  { key: "agent", label: "Agent", color: "#0891b2", hint: "Re-opened by the creator or PSL" },
+];
+
 const REQUEST_TYPE_TOGGLE_OPTIONS: SelectOption[] = [
   { value: "all", label: "All" },
   { value: "PSR", label: "PSR" },
@@ -472,14 +509,24 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+  // SLA bucket (Overdue / Due today / Pending), layered on the selected status.
+  const [due, setDue] = useState<SlaBucket | "">("");
+  const [dueCounts, setDueCounts] = useState<
+    Record<string, Record<SlaBucket, number>>
+  >({});
+  // Re-opened by the parent (requester) or an agent (creator / PSL).
+  const [reopenedBy, setReopenedBy] = useState<ReopenBy | "">("");
+  const [settledStatuses, setSettledStatuses] = useState<number[]>([]);
+  const [reopenCounts, setReopenCounts] = useState<
+    Record<string, Record<ReopenBy, number>>
+  >({});
   const [page, setPage] = useState(1);
   const [viewScope, setViewScope] = useState<RequestScopeKey>("project");
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<SrFilters>(DEFAULT_FILTERS);
   const [priorityOptions, setPriorityOptions] = useState<SelectOption[]>([
     { value: "", label: "Any priority" },
   ]);
-  const [statusOptions, setStatusOptions] = useState<SelectOption[]>([]);
   const limit = 20;
   const [selectedRequestIds, setSelectedRequestIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -506,7 +553,18 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
       : undefined;
   // Status chips, stat cards and the status filter all read the project's
   // status master (SLA & Escalation).
-  const { statuses: projectStatuses } = useProjectStatuses(projectId);
+  // In the all-projects view there is no single project to read the status
+  // master from, so borrow the project of the first request seen.
+  const [seenProjectId, setSeenProjectId] = useState<string>();
+  const { statuses: projectStatuses } = useProjectStatuses(
+    projectId || seenProjectId,
+  );
+  // No built-in status list: if the master has none, the filter offers "All"
+  // only rather than inventing statuses this project may not use.
+  const statusOptions: SelectOption[] = [
+    { value: "all", label: "All statuses" },
+    ...projectStatuses.map((st) => ({ value: String(st.code), label: st.label })),
+  ];
   const detailPath = (id: string) =>
     isProjectPortal
       ? `${location.pathname.replace(/\/service-requests(?:\/[^/]+)?$/, "")}/service-requests/${id}`
@@ -603,6 +661,8 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const resetFilters = () => {
     setPage(1);
     setStatus("all");
+    setDue("");
+    setReopenedBy("");
     setSearch("");
     setFilters(DEFAULT_FILTERS);
   };
@@ -674,6 +734,18 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     status !== "all"
       ? { key: "status", label: `Status: ${optionLabel(statusOptions, status)}` }
       : undefined,
+    reopenedBy
+      ? {
+          key: "reopenedBy",
+          label: `Re-opened by ${REOPEN_BY.find((r) => r.key === reopenedBy)?.label}`,
+        }
+      : undefined,
+    due
+      ? {
+          key: "due",
+          label: `SLA: ${SLA_BUCKETS.find((b) => b.key === due)?.label || due}`,
+        }
+      : undefined,
     filters.createdFrom
       ? { key: "createdFrom", label: `Created from ${filters.createdFrom}` }
       : undefined,
@@ -737,15 +809,13 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     setPage(1);
     if (key === "search") setSearch("");
     else if (key === "status") setStatus("all");
+    else if (key === "due") setDue("");
+    else if (key === "reopenedBy") setReopenedBy("");
     else setFilters((prev) => ({ ...prev, [key as keyof SrFilters]: "" }));
   };
 
   useEffect(() => {
     let mounted = true;
-    // No built-in status list: if the master has none, the filter offers "All"
-    // only rather than inventing statuses this project may not use.
-    const fallbackStatuses = [{ value: "all", label: "All statuses" }];
-
     serviceRequestApi
       .activePriorities(projectId)
       .then((res) => {
@@ -761,34 +831,6 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
       })
       .catch(() => {
         if (mounted) setPriorityOptions([{ value: "", label: "Any priority" }]);
-      });
-
-    if (!projectId) {
-      setStatusOptions(fallbackStatuses);
-      return () => {
-        mounted = false;
-      };
-    }
-
-    serviceRequestApi
-      .projectStatuses(projectId)
-      .then((res) => {
-        if (!mounted) return;
-        const data = Array.isArray(res?.data) ? res.data : [];
-        const options = data
-          .map((s: any) => ({
-            value: String(s.code || "").trim(),
-            label: String(s.name || s.label || "").trim(),
-          }))
-          .filter((s: SelectOption) => s.value && s.label);
-        setStatusOptions(
-          options.length
-            ? [{ value: "all", label: "All statuses" }, ...options]
-            : fallbackStatuses,
-        );
-      })
-      .catch(() => {
-        if (mounted) setStatusOptions(fallbackStatuses);
       });
 
     return () => {
@@ -856,6 +898,8 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
         interactionType: filters.interactionType || "all",
         viewScope,
         status,
+        due: due || undefined,
+        reopenedBy: reopenedBy || undefined,
         search: search.trim() || undefined,
         projectId,
         ...cleanedFilters,
@@ -863,17 +907,26 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
         limit,
       });
       const items = (res.items as SrRow[]) || [];
+      const firstProject = (items[0] as any)?.project;
+      if (firstProject) {
+        setSeenProjectId(
+          (prev) => prev || String(firstProject._id || firstProject),
+        );
+      }
       rememberRows(items, options?.silent);
       setRows(items);
       setTotal(res.total || 0);
       setStatusCounts(res.statusCounts || {});
+      setDueCounts(res.dueCounts || {});
+      setReopenCounts(res.reopenCounts || {});
+      setSettledStatuses(res.settledStatuses || []);
     } catch (e) {
       console.error("Failed to load service requests:", e);
       setRows([]);
     } finally {
       if (!options?.silent) setLoading(false);
     }
-  }, [status, search, projectId, filters, page, viewScope, rememberRows]);
+  }, [status, due, reopenedBy, search, projectId, filters, page, viewScope, rememberRows]);
 
   useEffect(() => {
     load();
@@ -976,6 +1029,187 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     </label>
   );
 
+  const segmented = (
+    ariaLabel: string,
+    options: Array<{ value: string; label: string; title?: string }>,
+    value: string,
+    onChange: (value: string) => void,
+  ) => (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      style={{
+        display: "inline-flex",
+        flexWrap: "wrap",
+        gap: 2,
+        background: "#f1f5f9",
+        borderRadius: 9,
+        padding: 3,
+      }}
+    >
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            title={option.title}
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+            style={{
+              border: "none",
+              borderRadius: 7,
+              padding: "7px 12px",
+              fontSize: 12,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+              cursor: "pointer",
+              background: active ? "#fff" : "transparent",
+              color: active ? SR.primary : "#475569",
+              boxShadow: active ? "0 1px 3px rgba(15, 23, 42, 0.12)" : "none",
+            }}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // SLA buckets for the selected status. Settled statuses (resolved, closed,
+  // cancelled) come back with none, so the row hides for them.
+  // Always shown for open statuses (zeros included) so the options stay put.
+  const buckets = dueCounts[status] || { overdue: 0, today: 0, pending: 0 };
+  const hasSla =
+    status === "all" || !settledStatuses.includes(Number(status));
+  const subChip = (
+    key: string,
+    active: boolean,
+    onPick: () => void,
+    label: string,
+    count: number,
+    color: string,
+    title: string,
+  ) => {
+    return (
+      <button
+        key={key || "all"}
+        type="button"
+        title={title}
+        aria-pressed={active}
+        onClick={() => {
+          setPage(1);
+          onPick();
+        }}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          height: 28,
+          padding: "0 11px",
+          borderRadius: 999,
+          border: `1px solid ${active ? color : "#e2e8f0"}`,
+          background: active ? `${color}14` : "#fff",
+          color: active ? color : "#334155",
+          fontSize: 12,
+          fontWeight: 600,
+          whiteSpace: "nowrap",
+          cursor: "pointer",
+          opacity: count || active ? 1 : 0.6,
+        }}
+      >
+        {key && (
+          <span
+            style={{ width: 7, height: 7, borderRadius: 999, background: color }}
+          />
+        )}
+        {label}
+        <strong style={{ color: count ? color : "#94a3b8" }}>
+          {count.toLocaleString()}
+        </strong>
+      </button>
+    );
+  };
+  const subRowLabel = (text: string) => (
+    <span
+      style={{
+        fontSize: 10,
+        fontWeight: 800,
+        letterSpacing: "0.06em",
+        color: "#64748b",
+        textTransform: "uppercase",
+        marginRight: 4,
+        minWidth: 84,
+      }}
+    >
+      {text}
+    </span>
+  );
+  const subRowStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+    padding: "8px 12px",
+    background: "#f8fafc",
+  };
+
+  // "Re-opened by" shows under statuses the master marks as re-open ones.
+  const selectedMeta = projectStatuses.find((st) => String(st.code) === status);
+  const reopenBuckets = reopenCounts[status] || { parent: 0, agent: 0 };
+  const reopenRow = selectedMeta?.isReopen ? (
+      <div style={{ ...subRowStyle, borderBottom: "1px solid #eef2f7" }}>
+        {subRowLabel("Re-opened by")}
+        {subChip(
+          "",
+          reopenedBy === "",
+          () => setReopenedBy(""),
+          "All",
+          statusCounts[status] || 0,
+          SR.primary,
+          "Every re-opened request in this status",
+        )}
+        {REOPEN_BY.map((r) =>
+          subChip(
+            r.key,
+            reopenedBy === r.key,
+            () => setReopenedBy(r.key),
+            r.label,
+            reopenBuckets[r.key],
+            r.color,
+            r.hint,
+          ),
+        )}
+      </div>
+    ) : null;
+
+  const slaRow = hasSla ? (
+    <div style={subRowStyle}>
+      {subRowLabel("SLA")}
+      {subChip(
+        "",
+        due === "",
+        () => setDue(""),
+        "All",
+        statusCounts[status] || 0,
+        SR.primary,
+        "Every request in this view",
+      )}
+      {/* Pending (= not closed) only means something across all statuses. */}
+      {SLA_BUCKETS.filter((b) => b.key !== "pending" || status === "all").map((b) =>
+        subChip(
+          b.key,
+          due === b.key,
+          () => setDue(b.key),
+          b.label,
+          buckets[b.key],
+          b.color,
+          b.hint,
+        ),
+      )}
+    </div>
+  ) : null;
+
   return (
     <SrPage
       title="Service Requests"
@@ -992,194 +1226,54 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
         )
       }
     >
-        {visibleScopes.length > 0 && (
-          <div
-            style={{
-              ...srStyles.card,
-              padding: 8,
-              marginBottom: 14,
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: 8,
-            }}
-          >
-            {visibleScopes.map((option) => {
-              const active = viewScope === option.key;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  onClick={() => {
-                    setViewScope(option.key);
-                    setStatus("all");
-                    setPage(1);
-                  }}
-                  style={{
-                    textAlign: "left",
-                    border: active ? `2px solid ${SR.primary}` : "1px solid #e7ebf3",
-                    background: active ? "#eef4ff" : "#fff",
-                    borderRadius: 10,
-                    padding: active ? "10px 11px" : "11px 12px",
-                    color: "#111827",
-                    cursor: "pointer",
-                    minHeight: 66,
-                    boxShadow: active
-                      ? "0 8px 18px rgba(37, 99, 235, 0.13)"
-                      : "0 2px 8px rgba(15, 23, 42, 0.04)",
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>
-                    {option.label}
-                  </div>
-                  <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.35 }}>
-                    {option.description}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Only worth showing when the project actually runs both types. */}
-        {!soleType && (
+        {/* Toolbar — scope, type, search and filters on one row */}
         <div
           style={{
             ...srStyles.card,
             padding: 8,
-            marginBottom: 14,
+            marginBottom: 10,
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
             flexWrap: "wrap",
+            gap: 8,
           }}
         >
-          <div style={{ padding: "4px 6px" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#111827" }}>
-              Request type
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
-              Filter service requests by PSR or ISR.
-            </div>
-          </div>
-          <div
-            role="group"
-            aria-label="Request type filter"
-            style={{
-              display: "flex",
-              gap: 6,
-              flexWrap: "wrap",
-              background: "#f8fafc",
-              border: "1px solid #e7ebf3",
-              borderRadius: 10,
-              padding: 4,
-            }}
-          >
-            {REQUEST_TYPE_TOGGLE_OPTIONS.map((option) => {
-              const active = (filters.interactionType || "all") === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => filterValue("interactionType", option.value)}
-                  style={{
-                    border: active ? `1px solid ${SR.primary}` : "1px solid transparent",
-                    background: active ? SR.primary : "transparent",
-                    color: active ? "#fff" : "#334155",
-                    borderRadius: 8,
-                    padding: "8px 14px",
-                    fontSize: 12,
-                    fontWeight: 800,
-                    cursor: "pointer",
-                    minWidth: 58,
-                    boxShadow: active
-                      ? "0 8px 18px rgba(79, 70, 229, 0.22)"
-                      : "none",
-                  }}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        )}
+          {visibleScopes.length > 1 &&
+            segmented(
+              "View",
+              visibleScopes.map((o) => ({
+                value: o.key,
+                label: o.label,
+                title: o.description,
+              })),
+              viewScope,
+              (value) => {
+                setViewScope(value as RequestScopeKey);
+                setStatus("all");
+                setDue("");
+                setReopenedBy("");
+                setPage(1);
+              },
+            )}
 
-        {/* Status counters (click to filter) */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-            gap: 12,
-            marginBottom: 16,
-          }}
-        >
-          {statCards.map((s) => {
-            const active = status === s.key;
-            return (
-              <div
-                key={s.key}
-                className={`sr-status-card${active ? " sr-status-card--active" : ""}`}
-                onClick={() => {
-                  setPage(1);
-                  setStatus(s.key);
-                }}
-                style={{
-                  background: active ? s.bg : "#fff",
-                  border: active ? `2px solid ${s.color}` : "1px solid #e7ebf3",
-                  borderRadius: 12,
-                  padding: active ? "11px 13px" : "12px 14px",
-                  boxShadow: active
-                    ? `0 0 0 3px ${s.bg}`
-                    : "0 2px 10px rgba(15, 23, 42, 0.04)",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
-                  userSelect: "none",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: active ? s.color : "#6b7280",
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                    marginBottom: 8,
-                  }}
-                >
-                  {s.label}
-                </div>
-                <div
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    background: s.bg,
-                    color: s.color,
-                    fontWeight: 700,
-                    fontSize: 20,
-                    lineHeight: 1,
-                  }}
-                >
-                  {(statusCounts[s.key] || 0).toLocaleString()}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+          {/* Only worth showing when the project actually runs both types. */}
+          {!soleType &&
+            segmented(
+              "Request type",
+              REQUEST_TYPE_TOGGLE_OPTIONS,
+              filters.interactionType || "all",
+              (value) => filterValue("interactionType", value),
+            )}
 
-        {/* Search */}
-        <div style={{ ...srStyles.card, padding: 14 }}>
-          <div style={{ position: "relative", maxWidth: 380 }}>
+          <div style={{ position: "relative", flex: "1 1 220px", minWidth: 180 }}>
             <MagnifyingGlassIcon
               style={{
                 position: "absolute",
-                left: 14,
+                left: 12,
                 top: "50%",
                 transform: "translateY(-50%)",
-                width: 16,
-                height: 16,
+                width: 15,
+                height: 15,
                 color: "#9CA3AF",
               }}
             />
@@ -1189,105 +1283,173 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                 setPage(1);
                 setSearch(e.target.value);
               }}
-              placeholder="Search by SR # or subject…"
-              style={{ ...srStyles.ctrl, width: "100%", paddingLeft: 38 }}
+              placeholder="Search SR #, subject, student, parent…"
+              aria-label="Search service requests"
+              style={{
+                ...srStyles.ctrl,
+                width: "100%",
+                height: 36,
+                paddingLeft: 34,
+                fontSize: 13,
+              }}
             />
           </div>
-        </div>
 
-        <div
-          style={{
-            ...srStyles.card,
-            padding: "16px 14px 14px",
-            borderRadius: 12,
-            boxShadow: "0 3px 14px rgba(15, 23, 42, 0.045)",
-            borderColor: activeFilterCount ? "#bfdbfe" : undefined,
-          }}
-        >
-          <div
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
             style={{
-              display: "flex",
+              display: "inline-flex",
               alignItems: "center",
-              flexWrap: "wrap",
-              gap: 8,
+              gap: 6,
+              height: 36,
+              padding: "0 12px",
+              borderRadius: 9,
+              border: `1px solid ${activeFilterCount ? SR.primary : "#dbe3ef"}`,
+              background: activeFilterCount ? "#eef2ff" : "#fff",
+              color: activeFilterCount ? SR.primary : "#374151",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer",
             }}
           >
-            <button
-              type="button"
-              onClick={() => setFiltersOpen((v) => !v)}
-              style={{
-                ...srButton("neutral"),
-                background: activeFilterCount ? SR.primary : "#6b7280",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 7,
-                height: 36,
-                padding: "0 13px",
-                borderRadius: 9,
-                fontSize: 12,
-                fontWeight: 800,
-                boxShadow: activeFilterCount
-                  ? "0 6px 14px rgba(37, 99, 235, 0.18)"
-                  : "0 4px 10px rgba(15, 23, 42, 0.1)",
-              }}
-            >
-              <FunnelIcon style={{ width: 14, height: 14 }} />
-              Filters
-              {activeFilterCount > 0 && (
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    minWidth: 17,
-                    height: 17,
-                    padding: "0 5px",
-                    borderRadius: 999,
-                    background: "#fff",
-                    color: "#2563eb",
-                    fontSize: 10,
-                    fontWeight: 800,
-                  }}
-                >
-                  {activeFilterCount}
-                </span>
-              )}
-              <ChevronDownIcon
+            <FunnelIcon style={{ width: 14, height: 14 }} />
+            Filters
+            {activeFilterCount > 0 && (
+              <span
                 style={{
-                  width: 13,
-                  height: 13,
-                  transform: filtersOpen ? "rotate(180deg)" : "rotate(0deg)",
-                  transition: "transform 0.15s ease",
+                  minWidth: 17,
+                  height: 17,
+                  padding: "0 5px",
+                  borderRadius: 999,
+                  background: SR.primary,
+                  color: "#fff",
+                  fontSize: 10,
+                  fontWeight: 800,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
-              />
-            </button>
-
+              >
+                {activeFilterCount}
+              </span>
+            )}
+            <ChevronDownIcon
+              style={{
+                width: 13,
+                height: 13,
+                transform: filtersOpen ? "rotate(180deg)" : "rotate(0deg)",
+                transition: "transform 0.15s ease",
+              }}
+            />
+          </button>
+          {activeFilterCount > 0 && (
             <button
               type="button"
               onClick={resetFilters}
-              disabled={activeFilterCount === 0}
               style={{
-                ...srButton("neutral"),
                 height: 36,
-                padding: "0 14px",
-                borderRadius: 9,
-                background: "#9ca3af",
+                padding: "0 10px",
+                border: "none",
+                background: "transparent",
+                color: "#64748b",
                 fontSize: 12,
-                fontWeight: 800,
-                opacity: activeFilterCount === 0 ? 0.7 : 1,
-                cursor: activeFilterCount === 0 ? "default" : "pointer",
+                fontWeight: 700,
+                cursor: "pointer",
+                textDecoration: "underline",
               }}
             >
-              Reset
+              Clear all
             </button>
+          )}
+        </div>
+
+        {/* Status first, then its SLA bucket underneath */}
+        <div
+          style={{
+            ...srStyles.card,
+            padding: 0,
+            marginBottom: 10,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            role="tablist"
+            aria-label="Filter by status"
+            style={{
+              display: "flex",
+              overflowX: "auto",
+              borderBottom: "1px solid #eef2f7",
+              padding: "0 6px",
+            }}
+          >
+            {statCards.map((s) => {
+              const active = status === s.key;
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => {
+                    setPage(1);
+                    setStatus(s.key);
+                    setDue("");
+                    setReopenedBy("");
+                  }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 7,
+                    padding: "11px 12px 9px",
+                    border: "none",
+                    borderBottom: `2px solid ${active ? s.color : "transparent"}`,
+                    background: "transparent",
+                    color: active ? s.color : "#475569",
+                    fontSize: 13,
+                    fontWeight: active ? 700 : 600,
+                    whiteSpace: "nowrap",
+                    cursor: "pointer",
+                  }}
+                >
+                  {s.label}
+                  <span
+                    style={{
+                      minWidth: 22,
+                      padding: "1px 7px",
+                      borderRadius: 999,
+                      background: active ? s.color : s.bg,
+                      color: active ? "#fff" : s.color,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      textAlign: "center",
+                    }}
+                  >
+                    {(statusCounts[s.key] || 0).toLocaleString()}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
+          {reopenRow}
+          {slaRow}
+        </div>
+
+        {(filtersOpen || activeFilters.length > 0) && (
+        <div
+          style={{
+            ...srStyles.card,
+            padding: "4px 14px 14px",
+            marginBottom: 10,
+            borderColor: activeFilterCount ? "#bfdbfe" : undefined,
+          }}
+        >
           {filtersOpen && (
             <div
               style={{
-                marginTop: 12,
-                paddingTop: 14,
-                borderTop: "1px solid #e8edf5",
+                marginTop: 10,
               }}
             >
               <div
@@ -1394,6 +1556,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
             </div>
           )}
         </div>
+        )}
 
         {canBulkActions && selectedRequestIds.size > 0 && (
           <div
@@ -1536,7 +1699,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                 <th style={th}>Category</th>
                 <th style={th}>Priority</th>
                 <th style={th}>Status</th>
-                <th style={th}>Mode</th>
+                <th style={th}>Raised via</th>
                 <th style={th}>Linked ISRs</th>
                 <th style={th}>Assigned To</th>
                 <th style={th}>Student</th>
@@ -1712,9 +1875,29 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                       <PriorityChip value={r.priority} />
                     </td>
                     <td style={td}>
-                      <StatusChip status={r.status} projectId={projectId} />
+                      <StatusChip
+                        status={r.status}
+                        projectId={projectId || seenProjectId}
+                      />
                     </td>
-                    <td style={td}>{r.modeOfContact || "—"}</td>
+                    <td style={td}>
+                      {/* How it reached us: the source the intake recorded,
+                          falling back to the mode of contact typed in. */}
+                      {(() => {
+                        const meta = r.submissionSource
+                          ? SOURCE_META[r.submissionSource]
+                          : undefined;
+                        if (!meta) {
+                          return humanize(r.submissionSource || r.modeOfContact);
+                        }
+                        return (
+                          <Pill color={meta.color} bg={meta.bg}>
+                            <span aria-hidden>{meta.icon}</span>
+                            {meta.label}
+                          </Pill>
+                        );
+                      })()}
+                    </td>
                     <td style={td}>
                       <LinkedIsrCell
                         row={r}
@@ -1724,7 +1907,11 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                     </td>
                     <td style={td}>{name(r.assignedTo)}</td>
                     <td style={td}>
-                      {r.metadata?.studentName || name(r.createdBy)}
+                      {/* The child the request is about. An ISR usually has
+                          none: showing the raiser here read as the student. */}
+                      {r.metadata?.studentName ||
+                        r.metadata?.children?.find((c) => c?.name)?.name ||
+                        "—"}
                     </td>
                     <td style={td}>{humanize(r.metadata?.classification)}</td>
                     <td style={td}>

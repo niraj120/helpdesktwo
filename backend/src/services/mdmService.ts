@@ -567,9 +567,13 @@ export const fetchEmployeesFromMDM = async (
 
 export interface NormalizedChild {
   name?: string;
+  /** MDM says the student's parents are separated (custody-sensitive). */
+  separatedParents?: boolean;
   grade?: string;
   enrollmentId?: string;
   parentCode?: string;
+  school?: string;
+  division?: string;
   raw?: Record<string, any>;
 }
 
@@ -646,6 +650,31 @@ export const normalizeChild = (raw: any): NormalizedChild => {
       "admissionNumber",
       "admission_number",
       "AdmissionNo",
+    ]),
+    school: fuzzyPick(flat, [
+      "schoolName",
+      "school_name",
+      "school",
+      "School",
+      "centreName",
+      "centerName",
+      "centre_name",
+      "center_name",
+      "branchName",
+      "branch_name",
+      "campusName",
+      "campus_name",
+    ]),
+    division: fuzzyPick(flat, [
+      "division",
+      "divisionName",
+      "division_name",
+      "Division",
+      "section",
+      "sectionName",
+      "section_name",
+      "Section",
+      "div",
     ]),
     parentCode: fuzzyPick(flat, [
       "parentCode",
@@ -1353,6 +1382,121 @@ const attachChildrenViaRelationshipApi = async (
 
     if (children.length) parent.children = children;
   }
+};
+
+// School × grade × division names from the project's "schools" MDM source
+// (one row per combination), kept for a few hours: students carry only the
+// ids, and the names change about once a year.
+type AcademicNames = {
+  school: Map<string, string>;
+  grade: Map<string, string>;
+  division: Map<string, string>;
+};
+const academicNamesCache = new Map<string, { at: number; names: AcademicNames }>();
+const ACADEMIC_NAMES_TTL_MS = 6 * 60 * 60 * 1000;
+
+const loadAcademicNames = async (projectId?: string): Promise<AcademicNames | null> => {
+  const key = projectId || "*";
+  const hit = academicNamesCache.get(key);
+  if (hit && Date.now() - hit.at < ACADEMIC_NAMES_TTL_MS) return hit.names;
+  const source = await resolveParentSource(undefined, projectId, "schools");
+  const api = source && pickExplicitSourceApi(source, "schools", projectId);
+  if (!source || !api) return null;
+  const names: AcademicNames = { school: new Map(), grade: new Map(), division: new Map() };
+  const rows = (await fetchRawArray(source, api)).map(flattenRecord);
+  const put = (map: Map<string, string>, id: any, name: any) => {
+    if (id === undefined || id === null || id === "" || !name) return;
+    if (!map.has(String(id))) map.set(String(id), String(name));
+  };
+  for (const row of rows) {
+    put(names.school, row.school_id ?? row.schoolId ?? row.id, row.name ?? row.school_name ?? row.schoolName);
+    put(names.grade, row.grade_id ?? row.gradeId, row.grade_name ?? row.gradeName);
+    put(names.division, row.division_id ?? row.divisionId, row.division ?? row.division_name ?? row.divisionName);
+  }
+  academicNamesCache.set(key, { at: Date.now(), names });
+  return names;
+};
+
+/**
+ * Look students up one by one in the Student MDM configured on the project's
+ * parent/student relationship (psr.intake.lookup) and return their details
+ * (name, enrolment no, school, grade, division) keyed by student id.
+ *
+ * Only an exact id match is accepted: many MDM APIs ignore a filter they do
+ * not know and return their first page, which would put a stranger's child on
+ * the parent. If the configured id param finds nothing, the Strapi-style
+ * `filters[id][$eq]` is tried before giving up on that student.
+ */
+export const fetchStudentDetails = async (
+  studentIds: string[],
+  cfg: any,
+  projectId?: string,
+): Promise<Map<string, NormalizedChild>> => {
+  const out = new Map<string, NormalizedChild>();
+  const ids = Array.from(new Set(studentIds.filter(Boolean).map(String))).slice(0, 20);
+  if (!ids.length || !cfg?.studentMdmSourceId) return out;
+  const source = await MDMSource.findById(cfg.studentMdmSourceId);
+  if (!source || !source.enabled) return out;
+  const api = pickExplicitSourceApi(
+    source,
+    (cfg.studentDataType || "students") as MDMDataType,
+    projectId,
+  );
+  if (!api) return out;
+  const responseIdField =
+    cfg.studentResponseIdField || cfg.studentIdField || "student_id";
+  const attempts = [cfg.studentIdParam || "student_id", "filters[id][$eq]"];
+  const isStudent = (row: Record<string, any>, id: string) =>
+    sameScalar(configuredScalar(row, responseIdField), id) ||
+    sameScalar(configuredScalar(row, "id"), id);
+
+  let names: AcademicNames | null = null;
+  try {
+    names = await loadAcademicNames(projectId);
+  } catch (e) {
+    console.warn("[mdm] school/grade/division names unavailable:", (e as any)?.message);
+  }
+  const nameOf = (map: Map<string, string> | undefined, id?: string) =>
+    (id && map?.get(String(id))) || undefined;
+
+  await Promise.all(
+    ids.map(async (studentId) => {
+      try {
+        let row: Record<string, any> | undefined;
+        for (const param of Array.from(new Set(attempts))) {
+          const rows = (
+            await fetchRawArray(source, api, { [param]: studentId })
+          ).map(flattenRecord);
+          row = rows.find((r) => isStudent(r, studentId));
+          if (row) break;
+        }
+        if (!row) return;
+        const child = normalizeChild(row);
+        const schoolId = fuzzyPick(row, ["crt_school_id", "school_id", "schoolId"]);
+        const gradeId = fuzzyPick(row, ["crt_grade_id", "grade_id", "gradeId"]);
+        const divisionId = fuzzyPick(row, ["crt_div_id", "division_id", "divisionId", "div_id"]);
+        const separated = fuzzyPick(row, [
+          "is_parents_seperated",
+          "is_parents_separated",
+          "parents_separated",
+          "isParentsSeparated",
+        ]);
+        out.set(studentId, {
+          ...child,
+          separatedParents: separated === "1" || separated === "true",
+          enrollmentId:
+            fuzzyPick(row, ["crt_enr_on", "enrollment_no", "enrollmentNo", "enr_no"]) ||
+            child.enrollmentId,
+          school: nameOf(names?.school, schoolId) || child.school,
+          grade: nameOf(names?.grade, gradeId) || child.grade,
+          division: nameOf(names?.division, divisionId) || child.division,
+        });
+      } catch (e) {
+        console.warn("[mdm] student detail fetch failed:", studentId, (e as any)?.message);
+      }
+    }),
+  );
+  return out;
 };
 
 /**

@@ -777,6 +777,28 @@ export const projectPortalMenuConfig: MenuItem[] = [
     isProjectRoute: true,
   },
   {
+    path: "sr-settings",
+    icon: <MdSettings />,
+    label: "SR Settings",
+    labelHi: "एसआर सेटिंग्स",
+    labelMr: "एसआर सेटिंग्ज",
+    permission: [
+      PERMISSIONS.SR_CONFIG_MANAGE,
+      PERMISSIONS.USER_ASSIGN_ROLE,
+      PERMISSIONS.USER_IMPORT,
+    ],
+    isProjectRoute: true,
+  },
+  {
+    path: "ivr-agents",
+    icon: <MdConfirmationNumber />,
+    label: "IVR Agents",
+    labelHi: "आईवीआर एजेंट",
+    labelMr: "आयव्हीआर एजंट",
+    permission: PERMISSIONS.IVR_AGENT_MANAGE,
+    isProjectRoute: true,
+  },
+  {
     path: "my-assets",
     icon: <MdPerson />,
     label: "My Assets",
