@@ -141,13 +141,6 @@ const IVRCalls: React.FC<{
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const [showIngest, setShowIngest] = useState(false);
-  const [ingestForm, setIngestForm] = useState({
-    callerName: "",
-    callerMobile: "",
-    callType: "answered",
-  });
-
   // Re-render once a minute so countdowns stay honest without a reload.
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -432,28 +425,6 @@ const IVRCalls: React.FC<{
     }
   };
 
-  const ingest = async () => {
-    if (!projectId || !ingestForm.callerMobile) {
-      showToast("err", "Select a project and enter a caller mobile.");
-      return;
-    }
-    try {
-      await serviceRequestApi.ivr.ingest({
-        projectId,
-        externalId: `TEST-${Date.now()}`,
-        callerName: ingestForm.callerName,
-        callerMobile: ingestForm.callerMobile,
-        callType: ingestForm.callType,
-        durationSeconds: 120,
-      });
-      setShowIngest(false);
-      setIngestForm({ callerName: "", callerMobile: "", callType: "answered" });
-      load();
-    } catch (e: any) {
-      showToast("err", e?.response?.data?.message || "Ingest failed.");
-    }
-  };
-
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const emptyText =
     wipFilter === "due_soon"
@@ -660,11 +631,6 @@ const IVRCalls: React.FC<{
       title="IVR Calls"
       subtitle="Every inbound call, call-back and recording in one place. Open a call to act on it."
       embedded={embedded}
-      actions={
-        <button onClick={() => setShowIngest(!showIngest)} style={srButton("neutral")}>
-          + Test call
-        </button>
-      }
     >
       {/* ── Filters ─────────────────────────────────────────── */}
       <div className="ivr-toolbar">
@@ -757,21 +723,6 @@ const IVRCalls: React.FC<{
           </select>
         )}
       </div>
-
-      {showIngest && (
-        <div style={srStyles.card}>
-          <strong>Ingest test call</strong> (select a project first)
-          <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-            <input style={{ ...srStyles.ctrl, flex: 1 }} placeholder="Caller name" value={ingestForm.callerName} onChange={(e) => setIngestForm({ ...ingestForm, callerName: e.target.value })} />
-            <input style={{ ...srStyles.ctrl, flex: 1 }} placeholder="Caller mobile (10 digits)" value={ingestForm.callerMobile} onChange={(e) => setIngestForm({ ...ingestForm, callerMobile: e.target.value })} />
-            <select style={srStyles.ctrl} value={ingestForm.callType} onChange={(e) => setIngestForm({ ...ingestForm, callType: e.target.value })}>
-              <option value="answered">Answered</option>
-              <option value="missed">Missed</option>
-            </select>
-            <button onClick={ingest} style={srButton("success")}>Ingest</button>
-          </div>
-        </div>
-      )}
 
       {canReassign && selectedIds.size > 0 && (
         <div

@@ -66,12 +66,6 @@ const EmailTriageInbox: React.FC<{
   rowsRef.current = rows;
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showIngest, setShowIngest] = useState(false);
-  const [ingestForm, setIngestForm] = useState({
-    fromEmail: "",
-    subject: "",
-    body: "",
-  });
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -227,21 +221,6 @@ const EmailTriageInbox: React.FC<{
     }
   };
 
-  const ingest = async () => {
-    if (!projectId || !ingestForm.fromEmail || !ingestForm.subject) {
-      setMsg("Select a project and fill from/subject.");
-      return;
-    }
-    try {
-      await serviceRequestApi.emailIntake.ingest({ projectId, ...ingestForm });
-      setShowIngest(false);
-      setIngestForm({ fromEmail: "", subject: "", body: "" });
-      load();
-    } catch (e: any) {
-      setMsg(e?.response?.data?.message || "Ingest failed.");
-    }
-  };
-
   const card = srStyles.card;
   const ctrl = srStyles.ctrl;
   const th = srStyles.th;
@@ -273,11 +252,6 @@ const EmailTriageInbox: React.FC<{
       title="Email Triage Inbox"
       subtitle="Review inbound emails and convert them into PSR through the configured New Request flow."
       embedded={embedded}
-      actions={
-        <button onClick={() => setShowIngest(!showIngest)} style={srButton("neutral")}>
-          + Test email
-        </button>
-      }
     >
       {msg && <div style={{ marginBottom: 12, fontSize: 13, color: "#047857" }}>{msg}</div>}
 
@@ -383,18 +357,6 @@ const EmailTriageInbox: React.FC<{
           );
         })}
       </div>
-
-      {showIngest && (
-        <div style={card}>
-          <strong>Ingest test email</strong> (requires a selected project)
-          <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-            <input style={{ ...ctrl, flex: 1 }} placeholder="From email" value={ingestForm.fromEmail} onChange={(e) => setIngestForm({ ...ingestForm, fromEmail: e.target.value })} />
-            <input style={{ ...ctrl, flex: 2 }} placeholder="Subject" value={ingestForm.subject} onChange={(e) => setIngestForm({ ...ingestForm, subject: e.target.value })} />
-          </div>
-          <textarea style={{ ...ctrl, width: "100%", minHeight: 60, marginTop: 8 }} placeholder="Body" value={ingestForm.body} onChange={(e) => setIngestForm({ ...ingestForm, body: e.target.value })} />
-          <button onClick={ingest} style={{ ...srButton("success"), marginTop: 8 }}>Ingest</button>
-        </div>
-      )}
 
       {canConvert && selectedRowIds.size > 0 && (
         <div
