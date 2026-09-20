@@ -143,6 +143,7 @@ import emailCommunicationsRoutes from "./routes/emailCommunications";
 import whatsappConfigRoutes from "./routes/whatsappConfig";
 import smsConfigRoutes from "./routes/smsConfig";
 import attendanceRoutes from "./routes/attendance";
+import meetingRoomRoutes from "./modules/meeting-room/meetingRoomRoutes";
 import { attendanceScheduler } from "./services/attendanceScheduler";
 import dpdpRoutes from "./routes/dpdp.routes";
 import apiLogRoutes from "./routes/apiLogs";
@@ -175,6 +176,7 @@ import { emailPollingService } from "./services/emailPollingService";
 import { emailProcessingWorker } from "./services/emailProcessingWorker";
 import { autoEscalationService } from "./services/autoEscalationService";
 import { srWipScheduler } from "./modules/service-request/services/srWipScheduler";
+import { startMeetingRoomScheduler } from "./modules/meeting-room/bookingScheduler";
 import { startAuditArchivalScheduler } from "./services/auditArchiveService";
 import { flushAudit } from "./plugins/auditWriter";
 import { registerPhase1Handlers } from "./services/widgetHandlers/phase1Handlers";
@@ -487,6 +489,7 @@ app.use("/api/sms-config", smsConfigRoutes);
 
 // Attendance Module Routes
 app.use("/api/attendance", attendanceRoutes);
+app.use("/api/meeting-rooms", meetingRoomRoutes);
 
 // DPDP Act 2023 Compliance Routes
 app.use("/api/dpdp", dpdpRoutes);
@@ -622,6 +625,8 @@ httpServer.listen(PORT, async () => {
 
     // Start SR WIP committed-date reminder scheduler (inert until SR enabled)
     srWipScheduler.start();
+    // Releases rooms nobody checked into; closes finished meetings.
+    startMeetingRoomScheduler();
 
     // Start audit-log GCS archival scheduler (inert unless AUDIT_ARCHIVE_ENABLED)
     startAuditArchivalScheduler();

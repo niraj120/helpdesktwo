@@ -35,6 +35,7 @@ import {
   MdInsights,
   MdVpnKey,
   MdNotifications,
+  MdCalendarToday,
 } from "react-icons/md";
 import { PERMISSIONS, PERMISSION_MODULES } from "../constants/permissions";
 
@@ -231,6 +232,31 @@ export const menuConfig: MenuItem[] = [
       PERMISSIONS.SR_CONFIG_MANAGE,
       PERMISSIONS.USER_ASSIGN_ROLE,
       PERMISSIONS.USER_IMPORT,
+    ],
+  },
+
+  // Meeting rooms — booking calendar, then its setup
+  {
+    path: "/meeting-rooms",
+    icon: <MdCalendarToday />,
+    label: "Meeting Rooms",
+    labelHi: "मीटिंग रूम",
+    labelMr: "मीटिंग रूम",
+    permission: [
+      PERMISSIONS.MEETING_ROOM_VIEW_CALENDAR,
+      PERMISSIONS.MEETING_ROOM_BOOK,
+    ],
+  },
+  {
+    path: "/meeting-room-settings",
+    icon: <MdSettings />,
+    label: "Meeting Room Settings",
+    labelHi: "मीटिंग रूम सेटिंग्स",
+    labelMr: "मीटिंग रूम सेटिंग्ज",
+    permission: [
+      PERMISSIONS.MEETING_ROOM_MANAGE_ROOMS,
+      PERMISSIONS.MEETING_ROOM_MANAGE_MASTERS,
+      PERMISSIONS.MEETING_ROOM_MANAGE_DEVICE,
     ],
   },
 
@@ -773,6 +799,31 @@ export const projectPortalMenuConfig: MenuItem[] = [
       PERMISSIONS.EMAIL_TRIAGE_RESPOND,
       PERMISSIONS.IVR_TRIAGE_ACCESS,
       PERMISSIONS.IVR_TRIAGE_CONVERT,
+    ],
+    isProjectRoute: true,
+  },
+  {
+    path: "meeting-rooms",
+    icon: <MdCalendarToday />,
+    label: "Meeting Rooms",
+    labelHi: "मीटिंग रूम",
+    labelMr: "मीटिंग रूम",
+    permission: [
+      PERMISSIONS.MEETING_ROOM_VIEW_CALENDAR,
+      PERMISSIONS.MEETING_ROOM_BOOK,
+    ],
+    isProjectRoute: true,
+  },
+  {
+    path: "meeting-room-settings",
+    icon: <MdSettings />,
+    label: "Meeting Room Settings",
+    labelHi: "मीटिंग रूम सेटिंग्स",
+    labelMr: "मीटिंग रूम सेटिंग्ज",
+    permission: [
+      PERMISSIONS.MEETING_ROOM_MANAGE_ROOMS,
+      PERMISSIONS.MEETING_ROOM_MANAGE_MASTERS,
+      PERMISSIONS.MEETING_ROOM_MANAGE_DEVICE,
     ],
     isProjectRoute: true,
   },

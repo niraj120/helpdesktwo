@@ -19,14 +19,21 @@ export type TriggerType =
   | "sr_reassigned"
   | "sr_child_case"
   | "sr_reopened"
-  | "sr_closed";
+  | "sr_closed"
+  | "meeting_booking_created"
+  | "meeting_booking_awaiting_approval"
+  | "meeting_booking_approved"
+  | "meeting_booking_rejected"
+  | "meeting_booking_cancelled"
+  | "meeting_booking_moved"
+  | "meeting_booking_reminder";
 
 export interface INotification extends Document {
   recipientUserId: mongoose.Types.ObjectId;
   triggeredByUserId?: mongoose.Types.ObjectId;
   projectId?: mongoose.Types.ObjectId;
   triggerType: TriggerType;
-  entityType: "ticket" | "kb_article" | "comment";
+  entityType: "ticket" | "kb_article" | "comment" | "ivr_call" | "meeting_booking";
   entityId: mongoose.Types.ObjectId;
   title: string;
   body?: string;
@@ -75,12 +82,19 @@ const notificationSchema = new Schema<INotification>(
         "sr_reopened",
         "sr_closed",
         "ivr_call_assigned",
+        "meeting_booking_created",
+        "meeting_booking_awaiting_approval",
+        "meeting_booking_approved",
+        "meeting_booking_rejected",
+        "meeting_booking_cancelled",
+        "meeting_booking_moved",
+        "meeting_booking_reminder",
       ],
       required: true,
     },
     entityType: {
       type: String,
-      enum: ["ticket", "kb_article", "comment", "ivr_call"],
+      enum: ["ticket", "kb_article", "comment", "ivr_call", "meeting_booking"],
       required: true,
     },
     entityId: {

@@ -100,6 +100,12 @@ const ServiceRequestSettingsHub = lazy(
   () => import("./pages/service-request/ServiceRequestSettingsHub"),
 );
 const IvrAgentManagement = lazy(() => import("./pages/IvrAgentManagement"));
+const MeetingRoomBooking = lazy(
+  () => import("./pages/meeting-room/MeetingRoomBooking"),
+);
+const MeetingRoomSettings = lazy(
+  () => import("./pages/meeting-room/MeetingRoomSettings"),
+);
 const ServiceRequestDetail = lazy(
   () => import("./pages/service-request/ServiceRequestDetail"),
 );
@@ -628,6 +634,31 @@ function App() {
                 ]}
               >
                 <ServiceRequestSettingsHub />
+              </ProtectedRoute>
+            }
+          />
+          {/* Meeting rooms — booking calendar and its setup */}
+          <Route
+            path="/meeting-rooms"
+            element={
+              <ProtectedRoute
+                permission={["MEETING_ROOM_VIEW_CALENDAR", "MEETING_ROOM_BOOK"]}
+              >
+                <MeetingRoomBooking />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/meeting-room-settings"
+            element={
+              <ProtectedRoute
+                permission={[
+                  "MEETING_ROOM_MANAGE_ROOMS",
+                  "MEETING_ROOM_MANAGE_MASTERS",
+                  "MEETING_ROOM_MANAGE_DEVICE",
+                ]}
+              >
+                <MeetingRoomSettings />
               </ProtectedRoute>
             }
           />

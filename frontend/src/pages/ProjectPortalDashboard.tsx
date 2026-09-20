@@ -43,6 +43,8 @@ import AgentTicketDetail from "./AgentTicketDetail";
 import AuthenticatedStudentSubmitTicket from "./AuthenticatedStudentSubmitTicket";
 import ServiceRequestsHub from "./service-request/ServiceRequestsHub";
 import ServiceRequestSettingsHub from "./service-request/ServiceRequestSettingsHub";
+import MeetingRoomBooking from "./meeting-room/MeetingRoomBooking";
+import MeetingRoomSettings from "./meeting-room/MeetingRoomSettings";
 import ServiceRequestDetail from "./service-request/ServiceRequestDetail";
 import IvrAgentManagement from "./IvrAgentManagement";
 import { API_CONFIG } from "../config/constants";
@@ -1643,6 +1645,35 @@ const ProjectPortalDashboard = () => {
             </ProtectedRoute>
           }
         />
+        {/* Meeting rooms — booking calendar and its setup */}
+        <Route
+          path="/meeting-rooms"
+          element={
+            <ProtectedRoute
+              permission={[
+                PERMISSIONS.MEETING_ROOM_VIEW_CALENDAR,
+                PERMISSIONS.MEETING_ROOM_BOOK,
+              ]}
+            >
+              <MeetingRoomBooking />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/meeting-room-settings"
+          element={
+            <ProtectedRoute
+              permission={[
+                PERMISSIONS.MEETING_ROOM_MANAGE_ROOMS,
+                PERMISSIONS.MEETING_ROOM_MANAGE_MASTERS,
+                PERMISSIONS.MEETING_ROOM_MANAGE_DEVICE,
+              ]}
+            >
+              <MeetingRoomSettings />
+            </ProtectedRoute>
+          }
+        />
+
         {/* Service Request settings — scoped to this portal's project */}
         <Route
           path="/sr-settings"
